@@ -1,0 +1,228 @@
+package meht
+
+import (
+	"MEHT/mht"
+	"MEHT/util"
+	"fmt"
+)
+
+type Bucket struct {
+	ld  int // local depth, initial zero
+	rdx int // rdx, initial 2
+
+	capacity int // capacity of the bucket, initial given
+	number   int // number of data objects in the bucket, initial zero
+
+	segNum      int                        // number of segments in the bucket, initial given
+	segments    map[string][]util.KVPair   // segments: data objects in each segment
+	merkleTrees map[string]*mht.MerkleTree // merkle trees: one for each segment
+}
+
+// NewBucket creates a new Bucket object
+func NewBucket(ld int, capacity int, segNum int) *Bucket {
+	return &Bucket{ld, 2, capacity, 0, segNum, make(map[string][]util.KVPair), make(map[string]*mht.MerkleTree)}
+}
+
+// GetLD returns the local depth of the Bucket
+func (b *Bucket) GetLD() int {
+	return b.ld
+}
+
+// GetRdx returns the rdx of the Bucket
+func (b *Bucket) GetRdx() int {
+	return b.rdx
+}
+
+// GetCapacity returns the capacity of the Bucket
+func (b *Bucket) GetCapacity() int {
+	return b.capacity
+}
+
+// GetNumber returns the number of data objects in the Bucket
+func (b *Bucket) GetNumber() int {
+	return b.number
+}
+
+// GetSegNum returns the number of segments in the Bucket
+func (b *Bucket) GetSegNum() int {
+	return b.segNum
+}
+
+// GetSegments returns the segments of the Bucket
+func (b *Bucket) GetSegments() map[string][]util.KVPair {
+	return b.segments
+}
+
+// GetMerkleTrees returns the merkle trees of the Bucket
+func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
+	return b.merkleTrees
+}
+
+// SetLD sets the local depth of the Bucket
+func (b *Bucket) SetLD(ld int) {
+	b.ld = ld
+}
+
+// SetRdx sets the rdx of the Bucket
+func (b *Bucket) SetRdx(rdx int) {
+	b.rdx = rdx
+}
+
+// SetCapacity sets the capacity of the Bucket
+func (b *Bucket) SetCapacity(capacity int) {
+	b.capacity = capacity
+}
+
+// SetNumber sets the number of data objects in the Bucket
+func (b *Bucket) SetNumber(number int) {
+	b.number = number
+}
+
+// SetSegNum sets the number of segments in the Bucket
+func (b *Bucket) SetSegNum(segNum int) {
+	b.segNum = segNum
+}
+
+// 给定一个key，返回该key所在的segment map key
+func (b *Bucket) GetSegment(key string) string {
+	return key[:b.ld]
+}
+
+// 给定一个key, 判断它是否在该bucket中
+func (b *Bucket) IsInBucket(key string) bool {
+	segkey := b.GetSegment(key)
+	kvpairs := b.segments[segkey]
+	for _, kvpair := range kvpairs {
+		if kvpair.GetKey() == key {
+			return true
+		}
+	}
+	return false
+}
+
+// 给定一个key, 返回它在该bucket中的value
+func (b *Bucket) GetValue(key string) string {
+	segkey := b.GetSegment(key)
+	kvpairs := b.segments[segkey]
+	//判断是否在bucket中,在则返回value,不在则返回空字符串
+	for _, kvpair := range kvpairs {
+		if kvpair.GetKey() == key {
+			return kvpair.GetValue()
+		}
+	}
+	return ""
+}
+
+// 给定一个key, 返回它所在的segment及其index, 如果不在, 返回-1
+func (b *Bucket) GetIndex(key string) (string, int) {
+	segkey := b.GetSegment(key)
+	kvpairs := b.segments[segkey]
+	for i, kvpair := range kvpairs {
+		if kvpair.GetKey() == key {
+			return segkey, i
+		}
+	}
+	return "", -1
+}
+
+// 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
+func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
+	buckets := make([]*Bucket, 0)
+	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
+	segkey, index := b.GetIndex(kvpair.GetKey())
+	if index != -1 {
+		//在bucket中,修改value
+		b.segments[segkey][index].SetValue(kvpair.GetValue())
+		//更新bucket中对应segment的merkle tree
+		newSegHashRoot := b.merkleTrees[segkey].UpdateRoot(index, []byte(kvpair.GetValue()))
+		buckets = append(buckets, b)
+		//输出segkey, index, newSegHashRoot
+		fmt.Printf("当前bucket已存在该key,更新value\n")
+		fmt.Printf("segkey: %s, index: %d, newSegHashRoot: %x\n", segkey, index, newSegHashRoot)
+		updateProof := b.merkleTrees[segkey].GetProof(index)
+		//输出更新后的value和proof
+		fmt.Printf("更新后的value: %s\n", kvpair.GetValue())
+		fmt.Printf("更新后的proof: %x\n", updateProof)
+		return buckets
+	} else {
+		//判断segment是否存在,不存在则创建
+		if _, ok := b.segments[segkey]; !ok {
+			b.segments[segkey] = make([]util.KVPair, 0)
+		}
+		//判断bucket是否已满
+		if b.number < b.capacity {
+			//未满,插入到对应的segment中
+			b.segments[segkey] = append(b.segments[segkey], kvpair)
+			index := len(b.segments[segkey]) - 1
+			b.number++
+			//更新bucket中对应segment的merkle tree
+			newSegHashRoot := b.merkleTrees[segkey].UpdateRoot(index, []byte(kvpair.GetValue()))
+			buckets = append(buckets, b)
+			//输出segkey, index, newSegHashRoot
+			fmt.Printf("当前bucket不存在该key,已插入key-value\n")
+			fmt.Printf("segkey: %s, index: %d, newSegHashRoot: %x\n", segkey, index, newSegHashRoot)
+			updateProof := b.merkleTrees[segkey].GetProof(index)
+			//输出插入的value和proof
+			fmt.Printf("插入的value: %s\n", kvpair.GetValue())
+			fmt.Printf("proof: %x\n", updateProof)
+			return buckets
+		} else {
+			//已满,分裂成rdx个bucket
+			buckets = append(buckets, b.SplitBucket()...)
+			//为所有bucket构建merkle tree
+			for _, bucket := range buckets {
+				segments := bucket.GetSegments()
+				for segkey, kvpairs := range segments {
+					//将kvpair转化为[][]byte
+					datas := make([][]byte, 0)
+					for _, kvpair := range kvpairs {
+						datas = append(datas, []byte(kvpair.GetValue()))
+					}
+					bucket.merkleTrees[segkey] = mht.NewMerkleTree(datas)
+				}
+			}
+			//判断key应该插入到哪个bucket中
+			ikey := kvpair.GetKey()
+			bk := ikey[len(ikey)-b.ld:][0] - '0'
+			fmt.Printf("当前bucket已满,已分裂成%d个bucket,该key应该插入到第%d个bucket中\n", b.rdx, bk)
+			buckets[bk].Insert(kvpair)
+			return buckets
+		}
+	}
+}
+
+// SplitBucket 分裂bucket为rdx个bucket,并将原bucket中的数据重新分配到rdx个bucket中,返回rdx个bucket的指针
+func (b *Bucket) SplitBucket() []*Bucket {
+	buckets := make([]*Bucket, 0)
+	b.SetLD(b.GetLD() + 1)
+	buckets = append(buckets, b)
+	//创建rdx+1个新bucket
+	for i := 0; i < b.rdx+1; i++ {
+		newBucket := NewBucket(b.ld, b.capacity, b.segNum)
+		buckets = append(buckets, newBucket)
+	}
+	//获取原bucket中所有数据对象
+	for _, value := range b.GetSegments() {
+		kvpairs := value
+		for _, kvpair := range kvpairs {
+			k := kvpair.GetKey()
+			//获取key的倒数第ld位
+			bk := k[len(k)-b.ld:][0] - '0'
+			//将数据对象插入到对应的bucket中
+			buckets[bk].Insert(kvpair)
+		}
+	}
+	return buckets
+}
+
+// 给定一个key, 返回它的value,所在segment的根哈希,存在的proof,若不存在,返回空字符串,空字符串,空数组
+func (b *Bucket) GetProof(key string) (string, []byte, [][]byte) {
+	segkey, index := b.GetIndex(key)
+	if index != -1 {
+		value := b.segments[segkey][index].GetValue()
+		segHashRoot := b.merkleTrees[segkey].GetRootHash()
+		proof := b.merkleTrees[segkey].GetProof(index)
+		return value, segHashRoot, proof
+	}
+	return "", []byte(""), [][]byte{}
+}

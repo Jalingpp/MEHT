@@ -10,7 +10,7 @@ func main() {
 
 	//测试Bucket
 	//创建一个bucket
-	bucket := meht.NewBucket(0, 2, 2, 1) //ld,capacity,segNum
+	bucket := meht.NewBucket(0, 2, 2, 1) //ld,rdx,capacity,segNum
 	//创建4个KVPair
 	kvpair1 := util.NewKVPair("0000", "value1")
 	kvpair2 := util.NewKVPair("0001", "value2")

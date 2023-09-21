@@ -259,27 +259,44 @@ func (b *Bucket) PrintBucket() {
 	}
 }
 
+//拷贝到main.go中测试
 // func main() {
 
 // 	//测试Bucket
 // 	//创建一个bucket
-// 	bucket := NewBucket(0, 2, 2)
+// 	bucket := meht.NewBucket(0, 2, 2, 1) //ld,rdx,capacity,segNum
 // 	//创建4个KVPair
-// 	kvpair1 := util.NewKVPair("key1", "value1")
-// 	kvpair2 := util.NewKVPair("key2", "value2")
-// 	kvpair3 := util.NewKVPair("key3", "value3")
-// 	kvpair4 := util.NewKVPair("key4", "value4")
+// 	kvpair1 := util.NewKVPair("0000", "value1")
+// 	kvpair2 := util.NewKVPair("0001", "value2")
+// 	kvpair3 := util.NewKVPair("0010", "value3")
+// 	kvpair4 := util.NewKVPair("0011", "value4")
 // 	//插入4个KVPair
-// 	bucket.Insert(*kvpair1)
-// 	bucket.Insert(*kvpair2)
-// 	bucket.Insert(*kvpair3)
-// 	bucket.Insert(*kvpair4)
-// 	//获取key1的value
-// 	fmt.Printf("key1的value: %s\n", bucket.GetValue("key1"))
-// 	//获取key2的value
-// 	fmt.Printf("key2的value: %s\n", bucket.GetValue("key2"))
-// 	//获取key3的value
-// 	fmt.Printf("key3的value: %s\n", bucket.GetValue("key3"))
-// 	//获取key4的value
-// 	fmt.Printf("key4的value: %s\n", bucket.GetValue("key4"))
+// 	buckets1 := bucket.Insert(*kvpair1)
+// 	buckets2 := bucket.Insert(*kvpair2)
+// 	buckets3 := bucket.Insert(*kvpair3)
+// 	buckets4 := bucket.Insert(*kvpair4)
+
+// 	//打印buckets1中所有的bucket
+// 	fmt.Printf("buckets1中所有的bucket\n")
+// 	for _, bucket := range buckets1 {
+// 		bucket.PrintBucket()
+// 	}
+
+// 	//打印buckets2中所有的bucket
+// 	fmt.Printf("buckets2中所有的bucket\n")
+// 	for _, bucket := range buckets2 {
+// 		bucket.PrintBucket()
+// 	}
+
+// 	//打印buckets3中所有的bucket
+// 	fmt.Printf("buckets3中所有的bucket\n")
+// 	for _, bucket := range buckets3 {
+// 		bucket.PrintBucket()
+// 	}
+
+// 	//打印buckets4中所有的bucket
+// 	fmt.Printf("buckets4中所有的bucket\n")
+// 	for _, bucket := range buckets4 {
+// 		bucket.PrintBucket()
+// 	}
 // }

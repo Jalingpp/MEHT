@@ -38,8 +38,20 @@ func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
 	return &node
 }
 
+// 新建一个空的默克尔树
+func NewEmptyMerkleTree() *MerkleTree {
+	return &MerkleTree{Root: nil, DataList: make([][]byte, 0), LeafNodes: nil}
+}
+
 // NewMerkleTree 构建一个新的默克尔树
 func NewMerkleTree(data [][]byte) *MerkleTree {
+	//用data创建一个dataList,并复制data的值到dataList中
+	dataList := make([][]byte, len(data))
+	for i := 0; i < len(data); i++ {
+		copiedData := make([]byte, len(data[i]))
+		copy(copiedData, data[i])
+		dataList[i] = copiedData
+	}
 	var nodes []*MerkleNode
 	var leafnodes []*MerkleNode
 
@@ -67,7 +79,7 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 	}
 
 	root := nodes[0]
-	return &MerkleTree{Root: root, DataList: data, LeafNodes: leafnodes}
+	return &MerkleTree{Root: root, DataList: dataList, LeafNodes: leafnodes}
 }
 
 // 获取默克尔树的根节点
@@ -82,7 +94,7 @@ func (tree *MerkleTree) GetRootHash() []byte {
 
 // 修改data中第i个数据后更新默克尔树的根节点,返回新的根节点哈希
 func (tree *MerkleTree) UpdateRoot(i int, data []byte) []byte {
-	tree.DataList[i] = data
+	copy(tree.DataList[i], data)
 	//修改叶子节点
 	hash := sha256.Sum256(data)
 	tree.LeafNodes[i].Data = hash[:]
@@ -130,6 +142,16 @@ func (tree *MerkleTree) GetProof(i int) [][]byte {
 		node = node.Parent
 	}
 	return proof
+}
+
+// 插入一个data,更新默克尔树,返回新的根节点哈希
+func (tree *MerkleTree) InsertData(data []byte) []byte {
+	tree.DataList = append(tree.DataList, data)
+	//重建默克尔树
+	newTree := NewMerkleTree(tree.DataList)
+	tree.Root = newTree.Root
+	tree.LeafNodes = newTree.LeafNodes
+	return tree.Root.Data
 }
 
 // func main() {

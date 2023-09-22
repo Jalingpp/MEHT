@@ -4,9 +4,12 @@ import (
 	"MEHT/mht"
 	"MEHT/util"
 	"fmt"
+	"strconv"
 )
 
 type Bucket struct {
+	bucketKey string // bucket key, initial nil, related to ld and kvpair.key
+
 	ld  int // local depth, initial zero
 	rdx int // rdx, initial 2
 
@@ -20,7 +23,12 @@ type Bucket struct {
 
 // NewBucket creates a new Bucket object
 func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
-	return &Bucket{ld, rdx, capacity, 0, segNum, make(map[string][]*util.KVPair, 0), make(map[string]*mht.MerkleTree, 0)}
+	return &Bucket{"", ld, rdx, capacity, 0, segNum, make(map[string][]*util.KVPair, 0), make(map[string]*mht.MerkleTree, 0)}
+}
+
+// GetBucketKey returns the bucket key of the Bucket
+func (b *Bucket) GetBucketKey() string {
+	return b.bucketKey
 }
 
 // GetLD returns the local depth of the Bucket
@@ -56,6 +64,11 @@ func (b *Bucket) GetSegments() map[string][]*util.KVPair {
 // GetMerkleTrees returns the merkle trees of the Bucket
 func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 	return b.merkleTrees
+}
+
+// SetBucketKey sets the bucket key of the Bucket
+func (b *Bucket) SetBucketKey(bucketKey string) {
+	b.bucketKey = bucketKey
 }
 
 // SetLD sets the local depth of the Bucket
@@ -203,6 +216,8 @@ func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
 func (b *Bucket) SplitBucket() []*Bucket {
 	buckets := make([]*Bucket, 0)
 	b.SetLD(b.GetLD() + 1)
+	originBkey := b.GetBucketKey()
+	b.SetBucketKey("0" + originBkey)
 	b.number = 0
 	bsegments := b.GetSegments()
 	b.segments = make(map[string][]*util.KVPair, 0)
@@ -211,6 +226,7 @@ func (b *Bucket) SplitBucket() []*Bucket {
 	//创建rdx-1个新bucket
 	for i := 0; i < b.rdx-1; i++ {
 		newBucket := NewBucket(b.ld, b.rdx, b.capacity, b.segNum)
+		newBucket.SetBucketKey(strconv.Itoa(i+1) + originBkey)
 		buckets = append(buckets, newBucket)
 	}
 	//获取原bucket中所有数据对象
@@ -264,7 +280,7 @@ func (b *Bucket) PrintBucket() {
 
 // 	//测试Bucket
 // 	//创建一个bucket
-// 	bucket := meht.NewBucket(0, 2, 2, 1) //ld,rdx,capacity,segNum
+// 	bucket := meht.NewBucket(nil,0, 2, 2, 1) //ld,rdx,capacity,segNum
 // 	//创建4个KVPair
 // 	kvpair1 := util.NewKVPair("0000", "value1")
 // 	kvpair2 := util.NewKVPair("0001", "value2")

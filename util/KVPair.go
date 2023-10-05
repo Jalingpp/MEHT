@@ -2,6 +2,15 @@ package util
 
 import "fmt"
 
+// NewKVPair(key string, value string) *KVPair {} : creates a new KVPair object
+// GetKey() string{} : returns the key of the KVPair
+// GetValue() string {}: returns the value of the KVPair
+// SetValue(value string) {} : sets the value of the KVPair
+// String() string {}: returns the string representation of the KVPair
+// Equals(other *KVPair) bool {}: returns true if the KVPair is equal to the other KVPair
+// LessThan(other *KVPair) bool {}: returns true if the KVPair is less than the other KVPair
+//GreaterThan(other *KVPair) bool {}: returns true if the KVPair is greater than the other KVPair
+
 type KVPair struct {
 	key   string
 	value string

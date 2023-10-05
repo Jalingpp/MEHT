@@ -6,6 +6,16 @@ import (
 	"fmt"
 )
 
+//NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {}: 创建一个新的默克尔树节点
+//NewEmptyMerkleTree() *MerkleTree {}: 新建一个空的默克尔树
+//NewMerkleTree(data [][]byte) *MerkleTree {}: 构建一个新的默克尔树
+//GetRoot() *MerkleNode {} :获取默克尔树的根节点
+//GetRootHash() []byte {}:获取默克尔树的根节点的哈希值
+//UpdateRoot(i int, data []byte) []byte {}:修改data中第i个数据后更新默克尔树的根节点,返回新的根节点哈希
+//PrintTree() {}:打印整个默克尔树
+//GetProof(i int) MHTProof {}:返回某个叶子节点的默克尔证明
+//InsertData(data []byte) []byte {}:插入一个data,更新默克尔树,返回新的根节点哈希
+
 // MerkleNode 表示默克尔树的节点
 type MerkleNode struct {
 	Left   *MerkleNode
@@ -94,12 +104,14 @@ func (tree *MerkleTree) GetRootHash() []byte {
 
 // 修改data中第i个数据后更新默克尔树的根节点,返回新的根节点哈希
 func (tree *MerkleTree) UpdateRoot(i int, data []byte) []byte {
+	fmt.Printf("value byte:%x\n", data)
 	copy(tree.DataList[i], data)
 	//修改叶子节点
 	hash := sha256.Sum256(data)
 	tree.LeafNodes[i].Data = hash[:]
+	fmt.Printf("data:%x\n", hash[:])
 	//递归修改父节点
-	updataParentData(tree.LeafNodes[i])
+	updataParentData(tree.LeafNodes[i].Parent)
 	return tree.Root.Data
 }
 
@@ -108,7 +120,15 @@ func updataParentData(node *MerkleNode) {
 	if node == nil {
 		return
 	}
-	prevHashes := append(node.Left.Data, node.Right.Data...)
+	prevHashes := make([]byte, 0)
+	if node.Left != nil {
+		fmt.Printf("Left Data: %x\n", node.Left.Data)
+		prevHashes = append(prevHashes, node.Left.Data...)
+	}
+	if node.Right != nil {
+		fmt.Printf("Right Data: %x\n", node.Right.Data)
+		prevHashes = append(prevHashes, node.Right.Data...)
+	}
 	hash := sha256.Sum256(prevHashes)
 	node.Data = hash[:]
 	updataParentData(node.Parent)
@@ -130,18 +150,18 @@ func (node *MerkleNode) PrintNode() {
 }
 
 // 返回某个叶子节点的默克尔证明
-func (tree *MerkleTree) GetProof(i int) [][]byte {
-	var proof [][]byte
+func (tree *MerkleTree) GetProof(i int) *MHTProof {
+	var proof []ProofPair
 	node := tree.LeafNodes[i]
 	for node.Parent != nil {
 		if node.Parent.Left == node {
-			proof = append(proof, node.Parent.Right.Data)
+			proof = append(proof, ProofPair{1, node.Parent.Right.Data})
 		} else {
-			proof = append(proof, node.Parent.Left.Data)
+			proof = append(proof, ProofPair{0, node.Parent.Left.Data})
 		}
 		node = node.Parent
 	}
-	return proof
+	return &MHTProof{true, proof, false, nil, nil, nil}
 }
 
 // 插入一个data,更新默克尔树,返回新的根节点哈希

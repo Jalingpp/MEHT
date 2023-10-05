@@ -3,12 +3,23 @@ package meht
 import (
 	"MEHT/mht"
 	"MEHT/util"
+	"crypto/sha256"
 	"fmt"
-	"strconv"
 )
 
+//NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {}: creates a new Bucket object
+//GetSegment(key string) string {} :给定一个key，返回该key所在的segment map key
+//IsInBucket(key string) bool {}:给定一个key, 判断它是否在该bucket中
+//GetValue(key string) string {}:给定一个key, 返回它在该bucket中的value
+//GetIndex(key string) (string, int) {}:给定一个key, 返回它所在的segment及其index, 如果不在, 返回-1
+//Insert(kvpair util.KVPair) []*Bucket {}: 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
+//GetProof(key string) (string, []byte, []mht.ProofPair) {}: 给定一个key, 返回它的value,所在segment的根哈希,存在的proof,若不存在,返回空字符串,空字符串,空数组
+//PrintBucket() {}: 打印bucket中的所有数据对象
+//PrintMHTProof(proof []mht.ProofPair) {}: 打印Proof []ProofPair
+//ComputSegHashRoot(value string, segProof []mht.ProofPair) []byte {}: 给定value和segProof，返回由它们计算得到的segHashRoot
+
 type Bucket struct {
-	bucketKey string // bucket key, initial nil, related to ld and kvpair.key
+	bucketKey []int // bucket key, initial nil, related to ld and kvpair.key
 
 	ld  int // local depth, initial zero
 	rdx int // rdx, initial 2
@@ -23,11 +34,11 @@ type Bucket struct {
 
 // NewBucket creates a new Bucket object
 func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
-	return &Bucket{"", ld, rdx, capacity, 0, segNum, make(map[string][]*util.KVPair, 0), make(map[string]*mht.MerkleTree, 0)}
+	return &Bucket{nil, ld, rdx, capacity, 0, segNum, make(map[string][]*util.KVPair, 0), make(map[string]*mht.MerkleTree, 0)}
 }
 
 // GetBucketKey returns the bucket key of the Bucket
-func (b *Bucket) GetBucketKey() string {
+func (b *Bucket) GetBucketKey() []int {
 	return b.bucketKey
 }
 
@@ -67,7 +78,7 @@ func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 }
 
 // SetBucketKey sets the bucket key of the Bucket
-func (b *Bucket) SetBucketKey(bucketKey string) {
+func (b *Bucket) SetBucketKey(bucketKey []int) {
 	b.bucketKey = bucketKey
 }
 
@@ -126,36 +137,33 @@ func (b *Bucket) GetValue(key string) string {
 	return ""
 }
 
-// 给定一个key, 返回它所在的segment及其index, 如果不在, 返回-1
-func (b *Bucket) GetIndex(key string) (string, int) {
+// 给定一个key, 返回它所在的segkey，seg是否存在，在seg中的index, 如果不在, 返回-1
+func (b *Bucket) GetIndex(key string) (string, bool, int) {
 	segkey := b.GetSegment(key)
 	kvpairs := b.segments[segkey]
 	for i, kvpair := range kvpairs {
 		if kvpair.GetKey() == key {
-			return segkey, i
+			return segkey, true, i
 		}
 	}
-	return "", -1
+	return "", false, -1
 }
 
 // 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
 func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
-	segkey, index := b.GetIndex(kvpair.GetKey())
+	segkey, _, index := b.GetIndex(kvpair.GetKey())
 	if index != -1 {
 		//在bucket中,修改value
 		b.segments[segkey][index].SetValue(kvpair.GetValue())
 		//更新bucket中对应segment的merkle tree
-		newSegHashRoot := b.merkleTrees[segkey].UpdateRoot(index, []byte(kvpair.GetValue()))
+		b.merkleTrees[segkey].UpdateRoot(index, []byte(kvpair.GetValue()))
 		buckets = append(buckets, b)
-		//输出segkey, index, newSegHashRoot
-		fmt.Printf("当前bucket已存在该key,更新value\n")
-		fmt.Printf("segkey: %s, index: %d, newSegHashRoot: %x\n", segkey, index, newSegHashRoot)
 		updateProof := b.merkleTrees[segkey].GetProof(index)
 		//输出更新后的value和proof
-		fmt.Printf("更新后的value: %s\n", kvpair.GetValue())
-		fmt.Printf("更新后的proof: %x\n", updateProof)
+		fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
+		PrintMHTProof(updateProof)
 		return buckets
 	} else {
 		//获得kvpair的key的segment
@@ -176,19 +184,16 @@ func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
 				b.merkleTrees[segkey] = mht.NewEmptyMerkleTree()
 			}
 			//插入value到merkle tree中,返回新的根哈希
-			newSegHashRoot := b.merkleTrees[segkey].InsertData([]byte(kvpair.GetValue()))
+			b.merkleTrees[segkey].InsertData([]byte(kvpair.GetValue()))
 			buckets = append(buckets, b)
-			//输出segkey, index, newSegHashRoot
-			fmt.Printf("当前bucket不存在该key,已插入key-value\n")
-			fmt.Printf("segkey: %s, index: %d, newSegHashRoot: %x\n", segkey, index, newSegHashRoot)
-			// b.merkleTrees[segkey].PrintTree()
 			updateProof := b.merkleTrees[segkey].GetProof(index)
 			//输出插入的value和proof
-			fmt.Printf("插入的value: %s\n", kvpair.GetValue())
-			fmt.Printf("proof: %x\n", updateProof)
+			fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
+			PrintMHTProof(updateProof)
 			return buckets
 		} else {
 			//已满,分裂成rdx个bucket
+			fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey()), b.rdx)
 			buckets = append(buckets, b.SplitBucket()...)
 			//为所有bucket构建merkle tree
 			for _, bucket := range buckets {
@@ -205,7 +210,7 @@ func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
 			//判断key应该插入到哪个bucket中
 			ikey := kvpair.GetKey()
 			bk := ikey[len(ikey)-b.ld:][0] - '0'
-			fmt.Printf("当前bucket已满,已分裂成%d个bucket,该key应该插入到第%d个bucket中\n", b.rdx, bk)
+			fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			buckets[bk].Insert(kvpair)
 			return buckets
 		}
@@ -217,7 +222,7 @@ func (b *Bucket) SplitBucket() []*Bucket {
 	buckets := make([]*Bucket, 0)
 	b.SetLD(b.GetLD() + 1)
 	originBkey := b.GetBucketKey()
-	b.SetBucketKey("0" + originBkey)
+	b.SetBucketKey(append([]int{0}, originBkey...))
 	b.number = 0
 	bsegments := b.GetSegments()
 	b.segments = make(map[string][]*util.KVPair, 0)
@@ -226,7 +231,7 @@ func (b *Bucket) SplitBucket() []*Bucket {
 	//创建rdx-1个新bucket
 	for i := 0; i < b.rdx-1; i++ {
 		newBucket := NewBucket(b.ld, b.rdx, b.capacity, b.segNum)
-		newBucket.SetBucketKey(strconv.Itoa(i+1) + originBkey)
+		newBucket.SetBucketKey(append([]int{i + 1}, originBkey...))
 		buckets = append(buckets, newBucket)
 	}
 	//获取原bucket中所有数据对象
@@ -243,22 +248,62 @@ func (b *Bucket) SplitBucket() []*Bucket {
 	return buckets
 }
 
-// 给定一个key, 返回它的value,所在segment的根哈希,存在的proof,若不存在,返回空字符串,空字符串,空数组
-func (b *Bucket) GetProof(key string) (string, []byte, [][]byte) {
-	segkey, index := b.GetIndex(key)
+// 给定一个key, 返回它的value,所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segkey及其segRootHash
+func (b *Bucket) GetProof(key string) (string, []byte, *mht.MHTProof) {
+	segkey, isSegExist, index := b.GetIndex(key)
 	if index != -1 {
 		value := b.segments[segkey][index].GetValue()
 		segHashRoot := b.merkleTrees[segkey].GetRootHash()
 		proof := b.merkleTrees[segkey].GetProof(index)
 		return value, segHashRoot, proof
+	} else if isSegExist {
+		//segment存在,但key不存在,返回此seg中所有值及其哈希
+		kvpairs := b.segments[segkey]
+		values := make([]string, 0)
+		for i := 0; i < len(kvpairs); i++ {
+			values = append(values, kvpairs[i].GetValue())
+		}
+		segHashRoot := b.merkleTrees[segkey].GetRootHash()
+		return "", segHashRoot, mht.NewMHTProof(false, nil, true, values, nil, nil)
+	} else {
+		//segment不存在,返回所有segkey及其segRootHash
+		segKeys := make([]string, 0)
+		segRootHashes := make([][]byte, 0)
+		for segkey, merkleTree := range b.merkleTrees {
+			segKeys = append(segKeys, segkey)
+			segRootHashes = append(segRootHashes, merkleTree.GetRootHash())
+		}
+		return "", nil, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)
 	}
-	return "", []byte(""), [][]byte{}
+}
+
+// 给定value和segProof，返回由它们计算得到的segHashRoot
+func ComputSegHashRoot(value string, proofPairs []mht.ProofPair) []byte {
+	fmt.Printf("value: %s\n", value)
+	fmt.Printf("value byte:%x\n", []byte(value))
+	//对value求hash
+	valuehash := sha256.Sum256([]byte(value))
+	data := valuehash[:]
+	//逐层计算segHashRoot
+	for i := 0; i < len(proofPairs); i++ {
+		var parentHash []byte
+		if proofPairs[i].Index == 0 {
+			parentHash = append(proofPairs[i].Hash, data...)
+		} else {
+			fmt.Printf("data: %x\n", data)
+			fmt.Printf("proofHash:%x\n", proofPairs[i].Hash)
+			parentHash = append(data, proofPairs[i].Hash...)
+		}
+		hash := sha256.Sum256(parentHash)
+		data = hash[:]
+	}
+	return data
 }
 
 // 打印bucket中的所有数据对象
 func (b *Bucket) PrintBucket() {
 	//打印ld,rdx,capacity,number,segNum
-	fmt.Printf("ld: %d,rdx: %d,capacity: %d,number: %d,segNum: %d\n", b.ld, b.rdx, b.capacity, b.number, b.segNum)
+	fmt.Printf("bucketKey:%s,ld: %d,rdx: %d,capacity: %d,number: %d,segNum: %d\n", util.IntArrayToString(b.bucketKey), b.ld, b.rdx, b.capacity, b.number, b.segNum)
 	//打印segments
 	for segkey, value := range b.GetSegments() {
 		fmt.Printf("segkey: %s\n", segkey)
@@ -269,9 +314,32 @@ func (b *Bucket) PrintBucket() {
 	}
 	//打印所有merkle tree
 	for segkey, merkleTree := range b.GetMerkleTrees() {
-		fmt.Printf("Merkle Tree of Each Segement\n")
-		fmt.Printf("segkey: %s\n", segkey)
+		fmt.Printf("Merkle Tree of Segement %s:\n", segkey)
 		merkleTree.PrintTree()
+	}
+}
+
+// 打印mhtProof mht.MHTProof
+func PrintMHTProof(mhtProof *mht.MHTProof) {
+	if mhtProof.GetIsExist() {
+		fmt.Printf("KV存在证明:\n")
+		proofPairs := mhtProof.GetProofPairs()
+		for i := 0; i < len(proofPairs); i++ {
+			fmt.Printf("[%d, %x]\n", proofPairs[i].Index, proofPairs[i].Hash)
+		}
+	} else if mhtProof.GetIsSegExist() {
+		fmt.Printf("KV不存在,但segment存在,segment中所有的值:\n")
+		values := mhtProof.GetValues()
+		for i := 0; i < len(values); i++ {
+			fmt.Printf("%s\n", values[i])
+		}
+	} else {
+		fmt.Printf("KV不存在,segment也不存在,所有segment的segkey和segRootHash:\n")
+		segkeys := mhtProof.GetSegKeys()
+		segRootHashes := mhtProof.GetSegRootHashes()
+		for i := 0; i < len(segkeys); i++ {
+			fmt.Printf("segKey: %s, segRootHash: %x\n", segkeys[i], segRootHashes[i])
+		}
 	}
 }
 

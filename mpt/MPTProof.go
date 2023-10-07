@@ -52,14 +52,14 @@ func (mptProof *MPTProof) PrintMPTProof() {
 func (proofElement *ProofElement) PrintProofElement() {
 	//如果是叶子节点
 	if proofElement.proofType == 0 {
-		fmt.Printf("level=%d, proofType=leaf node, prefix=%s, suffix=%s, value=%s\n", proofElement.level, string(proofElement.prefix), string(proofElement.suffix), string(proofElement.value))
+		fmt.Printf("level=%d, proofType=leaf node, prefix=%x, suffix=%x,value=%x\n", proofElement.level, proofElement.prefix, proofElement.suffix, proofElement.value)
 		return
 	} else if proofElement.proofType == 1 {
 		//如果是扩展节点
-		fmt.Printf("level=%d, proofType=extension node, prefix=%s, suffix=%s, nextNodeHash=%x\n", proofElement.level, string(proofElement.prefix), string(proofElement.suffix), proofElement.nextNodeHash)
+		fmt.Printf("level=%d, proofType=extension node, prefix=%x suffix=%x, nextNodeHash=%x\n", proofElement.level, proofElement.prefix, proofElement.suffix, proofElement.nextNodeHash)
 	} else {
 		//如果是分支节点
-		fmt.Printf("level=%d, proofType=branch node, value=%s\n", proofElement.level, string(proofElement.value))
+		fmt.Printf("level=%d, proofType=branch node,value=%x\n", proofElement.level, proofElement.value)
 		for i := 0; i < 16; i++ {
 			if proofElement.childrenHashes[i] != nil {
 				fmt.Printf("[%d]%x\n", i, proofElement.childrenHashes[i])

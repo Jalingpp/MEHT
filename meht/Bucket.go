@@ -150,7 +150,7 @@ func (b *Bucket) GetIndex(key string) (string, bool, int) {
 }
 
 // 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
-func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
+func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
 	segkey, _, index := b.GetIndex(kvpair.GetKey())
@@ -175,7 +175,7 @@ func (b *Bucket) Insert(kvpair util.KVPair) []*Bucket {
 		//判断bucket是否已满
 		if b.number < b.capacity {
 			//未满,插入到对应的segment中
-			b.segments[segkey] = append(b.segments[segkey], &kvpair)
+			b.segments[segkey] = append(b.segments[segkey], kvpair)
 			index := len(b.segments[segkey]) - 1
 			// fmt.Printf("index: %d\n", index)
 			b.number++
@@ -242,7 +242,7 @@ func (b *Bucket) SplitBucket() []*Bucket {
 			//获取key的倒数第ld位
 			bk := k[len(k)-b.ld:][0] - '0'
 			//将数据对象插入到对应的bucket中
-			buckets[bk].Insert(*kvpair)
+			buckets[bk].Insert(kvpair)
 		}
 	}
 	return buckets

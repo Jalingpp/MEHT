@@ -1,65 +1,78 @@
 package main
 
 import (
-	"MEHT/mpt"
+	"MEHT/db"
 	"MEHT/util"
+	"fmt"
+	"strings"
 )
 
+//说明：每一个读进来的kv对都是一个KVPair，包含key和value，key和value都是string类型。
+//需要先将key和value转化为十六进制，再插入StorageEngine中。在StorageEngine内部，key和value都是[]byte类型。
+//对于查询得到的结果，直接将key由十六进制转化为字符串，value需要split后，再由十六进制转化为字符串。
+
 func main() {
-	//测试MPT insert
-	mpt := mpt.NewMPT()
+	//测试StorageEngine
 
-	kvpair1 := util.NewKVPair("a711355", "value1")
-	kvpair2 := util.NewKVPair("a77d337", "value2")
-	kvpair3 := util.NewKVPair("a7f9365", "value3")
-	kvpair4 := util.NewKVPair("a77d397", "value4")
+	//参数设置
+	// siMode := "meht" //辅助索引类型，meht或mpt
+	siMode := "mpt"
+	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc := 4   //meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 
-	//测试MPT insert
-	mpt.Insert(*kvpair1)
-	mpt.Insert(*kvpair2)
-	mpt.Insert(*kvpair3)
-	mpt.Insert(*kvpair4)
+	//创建一个StorageEngine
+	storageEngine := db.NewStorageEngine(siMode, rdx, bc, bs)
 
-	// kvpair4 = util.NewKVPair("a77d397", "value5")
+	//读文件创建一个KVPair数组
+	kvPairs := util.ReadKVPairFromFile("/home/jaling/Storage/index/meht/data/testdata.txt")
 
-	// fmt.Printf("key1:%x\n", []byte(kvpair1.GetKey()))
-	// fmt.Printf("value1:%x\n", []byte(kvpair1.GetValue()))
-	// fmt.Printf("key2:%x\n", []byte(kvpair2.GetKey()))
-	// fmt.Printf("value2:%x\n", []byte(kvpair2.GetValue()))
-	// fmt.Printf("key3:%x\n", []byte(kvpair3.GetKey()))
-	// fmt.Printf("value3:%x\n", []byte(kvpair3.GetValue()))
-	// fmt.Printf("key4:%x\n", []byte(kvpair4.GetKey()))
-	// fmt.Printf("value4:%x\n", []byte(kvpair4.GetValue()))
-	// mpt.Insert(*kvpair4)
+	//插入KVPair数组
+	for i := 0; i < len(kvPairs); i++ {
+		//把KV转化为十六进制
+		kvPairs[i].SetKey(util.StringToHex(kvPairs[i].GetKey()))
+		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
+		//插入StorageEngine
+		storageEngine.Insert(kvPairs[i])
+	}
 
-	//测试MPT print
-	mpt.PrintMPT()
+	// fmt.Printf("len(kvPairs)=%d\n", len(kvPairs))
 
-	//测试MPT query
-	// qv1, qpf1 := mpt.QueryByKey(kvpair1.GetKey())
-	// //打印查询结果
-	// mpt.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
+	// //打印主索引
+	// fmt.Printf("打印主索引-------------------------------------------------------------------------------------------\n")
+	// storageEngine.GetPrimaryIndex().PrintMPT()
+	// //打印辅助索引
+	// fmt.Printf("打印辅助索引-------------------------------------------------------------------------------------------\n")
+	// storageEngine.GetSecondaryIndex_mpt().PrintMPT()
+	// storageEngine.GetSecondaryIndex_meht().PrintMEHT()
 
-	// //测试MPT query
-	// qv2, qpf2 := mpt.QueryByKey(kvpair2.GetKey())
-	// //打印查询结果
-	// mpt.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
+	// //测试查询（MEHT）
+	// fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
+	// qk_meht := "Bob"
+	// qv_meht, qvProof_meht := storageEngine.GetSecondaryIndex_meht().QueryByKey(util.StringToHex(qk_meht)) //需要将qk先转换为十六进制
+	// qvs_meht := strings.Split(qv_meht, ",")                                                               //将查询结果qv按逗号分隔
+	// fmt.Printf("key=%s查询结果：\n", qk_meht)
+	// for i := 0; i < len(qvs_meht); i++ {
+	// 	fmt.Printf("value=%s\n", util.HexToString(qvs_meht[i])) //将分裂后的查询结果转换为字符串输出
+	// }
+	// //打印查询结果（MEHT）
+	// meht.PrintQueryResult(qk_meht, qv_meht, qvProof_meht)
+	// //验证查询结果（MEHT）
+	// // storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qvBob, qvBobProof)
+	// meht.VerifyQueryResult(qv_meht, qvProof_meht)
 
-	//测试MPT query
-	// qv3, qpf3 := mpt.QueryByKey(kvpair3.GetKey())
-	// //打印查询结果
-	// mpt.PrintQueryResult(kvpair3.GetKey(), qv3, qpf3)
+	//测试查询（MPT）
+	fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
+	qk_mpt := "Alice"
+	qv_mpt, qvProof_mpt := storageEngine.GetSecondaryIndex_mpt().QueryByKey(util.StringToHex(qk_mpt)) //需要将qk先转换为十六进制
+	qvs_mpt := strings.Split(qv_mpt, ",")                                                             //将查询结果qv按逗号分隔
+	fmt.Printf("key=%s查询结果：\n", qk_mpt)
+	for i := 0; i < len(qvs_mpt); i++ {
+		fmt.Printf("value=%s\n", util.HexToString(qvs_mpt[i])) //将分裂后的查询结果转换为字符串输出
+	}
+	//打印查询结果（MPT）
+	storageEngine.GetSecondaryIndex_mpt().PrintQueryResult(qk_mpt, qv_mpt, qvProof_mpt)
+	//验证查询结果（MPT）
+	storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qv_mpt, qvProof_mpt)
 
-	//测试MPT query
-	qverr, qpferr := mpt.QueryByKey("a77d344")
-	//打印查询结果
-	mpt.PrintQueryResult("a77d344", qverr, qpferr)
-
-	// //测试MPT verify
-	// mpt.VerifyQueryResult(qv1, qpf1)
-	// mpt.VerifyQueryResult(qv2, qpf2)
-	// mpt.VerifyQueryResult(qv3, qpf3)
-	mpt.VerifyQueryResult(qverr, qpferr)
-
-	// mpt.PrintMPT()
 }

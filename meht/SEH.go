@@ -73,7 +73,7 @@ func (seh *SEH) GetProof(key string) (string, []byte, *mht.MHTProof) {
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair util.KVPair) (*Bucket, string, []byte, *mht.MHTProof) {
+func (seh *SEH) Insert(kvpair *util.KVPair) (*Bucket, string, []byte, *mht.MHTProof) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket

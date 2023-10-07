@@ -1,8 +1,12 @@
 package util
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // NewKVPair(key string, value string) *KVPair {} : creates a new KVPair object
+// ReverseKVPair(kvpair *KVPair) *KVPair {}: 倒置KV
 // GetKey() string{} : returns the key of the KVPair
 // GetValue() string {}: returns the value of the KVPair
 // SetValue(value string) {} : sets the value of the KVPair
@@ -21,6 +25,54 @@ func NewKVPair(key string, value string) *KVPair {
 	return &KVPair{key, value}
 }
 
+// 倒置KV
+func ReverseKVPair(kvpair *KVPair) *KVPair {
+	return &KVPair{kvpair.value, kvpair.key}
+}
+
+// AddValue adds a new value to the KVPair
+func (kv *KVPair) AddValue(newValue string) bool {
+	if kv.value == "" {
+		kv.value = newValue
+		return true
+	}
+	//考虑原value中是否已经包含此newValue
+	values := strings.Split(kv.value, ",")
+	for i := 0; i < len(values); i++ {
+		if values[i] == newValue {
+			return false
+		}
+	}
+	kv.value = kv.value + "," + newValue
+	return true
+}
+
+func (kv *KVPair) DeleteValue(oldValue string) bool {
+	values := strings.Split(kv.value, ",")
+	//如果value中只有一个值
+	if len(values) == 1 {
+		if values[0] == oldValue {
+			kv.value = ""
+			return true
+		} else {
+			return false
+		}
+	} else {
+		isDel := false
+		//如果value中有多个值
+		newValues := make([]string, 0)
+		for i := 0; i < len(values); i++ {
+			if values[i] != oldValue {
+				newValues = append(newValues, values[i])
+			} else {
+				isDel = true
+			}
+		}
+		kv.value = strings.Join(newValues, ",")
+		return isDel
+	}
+}
+
 // GetKey returns the key of the KVPair
 func (kv *KVPair) GetKey() string {
 	return kv.key
@@ -34,6 +86,10 @@ func (kv *KVPair) GetValue() string {
 // SetValue sets the value of the KVPair
 func (kv *KVPair) SetValue(value string) {
 	kv.value = value
+}
+
+func (kv *KVPair) SetKey(key string) {
+	kv.key = key
 }
 
 // String returns a string representation of the KVPair
@@ -54,4 +110,8 @@ func (kv *KVPair) LessThan(other *KVPair) bool {
 // GreaterThan returns true if the KVPair is greater than the other KVPair
 func (kv *KVPair) GreaterThan(other *KVPair) bool {
 	return kv.key > other.key
+}
+
+func (kv *KVPair) PrintKVPair() {
+	fmt.Printf("key=%s , value=%s\n", kv.key, kv.value)
 }

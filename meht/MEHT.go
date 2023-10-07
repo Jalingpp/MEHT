@@ -42,7 +42,7 @@ func NewMEHT(rdx int, bc int, bs int) *MEHT {
 }
 
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-func (meht *MEHT) Insert(kvpair util.KVPair) (*Bucket, string, *MEHTProof) {
+func (meht *MEHT) Insert(kvpair *util.KVPair) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
 	if meht.seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -115,7 +115,7 @@ type MEHTProof struct {
 }
 
 // 给定一个key，返回它的value及其证明proof，不存在，则返回nil,nil
-func (meht *MEHT) QueryByKey(key string) (string, MEHTProof) {
+func (meht *MEHT) QueryByKey(key string) (string, *MEHTProof) {
 	//根据key找到bucket
 	bucket := meht.seh.GetBucketByKey(key)
 	if bucket != nil {
@@ -123,13 +123,13 @@ func (meht *MEHT) QueryByKey(key string) (string, MEHTProof) {
 		value, segRootHash, mhtProof := meht.seh.ht[key[len(key)-meht.seh.gd:]].GetProof(key)
 		//根据key找到mgtRootHash和mgtProof
 		mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey())
-		return value, MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		return value, &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}
-	return "", MEHTProof{nil, nil, nil, nil}
+	return "", &MEHTProof{nil, nil, nil, nil}
 }
 
 // 打印查询结果
-func PrintQueryResult(key string, value string, mehtProof MEHTProof) {
+func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
 	fmt.Printf("查询结果-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("key=%s\n", key)
 	if value == "" {
@@ -141,7 +141,7 @@ func PrintQueryResult(key string, value string, mehtProof MEHTProof) {
 }
 
 // 验证查询结果
-func VerifyQueryResult(value string, mehtProof MEHTProof) bool {
+func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	//验证segProof
 	fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
 	//计算segRootHash
@@ -200,7 +200,7 @@ func VerifyQueryResult(value string, mehtProof MEHTProof) bool {
 }
 
 // 打印MEHTProof
-func PrintMEHTProof(mehtProof MEHTProof) {
+func PrintMEHTProof(mehtProof *MEHTProof) {
 	fmt.Printf("打印MEHTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("segRootHash=%s\n", hex.EncodeToString(mehtProof.segRootHash))
 	fmt.Printf("mhtProof:\n")

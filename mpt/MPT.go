@@ -320,6 +320,7 @@ func (mpt *MPT) VerifyQueryResult(value string, mptProof *MPTProof) bool {
 	return true
 }
 
+// 根据MPTProof计算MPT根节点哈希
 func ComputMPTRoot(value string, mptProof *MPTProof) []byte {
 	proofs := mptProof.GetProofs()
 	nodeHash0 := []byte(value)
@@ -328,7 +329,7 @@ func ComputMPTRoot(value string, mptProof *MPTProof) []byte {
 		proof := proofs[i]
 		if proof.proofType == 0 {
 			nodeHash1 = append(proof.prefix, proof.suffix...)
-			//ruguocunzai,zeyongchaxundedaodevaluejisuan,fouzeyongproofdevaluejisuan
+			//如果存在，则用查询得到的value计算，否则用proof的value计算
 			if mptProof.isExist {
 				nodeHash1 = append(nodeHash1, []byte(value)...)
 			} else {
@@ -338,6 +339,7 @@ func ComputMPTRoot(value string, mptProof *MPTProof) []byte {
 			nodeHash0 = hash[:]
 			nodeHash1 = nil
 		} else if proof.proofType == 1 {
+			//如果当前proof不是最底层，则验证下层子树的根是否在当前层
 			if proof.level != mptProof.levels {
 				if !bytes.Equal(proof.nextNodeHash, nodeHash0) {
 					fmt.Printf("level %d nextNodeHash=%x计算错误,验证不通过\n", proof.level, nodeHash0)
@@ -350,6 +352,7 @@ func ComputMPTRoot(value string, mptProof *MPTProof) []byte {
 			nodeHash0 = hash[:]
 			nodeHash1 = nil
 		} else {
+			//如果当前proof不是最底层，则验证下层子树的根是否在当前层
 			if proof.level != mptProof.levels {
 				isIn := false
 				for i := 0; i < 16; i++ {

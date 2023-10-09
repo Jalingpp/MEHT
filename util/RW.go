@@ -35,3 +35,34 @@ func ReadKVPairFromFile(filepath string) []*KVPair {
 	}
 	return kvPairs
 }
+
+func WriteStringToFile(filePath string, data string) {
+	//打开文件
+	file, err := os.Create(filePath)
+	if err != nil {
+		fmt.Println("Create file error!")
+		return
+	}
+	defer file.Close()
+	//写字符串
+	file.WriteString(data)
+}
+
+func ReadStringFromFile(filePath string) (string, error) {
+	//打开文件
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Println("Open file error!")
+		return "", err
+	}
+	defer file.Close()
+	//读取文件内容
+	readr := bufio.NewReader(file)
+	line, err := readr.ReadString('\n')
+	if err != nil {
+		return "", err
+	}
+	//去掉换行符
+	line = strings.TrimRight(line, "\n")
+	return line, nil
+}

@@ -4,7 +4,10 @@ import (
 	"MEHT/util"
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 //NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode, value []byte) *ShortNode {}: creates a ShortNode and computes its nodeHash
@@ -17,101 +20,48 @@ import (
 //PrintQueryResult(key string, value string, mptProof *MPTProof) {}: 打印查询结果
 //VerifyQueryResult(value string, mptProof *MPTProof) bool {}: 验证查询结果
 
-type FullNode struct {
-	nodeHash     []byte         //当前节点的哈希值,由childrenHash计算得到
-	children     [16]*ShortNode // children的指针，0-15表示0-9,a-f
-	childrenHash [16][]byte     // children的哈希值
-	value        []byte         // 以前面ExtensionNode的prefix+suffix为key的value
-}
-
-type ShortNode struct {
-	nodeHash []byte //当前节点的哈希值，由prefix+suffix+value/nextNodeHash计算得到
-
-	prefix []byte //前缀
-
-	isLeaf       bool      //是否是叶子节点
-	suffix       []byte    //后缀，shared nibble（extension node）或key-end（leaf node）
-	nextNode     *FullNode //下一个FullNode节点(当前节点是extension node时)
-	nextNodeHash []byte    //下一个FullNode节点的哈希值
-	value        []byte    //value（当前节点是leaf node时）
-}
-
 type MPT struct {
-	root *ShortNode //根节点
+	rootNodeHash []byte      //根节点的哈希值
+	root         *ShortNode  //根节点
+	db           *leveldb.DB //底层存储的指针
+}
+
+func (mpt *MPT) GetRoot() *ShortNode {
+	if mpt.root == nil {
+		mptRoot, err := mpt.db.Get(mpt.rootNodeHash, nil)
+		if err == nil {
+			mpt.root, _ = DeserializeShortNode(mptRoot)
+		}
+	}
+	return mpt.root
 }
 
 // NewMPT creates a empty MPT
-func NewMPT() *MPT {
-	return &MPT{nil}
-}
-
-// NewShortNode creates a ShortNode and computes its nodeHash
-func NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode, value []byte) *ShortNode {
-	nodeHash := append(prefix, suffix...)
-	var nextNodeHash []byte
-	if isLeaf {
-		nodeHash = append(nodeHash, value...)
-		nextNodeHash = nil
-	} else {
-		nodeHash = append(nodeHash, nextNode.nodeHash...)
-		nextNodeHash = nextNode.nodeHash
-	}
-	hash := sha256.Sum256(nodeHash)
-	nodeHash = hash[:]
-	return &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value}
-}
-
-// UpdateShortNodeHash 更新ShortNode的nodeHash
-func UpdateShortNodeHash(sn *ShortNode) {
-	nodeHash := append(sn.prefix, sn.suffix...)
-	if sn.isLeaf {
-		nodeHash = append(nodeHash, sn.value...)
-	} else {
-		nodeHash = append(nodeHash, sn.nextNode.nodeHash...)
-	}
-	hash := sha256.Sum256(nodeHash)
-	sn.nodeHash = hash[:]
-}
-
-// NewFullNode creates a new FullNode and computes its nodeHash
-func NewFullNode(children [16]*ShortNode) *FullNode {
-	var childrenHash [16][]byte
-	var nodeHash []byte
-	for i := 0; i < 16; i++ {
-		if children[i] == nil {
-			childrenHash[i] = nil
-		} else {
-			childrenHash[i] = children[i].nodeHash
+func NewMPT(rootNodeHash []byte, db *leveldb.DB) *MPT {
+	//如果rootNodeHash不为空，则从数据库中查询
+	if rootNodeHash != nil {
+		rootNodeString, error := db.Get(rootNodeHash, nil)
+		if error == nil {
+			rootNode, _ := DeserializeShortNode(rootNodeString)
+			return &MPT{rootNodeHash, rootNode, db}
 		}
-		nodeHash = append(nodeHash, childrenHash[i]...)
 	}
-	hash := sha256.Sum256(nodeHash)
-	nodeHash = hash[:]
-	return &FullNode{nodeHash, children, childrenHash, nil}
-}
-
-// UpdateFullNodeHash updates the nodeHash of a FullNode
-func UpdateFullNodeHash(fn *FullNode) {
-	var nodeHash []byte
-	for i := 0; i < 16; i++ {
-		nodeHash = append(nodeHash, fn.childrenHash[i]...)
-	}
-	nodeHash = append(nodeHash, fn.value...)
-	hash := sha256.Sum256(nodeHash)
-	fn.nodeHash = hash[:]
+	return &MPT{rootNodeHash, nil, db}
 }
 
 // 插入一个KVPair到MPT中，返回新的根节点的哈希值
 func (mpt *MPT) Insert(kvpair *util.KVPair) []byte {
 	//判断是否为第一次插入
-	if mpt.root == nil {
+	if mpt.GetRoot() == nil {
 		//创建一个ShortNode
-		mpt.root = NewShortNode(nil, true, []byte(kvpair.GetKey()), nil, []byte(kvpair.GetValue()))
-		return mpt.root.nodeHash
+		mpt.root = NewShortNode(nil, true, []byte(kvpair.GetKey()), nil, []byte(kvpair.GetValue()), mpt.db)
+		mpt.rootNodeHash = mpt.root.nodeHash
+		return mpt.rootNodeHash
 	}
 	//如果不是第一次插入，递归插入
-	mpt.root = mpt.RecursiveInsertShortNode(nil, []byte(kvpair.GetKey()), []byte(kvpair.GetValue()), mpt.root)
-	return mpt.root.nodeHash
+	mpt.root = mpt.RecursiveInsertShortNode(nil, []byte(kvpair.GetKey()), []byte(kvpair.GetValue()), mpt.GetRoot())
+	mpt.rootNodeHash = mpt.root.nodeHash
+	return mpt.rootNodeHash
 }
 
 // 递归插入当前MPT Node
@@ -121,7 +71,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if bytes.Equal(cnode.suffix, suffix) {
 			cnode.value = value
-			UpdateShortNodeHash(cnode)
+			UpdateShortNodeHash(cnode, mpt.db)
 			return cnode
 		} else {
 			//获取两个suffix的共同前缀
@@ -129,16 +79,16 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 			//更新当前叶节点的prefix和suffix，nodeHash
 			cnode.prefix = append(cnode.prefix, cnode.suffix[0:len(comprefix)+1]...)
 			cnode.suffix = cnode.suffix[len(comprefix)+1:]
-			UpdateShortNodeHash(cnode)
+			UpdateShortNodeHash(cnode, mpt.db)
 			//新建一个LeafNode
-			newLeaf := NewShortNode(append(prefix, suffix[0:len(comprefix)+1]...), true, suffix[len(comprefix)+1:], nil, value)
+			newLeaf := NewShortNode(append(prefix, suffix[0:len(comprefix)+1]...), true, suffix[len(comprefix)+1:], nil, value, mpt.db)
 			//创建一个BranchNode
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
 			children[util.ByteToHexIndex(suffix[len(comprefix)])] = newLeaf
-			newBranch := NewFullNode(children)
+			newBranch := NewFullNode(children, mpt.db)
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为一个FullNode
-			newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil)
+			newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, mpt.db)
 			return newExtension
 		}
 	} else {
@@ -150,26 +100,26 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 		//如果当前节点的suffix被suffix完全包含
 		if len(commPrefix) == len(cnode.suffix) {
 			//递归插入到nextNode中
-			fullnode := mpt.RecursiveInsertFullNode(append(prefix, commPrefix...), suffix[len(commPrefix):], value, cnode.nextNode)
+			fullnode := mpt.RecursiveInsertFullNode(append(prefix, commPrefix...), suffix[len(commPrefix):], value, cnode.GetNextNode(mpt.db))
 			cnode.nextNode = fullnode
 			cnode.nextNodeHash = fullnode.nodeHash
-			UpdateShortNodeHash(cnode)
+			UpdateShortNodeHash(cnode, mpt.db)
 			return cnode
 		} else {
 			//如果当前节点的suffix和suffix有部分公共前缀
 			//更新当前节点的prefix和suffix，nodeHash
 			cnode.prefix = append(cnode.prefix, suffix[0:len(commPrefix)+1]...)
 			cnode.suffix = nil
-			UpdateShortNodeHash(cnode)
+			UpdateShortNodeHash(cnode, mpt.db)
 			//新建一个LeafNode
-			newLeaf := NewShortNode(append(prefix, suffix[0:len(commPrefix)+1]...), true, suffix[len(commPrefix)+1:], nil, value)
+			newLeaf := NewShortNode(append(prefix, suffix[0:len(commPrefix)+1]...), true, suffix[len(commPrefix)+1:], nil, value, mpt.db)
 			//创建一个BranchNode
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
 			children[util.ByteToHexIndex(suffix[len(commPrefix)])] = newLeaf
-			newBranch := NewFullNode(children)
+			newBranch := NewFullNode(children, mpt.db)
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为一个FullNode
-			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil)
+			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, mpt.db)
 			return newExtension
 		}
 	}
@@ -180,28 +130,30 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix []byte, suffix []byte, value []by
 	//如果len(suffix)==0，则value插入到当前FullNode的value中；否则，递归插入到children中
 	if len(suffix) == 0 {
 		cnode.value = value
-		UpdateFullNodeHash(cnode)
+		UpdateFullNodeHash(cnode, mpt.db)
 		return cnode
 	} else {
 		var childnode *ShortNode
-		if cnode.children[util.ByteToHexIndex(suffix[0])] != nil {
-			childnode = mpt.RecursiveInsertShortNode(append(prefix, suffix[0]), suffix[1:], value, cnode.children[util.ByteToHexIndex(suffix[0])])
+		childNode := cnode.GetChildInFullNode(util.ByteToHexIndex(suffix[0]), mpt.db)
+		if childNode != nil {
+			childnode = mpt.RecursiveInsertShortNode(append(prefix, suffix[0]), suffix[1:], value, childNode)
 		} else {
-			childnode = NewShortNode(append(prefix, suffix[0]), true, suffix[1:], nil, value)
+			childnode = NewShortNode(append(prefix, suffix[0]), true, suffix[1:], nil, value, mpt.db)
 		}
 		cnode.children[util.ByteToHexIndex(suffix[0])] = childnode
 		cnode.childrenHash[util.ByteToHexIndex(suffix[0])] = childnode.nodeHash
-		UpdateFullNodeHash(cnode)
+		UpdateFullNodeHash(cnode, mpt.db)
 		return cnode
 	}
 }
 
 // 打印MPT
 func (mpt *MPT) PrintMPT() {
-	if mpt.root == nil {
+	root := mpt.GetRoot()
+	if root == nil {
 		return
 	}
-	mpt.RecursivePrintShortNode(mpt.root, 0)
+	mpt.RecursivePrintShortNode(root, 0)
 }
 
 // 递归打印ShortNode
@@ -210,30 +162,31 @@ func (mpt *MPT) RecursivePrintShortNode(cnode *ShortNode, level int) {
 	if cnode.isLeaf {
 		//打印当前叶子节点
 		fmt.Printf("level: %d, leafNode:%x\n", level, cnode.nodeHash)
-		fmt.Printf("prefix:%x, suffix:%x, value:%x\n", cnode.prefix, cnode.suffix, cnode.value)
+		fmt.Printf("prefix:%s, suffix:%s, value:%s\n", string(cnode.prefix), string(cnode.suffix), string(cnode.value))
 	} else {
 		//打印当前Extension节点
 		fmt.Printf("level: %d, extensionNode:%x\n", level, cnode.nodeHash)
-		fmt.Printf("prefix:%x, suffix:%x, next node:%x\n", cnode.prefix, cnode.suffix, cnode.nextNodeHash)
+		fmt.Printf("prefix:%s, suffix:%s, next node:%x\n", string(cnode.prefix), string(cnode.suffix), cnode.nextNodeHash)
 		//递归打印nextNode
-		mpt.RecursivePrintFullNode(cnode.nextNode, level+1)
+		mpt.RecursivePrintFullNode(cnode.GetNextNode(mpt.db), level+1)
 	}
 }
 
 // 递归打印FullNode
 func (mpt *MPT) RecursivePrintFullNode(cnode *FullNode, level int) {
 	//打印当前FullNode
-	fmt.Printf("level: %d, fullNode:%x, value:%x\n", level, cnode.nodeHash, cnode.value)
+	fmt.Printf("level: %d, fullNode:%x, value:%s\n", level, cnode.nodeHash, string(cnode.value))
 	//打印所有孩子节点的hash
 	for i := 0; i < 16; i++ {
-		if cnode.children[i] != nil {
-			fmt.Printf("children[%d]:%x\n", i, cnode.children[i].nodeHash)
+		if cnode.childrenHash[i] != nil {
+			fmt.Printf("children[%d]:%x\n", i, cnode.childrenHash[i])
 		}
 	}
 	//递归打印所有孩子节点
 	for i := 0; i < 16; i++ {
-		if cnode.children[i] != nil {
-			mpt.RecursivePrintShortNode(cnode.children[i], level+1)
+		childNode := cnode.GetChildInFullNode(i, mpt.db)
+		if childNode != nil {
+			mpt.RecursivePrintShortNode(childNode, level+1)
 		}
 	}
 }
@@ -241,11 +194,12 @@ func (mpt *MPT) RecursivePrintFullNode(cnode *FullNode, level int) {
 // 根据key查询value，返回value和证明
 func (mpt *MPT) QueryByKey(key string) (string, *MPTProof) {
 	//如果MPT为空，返回空
-	if mpt.root == nil {
+	root := mpt.GetRoot()
+	if root == nil {
 		return "", &MPTProof{false, 0, nil}
 	}
 	//递归查询
-	return mpt.RecursiveQueryShortNode([]byte(key), 0, 0, mpt.root)
+	return mpt.RecursiveQueryShortNode([]byte(key), 0, 0, root)
 }
 
 func (mpt *MPT) RecursiveQueryShortNode(key []byte, p int, level int, cnode *ShortNode) (string, *MPTProof) {
@@ -268,7 +222,8 @@ func (mpt *MPT) RecursiveQueryShortNode(key []byte, p int, level int, cnode *Sho
 		proofElement := NewProofElement(level, 1, cnode.prefix, cnode.suffix, nil, cnode.nextNodeHash, [16][]byte{})
 		//当前节点的suffix被key的suffix完全包含，则继续递归查询nextNode，将子查询结果与当前结果合并返回
 		if len(util.CommPrefix(cnode.suffix, key[p:])) == len(cnode.suffix) {
-			valuestr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cnode.suffix), level+1, cnode.nextNode)
+			nextNode := cnode.GetNextNode(mpt.db)
+			valuestr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cnode.suffix), level+1, nextNode)
 			proofElements := append(mptProof.GetProofs(), proofElement)
 			return valuestr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
 		} else {
@@ -288,11 +243,12 @@ func (mpt *MPT) RecursiveQueryFullNode(key []byte, p int, level int, cnode *Full
 		}
 	}
 	//如果当前FullNode的children中没有对应的key[p]，则构造不存在证明返回
-	if cnode.children[util.ByteToHexIndex(key[p])] == nil {
+	childNodeP := cnode.GetChildInFullNode(util.ByteToHexIndex(key[p]), mpt.db)
+	if childNodeP == nil {
 		return "", &MPTProof{false, level, []*ProofElement{proofElement}}
 	}
 	//如果当前FullNode的children中有对应的key[p]，则递归查询children，将子查询结果与当前结果合并返回
-	valuestr, mptProof := mpt.RecursiveQueryShortNode(key, p+1, level+1, cnode.children[util.ByteToHexIndex(key[p])])
+	valuestr, mptProof := mpt.RecursiveQueryShortNode(key, p+1, level+1, childNodeP)
 	proofElements := append(mptProof.GetProofs(), proofElement)
 	return valuestr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
 }
@@ -376,6 +332,30 @@ func ComputMPTRoot(value string, mptProof *MPTProof) []byte {
 		}
 	}
 	return nodeHash0
+}
+
+type SeMPT struct {
+	RootNodeHash []byte //根节点的哈希值
+}
+
+func SerializeMPT(mpt *MPT) []byte {
+	smpt := &SeMPT{mpt.rootNodeHash}
+	jsonSSN, err := json.Marshal(smpt)
+	if err != nil {
+		fmt.Printf("SerializeMPT error: %v\n", err)
+		return nil
+	}
+	return jsonSSN
+}
+
+func DeserializeMPT(data []byte) (*MPT, error) {
+	var smpt SeMPT
+	err := json.Unmarshal(data, &smpt)
+	if err != nil {
+		fmt.Printf("DeserializeMPT error: %v\n", err)
+		return nil, err
+	}
+	return NewMPT(smpt.RootNodeHash, nil), nil
 }
 
 // func main() {

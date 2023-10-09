@@ -16,27 +16,27 @@ type StorageEngine struct {
 	secondaryIndex_meht *meht.MEHT // meht类型的非主键索引
 }
 
-// NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
+// NewStorageEngine : 返回一个新的StorageEngine
 func NewStorageEngine(siMode string, rdx int, bc int, bs int) *StorageEngine {
 	return &StorageEngine{mpt.NewMPT(), siMode, mpt.NewMPT(), meht.NewMEHT(rdx, bc, bs)}
 }
 
-// GetPrimaryIndex() *mpt.MPT: 返回primaryIndex
+// GetPrimaryIndex : 返回primaryIndex
 func (se *StorageEngine) GetPrimaryIndex() *mpt.MPT {
 	return se.primaryIndex
 }
 
-// GetSecondaryIndex_mpt() *mpt.MPT: 返回secondaryIndex_mpt
+// GetSecondaryIndex_mpt : 返回secondaryIndex_mpt
 func (se *StorageEngine) GetSecondaryIndex_mpt() *mpt.MPT {
 	return se.secondaryIndex_mpt
 }
 
-// GetSecondaryIndex_meht() *meht.MEHT: 返回secondaryIndex_meht
+// GetSecondaryIndex_meht : 返回secondaryIndex_meht
 func (se *StorageEngine) GetSecondaryIndex_meht() *meht.MEHT {
 	return se.secondaryIndex_meht
 }
 
-// 向StorageEngine中插入一条记录
+// Insert 向StorageEngine中插入一条记录
 func (se *StorageEngine) Insert(kvpair *util.KVPair) {
 	//插入主键索引
 	se.primaryIndex.Insert(kvpair)
@@ -90,7 +90,7 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair) (string, *meht.MEHT
 	return values, mehtProof
 }
 
-// 打印查询结果
+// PrintQueryResult 打印查询结果
 func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {
 	fmt.Printf("key=%s , value=%s\n", key, value)
 	mptProof.PrintMPTProof()

@@ -14,7 +14,12 @@ func ReadKVPairFromFile(filepath string) []*KVPair {
 		fmt.Println("Open file error!")
 		return nil
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			fmt.Println(err)
+		}
+	}(file)
 	//创建KVPair数组
 	var kvPairs []*KVPair
 	//读取文件内容

@@ -25,7 +25,7 @@ func main() {
 	storageEngine := db.NewStorageEngine(siMode, rdx, bc, bs)
 
 	//读文件创建一个KVPair数组
-	kvPairs := util.ReadKVPairFromFile("/home/jaling/Storage/index/meht/data/testdata.txt")
+	kvPairs := util.ReadKVPairFromFile("data/testdata.txt")
 
 	//插入KVPair数组
 	for i := 0; i < len(kvPairs); i++ {

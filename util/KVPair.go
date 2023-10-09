@@ -59,16 +59,20 @@ func (kv *KVPair) DeleteValue(oldValue string) bool {
 		}
 	} else {
 		isDel := false
+		var posDel int
 		//如果value中有多个值
-		newValues := make([]string, 0)
-		for i := 0; i < len(values); i++ {
-			if values[i] != oldValue {
-				newValues = append(newValues, values[i])
-			} else {
+		for posDel = 0; posDel < len(values); posDel++ {
+			if values[posDel] == oldValue {
 				isDel = true
+				break
 			}
 		}
-		kv.value = strings.Join(newValues, ",")
+		if isDel {
+			newValues := make([]string, len(values))
+			copy(newValues, values)
+			newValues = append(newValues[:posDel], newValues[posDel+1:]...)
+			kv.value = strings.Join(newValues, ",")
+		}
 		return isDel
 	}
 }

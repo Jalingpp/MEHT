@@ -107,12 +107,12 @@ func (b *Bucket) SetSegNum(segNum int) {
 	b.segNum = segNum
 }
 
-// 给定一个key，返回该key所在的segment map key
+// GetSegment 给定一个key，返回该key所在的segment map key
 func (b *Bucket) GetSegment(key string) string {
 	return key[:b.segNum]
 }
 
-// 给定一个key, 判断它是否在该bucket中
+// IsInBucket 给定一个key, 判断它是否在该bucket中
 func (b *Bucket) IsInBucket(key string) bool {
 	segkey := b.GetSegment(key)
 	kvpairs := b.segments[segkey]
@@ -124,7 +124,7 @@ func (b *Bucket) IsInBucket(key string) bool {
 	return false
 }
 
-// 给定一个key, 返回它在该bucket中的value
+// GetValue 给定一个key, 返回它在该bucket中的value
 func (b *Bucket) GetValue(key string) string {
 	segkey := b.GetSegment(key)
 	kvpairs := b.segments[segkey]
@@ -137,7 +137,7 @@ func (b *Bucket) GetValue(key string) string {
 	return ""
 }
 
-// 给定一个key, 返回它所在的segkey，seg是否存在，在seg中的index, 如果不在, 返回-1
+// GetIndex 给定一个key, 返回它所在的segkey，seg是否存在，在seg中的index, 如果不在, 返回-1
 func (b *Bucket) GetIndex(key string) (string, bool, int) {
 	segkey := b.GetSegment(key)
 	kvpairs := b.segments[segkey]
@@ -149,7 +149,7 @@ func (b *Bucket) GetIndex(key string) (string, bool, int) {
 	return "", false, -1
 }
 
-// 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
+// Insert 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
 func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
@@ -209,7 +209,8 @@ func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 			}
 			//判断key应该插入到哪个bucket中
 			ikey := kvpair.GetKey()
-			bk := ikey[len(ikey)-b.ld:][0] - '0'
+			//bk := ikey[len(ikey)-b.ld:][0] - '0'
+			bk := ikey[len(ikey)-b.ld] - '0'
 			fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			buckets[bk].Insert(kvpair)
 			return buckets
@@ -240,7 +241,8 @@ func (b *Bucket) SplitBucket() []*Bucket {
 		for _, kvpair := range kvpairs {
 			k := kvpair.GetKey()
 			//获取key的倒数第ld位
-			bk := k[len(k)-b.ld:][0] - '0'
+			//bk := k[len(k)-b.ld:][0] - '0'
+			bk := k[len(k)-b.ld] - '0'
 			//将数据对象插入到对应的bucket中
 			buckets[bk].Insert(kvpair)
 		}
@@ -248,7 +250,7 @@ func (b *Bucket) SplitBucket() []*Bucket {
 	return buckets
 }
 
-// 给定一个key, 返回它的value,所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segkey及其segRootHash
+// GetProof 给定一个key, 返回它的value,所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segkey及其segRootHash
 func (b *Bucket) GetProof(key string) (string, []byte, *mht.MHTProof) {
 	segkey, isSegExist, index := b.GetIndex(key)
 	if index != -1 {

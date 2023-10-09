@@ -25,15 +25,15 @@ func ByteToHexIndex(b byte) int {
 }
 
 func CommPrefix(a []byte, b []byte) []byte {
-	var comprefix []byte
-	for i := 0; i < len(a) && i < len(b); i++ {
-		if a[i] == b[i] {
-			comprefix = append(comprefix, a[i])
-		} else {
+	var idx int
+	for idx = 0; idx < len(a) && idx < len(b); idx++ {
+		if a[idx] != b[idx] {
 			break
 		}
 	}
-	return comprefix
+	ret := make([]byte, idx)
+	copy(ret, a)
+	return ret
 }
 
 func StringToHex(s string) string {

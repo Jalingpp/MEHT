@@ -209,7 +209,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 			}
 			//判断key应该插入到哪个bucket中
 			ikey := kvpair.GetKey()
-			//bk := ikey[len(ikey)-b.ld:][0] - '0'
 			bk := ikey[len(ikey)-b.ld] - '0'
 			fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			buckets[bk].Insert(kvpair)
@@ -241,7 +240,6 @@ func (b *Bucket) SplitBucket() []*Bucket {
 		for _, kvpair := range kvpairs {
 			k := kvpair.GetKey()
 			//获取key的倒数第ld位
-			//bk := k[len(k)-b.ld:][0] - '0'
 			bk := k[len(k)-b.ld] - '0'
 			//将数据对象插入到对应的bucket中
 			buckets[bk].Insert(kvpair)

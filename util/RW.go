@@ -2,10 +2,48 @@ package util
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 )
+
+func ReadKVPairFromJsonFile(filepath string) []*KVPair {
+	file, err := os.Open(filepath)
+	if err != nil {
+		panic(err)
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(file)
+	var kvPairs []*KVPair
+	content, err := os.ReadFile(filepath)
+	if err != nil {
+		panic(err)
+	}
+	var content_ interface{}
+	if err := json.Unmarshal(content, &content_); err != nil {
+		panic(err)
+	}
+	if content_, ok := content_.(map[string]interface{}); ok {
+		for k1, v1 := range content_ {
+			v_ := ""
+			if traits, ok := v1.(map[string]interface{}); ok {
+				for k2, v2 := range traits {
+					v_ += k2 + ":" + v2.(string) + ", "
+				}
+				v_ = v_[:len(v_)-1]
+			}
+			kvPair := NewKVPair(v_, k1)
+			fmt.Println(v_, k1)
+			kvPairs = append(kvPairs, kvPair)
+		}
+	}
+	return kvPairs
+}
 
 func ReadKVPairFromFile(filepath string) []*KVPair {
 	//打开文本文件

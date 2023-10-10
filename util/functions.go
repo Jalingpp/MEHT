@@ -50,3 +50,27 @@ func HexToString(hexString string) string {
 	}
 	return string(byteSlice)
 }
+
+func Strip(input string, args string) string {
+	s, args_ := []rune(input), []rune(args)
+	lpos, rpos := 0, len(s)
+	lok, rok := false, false
+	argsMap := make(map[rune]bool)
+	for i := 0; i < len(args_); i++ {
+		argsMap[args_[i]] = true
+	}
+	for i := 0; i < len(s) && (!lok || !rok); i++ {
+		if _, ok := argsMap[s[i]]; !ok {
+			lok = true
+			lpos = i
+		}
+		if _, ok := argsMap[s[len(s)-i-1]]; !ok {
+			rok = true
+			rpos = len(s) - i - 1
+		}
+	}
+	if !lok || !rok {
+		return ""
+	}
+	return string(s[lpos : rpos+1])
+}

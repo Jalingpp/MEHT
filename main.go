@@ -25,7 +25,8 @@ func main() {
 	storageEngine := db.NewStorageEngine(siMode, rdx, bc, bs)
 
 	//读文件创建一个KVPair数组
-	kvPairs := util.ReadKVPairFromFile("data/testdata.txt")
+	//kvPairs := util.ReadKVPairFromFile("data/testdata.txt")
+	kvPairs := util.ReadKVPairFromJsonFile("data/testdata3.json")
 
 	//插入KVPair数组
 	for i := 0; i < len(kvPairs); i++ {
@@ -63,7 +64,7 @@ func main() {
 
 	//测试查询（MPT）
 	fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
-	qk_mpt := "Alice"
+	qk_mpt := "1"
 	qv_mpt, qvProof_mpt := storageEngine.GetSecondaryIndex_mpt().QueryByKey(util.StringToHex(qk_mpt)) //需要将qk先转换为十六进制
 	qvs_mpt := strings.Split(qv_mpt, ",")                                                             //将查询结果qv按逗号分隔
 	fmt.Printf("key=%s查询结果：\n", qk_mpt)

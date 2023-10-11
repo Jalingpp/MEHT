@@ -5,6 +5,7 @@ import (
 	"MEHT/util"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // NewSEH(rdx int, bc int, bs int) *SEH {}:returns a new SEH
@@ -50,7 +51,12 @@ func (seh *SEH) GetBucketByKey(key string) *Bucket {
 	if seh.gd == 0 {
 		return seh.ht[""]
 	}
-	bkey := key[len(key)-seh.gd:]
+	var bkey string
+	if len(key) >= seh.gd {
+		bkey = key[len(key)-seh.gd:]
+	} else {
+		bkey = strings.Repeat("0", seh.gd-len(key)) + key
+	}
 	if seh.ht[bkey] == nil {
 		return nil
 	}

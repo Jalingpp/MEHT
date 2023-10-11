@@ -32,9 +32,10 @@ func NewSEDB(seh []byte, dbPath string, siMode string, rdx int, bc int, bs int) 
 	return &SEDB{nil, seh, db, dbPath, siMode, rdx, bc, bs}
 }
 
+// 获取SEDB中的StorageEngine，如果为空，从db中读取se
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
-	if sedb.se == nil {
+	if sedb.se == nil && sedb.seHash != nil {
 		seString, error := sedb.db.Get(sedb.seHash, nil)
 		if error == nil {
 			se, _ := DeserializeStorageEngine(seString)

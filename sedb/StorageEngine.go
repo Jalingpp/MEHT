@@ -175,6 +175,9 @@ func (se *StorageEngine) UpdataStorageEngine(db *leveldb.DB) []byte {
 
 // 打印StorageEngine
 func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {
+	if se == nil {
+		return
+	}
 	fmt.Println("打印StorageEngine-------------------------------------------------------------------------------------------")
 	fmt.Printf("seHash:%x\n", se.seHash)
 	fmt.Printf("primaryIndexRootHash:%x\n", se.primaryIndexRootHash)

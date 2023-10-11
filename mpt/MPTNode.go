@@ -8,6 +8,18 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+//MPT节点相关的结构体和方法
+//func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB) *ShortNode {}:获取FullNode的第index个child，如果为nil，则从数据库中查询
+//func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {}： 获取ShortNode的nextNode，如果为nil，则从数据库中查询
+//func NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode, value []byte, db *leveldb.DB) *ShortNode {}: creates a ShortNode and computes its nodeHash
+//func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {}：更新ShortNode的nodeHash
+//func NewFullNode(children [16]*ShortNode, db *leveldb.DB) *FullNode {}: creates a new FullNode and computes its nodeHash
+//func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {}: updates the nodeHash of a FullNode
+//func SerializeShortNode(sn *ShortNode) []byte {}： 序列化ShortNode
+//func DeserializeShortNode(ssnstring []byte) (*ShortNode, error) {}：反序列化ShortNode
+//func SerializeFullNode(fn *FullNode) []byte {}：序列化FullNode
+// func DeserializeFullNode(sfnstring []byte) (*FullNode, error) {}：反序列化FullNode
+
 type FullNode struct {
 	nodeHash     []byte         //当前节点的哈希值,由childrenHash计算得到
 	children     [16]*ShortNode // children的指针，0-15表示0-9,a-f
@@ -15,6 +27,7 @@ type FullNode struct {
 	value        []byte         // 以前面ExtensionNode的prefix+suffix为key的value
 }
 
+// 获取FullNode的第index个child，如果为nil，则从数据库中查询
 func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB) *ShortNode {
 	//如果当前节点的children[index]为nil，则从数据库中查询
 	if fn.GetChildren()[index] == nil {
@@ -39,10 +52,11 @@ type ShortNode struct {
 	value        []byte    //value（当前节点是leaf node时）
 }
 
+// 获取ShortNode的nextNode，如果为nil，则从数据库中查询
 func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
-	if sn.nextNode == nil && sn.nextNodeHash != nil {
-		fmt.Printf("Find from DB")
+	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
+		fmt.Printf("Find from DB,")
 		nextNodeString, error := db.Get(sn.nextNodeHash, nil)
 		if error == nil {
 			nextNode, _ := DeserializeFullNode(nextNodeString)
@@ -60,8 +74,8 @@ func NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode,
 		nodeHash = append(nodeHash, value...)
 		nextNodeHash = nil
 	} else {
-		nodeHash = append(nodeHash, nextNode.nodeHash...)
 		nextNodeHash = nextNode.nodeHash
+		nodeHash = append(nodeHash, nextNodeHash...)
 	}
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
@@ -71,19 +85,17 @@ func NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode,
 	err := db.Put(sn.nodeHash, ssn, nil)
 	if err != nil {
 		fmt.Println("Insert ShortNode to DB error:", err)
-	} else {
-		fmt.Printf("Inserted ShortNode=%x to DB, ssn=%x\n", sn.nodeHash, ssn)
 	}
 	return sn
 }
 
 // UpdateShortNodeHash 更新ShortNode的nodeHash
 func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {
-	//先删除db中原有节点
-	err := db.Delete(sn.nodeHash, nil)
-	if err != nil {
-		fmt.Println("Delete ShortNode from DB error:", err)
-	}
+	//先删除db中原有节点(考虑到新增的其他ShortNode可能与旧ShortNode的nodeHash相同，删除可能会丢失数据，所以注释掉)
+	// err := db.Delete(sn.nodeHash, nil)
+	// if err != nil {
+	// 	fmt.Println("Delete ShortNode from DB error:", err)
+	// }
 	nodeHash := append(sn.prefix, sn.suffix...)
 	if sn.isLeaf {
 		nodeHash = append(nodeHash, sn.value...)
@@ -94,16 +106,14 @@ func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {
 	sn.nodeHash = hash[:]
 	ssn := SerializeShortNode(sn)
 	//将更新后的sn写入db中
-	err = db.Put(sn.nodeHash, ssn, nil)
+	err := db.Put(sn.nodeHash, ssn, nil)
 	if err != nil {
 		fmt.Println("Insert ShortNode to DB error:", err)
-	} else {
-		fmt.Printf("Inserted ShortNode=%x to DB, ssn=%x\n", sn.nodeHash, ssn)
 	}
 }
 
 // NewFullNode creates a new FullNode and computes its nodeHash
-func NewFullNode(children [16]*ShortNode, db *leveldb.DB) *FullNode {
+func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNode {
 	var childrenHash [16][]byte
 	var nodeHash []byte
 	for i := 0; i < 16; i++ {
@@ -114,17 +124,16 @@ func NewFullNode(children [16]*ShortNode, db *leveldb.DB) *FullNode {
 		}
 		nodeHash = append(nodeHash, childrenHash[i]...)
 	}
+	nodeHash = append(nodeHash, value...)
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
-	fn := &FullNode{nodeHash, children, childrenHash, nil}
+	fn := &FullNode{nodeHash, children, childrenHash, value}
 	//将fn写入db中
 	if db != nil {
 		sfn := SerializeFullNode(fn)
 		err := db.Put(fn.nodeHash, sfn, nil)
 		if err != nil {
 			fmt.Println("Insert FullNode to DB error:", err)
-		} else {
-			fmt.Printf("Inserted FullNode=%x to DB, sfn=%x\n", fn.nodeHash, sfn)
 		}
 	}
 	return fn
@@ -149,8 +158,6 @@ func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {
 	err = db.Put(fn.nodeHash, sfn, nil)
 	if err != nil {
 		fmt.Println("Insert FullNode to DB error:", err)
-	} else {
-		fmt.Printf("Inserted FullNode=%x to DB, sfn=%x\n", fn.nodeHash, sfn)
 	}
 }
 
@@ -163,6 +170,7 @@ type SeShortNode struct {
 	Value        []byte //value（当前节点是leaf node时）
 }
 
+// 序列化ShortNode
 func SerializeShortNode(sn *ShortNode) []byte {
 	ssn := &SeShortNode{sn.GetNodeHash(), sn.GetPrefix(), sn.GetIsLeaf(), sn.GetSuffix(), sn.GetNextNodeHash(), sn.GetValue()}
 	jsonSSN, err := json.Marshal(ssn)
@@ -173,6 +181,7 @@ func SerializeShortNode(sn *ShortNode) []byte {
 	return jsonSSN
 }
 
+// 反序列化ShortNode
 func DeserializeShortNode(ssnstring []byte) (*ShortNode, error) {
 	var ssn SeShortNode
 	err := json.Unmarshal(ssnstring, &ssn)
@@ -192,6 +201,7 @@ type SeFullNode struct {
 	Value        []byte     // 以前面ExtensionNode的prefix+suffix为key的value
 }
 
+// 序列化FullNode
 func SerializeFullNode(fn *FullNode) []byte {
 	sfn := &SeFullNode{fn.GetNodeHash(), fn.GetChildrenHash(), fn.GetValue()}
 	jsonSFN, err := json.Marshal(sfn)
@@ -202,6 +212,7 @@ func SerializeFullNode(fn *FullNode) []byte {
 	return jsonSFN
 }
 
+// 反序列化FullNode
 func DeserializeFullNode(sfnstring []byte) (*FullNode, error) {
 	var sfn SeFullNode
 	err := json.Unmarshal(sfnstring, &sfn)

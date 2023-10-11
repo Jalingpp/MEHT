@@ -3,6 +3,8 @@ package main
 import (
 	"MEHT/sedb"
 	"MEHT/util"
+	"encoding/hex"
+	"fmt"
 	// "github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -32,7 +34,7 @@ func main() {
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 
-	// fmt.Printf("seHash:%s\n", hex.EncodeToString(seHash))
+	fmt.Printf("seHash:%s\n", hex.EncodeToString(seHash))
 
 	kvdataPath := "data/testdata.txt"
 
@@ -40,13 +42,25 @@ func main() {
 	sedb := sedb.NewSEDB(seHash, dbPath, siMode, rdx, bc, bs)
 
 	// //打印SEDB
-	// sedb.PrintSEDB()
+	sedb.PrintSEDB()
 
-	//读文件创建一个KVPair数组
+	// // 测试插入不同长度的key
+	// key1 := "00"
+	// value1 := util.StringToHex("value1")
+	// key2 := "000"
+	// value2 := util.StringToHex("value2")
+	// key3 := "012345678"
+	// value3 := util.StringToHex("value3")
+	// // 插入到SEDB中
+	// sedb.InsertKVPair(util.NewKVPair(key1, value1))
+	// sedb.InsertKVPair(util.NewKVPair(key2, value2))
+	// sedb.InsertKVPair(util.NewKVPair(key3, value3))
+
+	// 读文件创建一个KVPair数组
 	kvPairs := util.ReadKVPairFromFile(kvdataPath)
 
 	//插入KVPair数组
-	for i := 6; i < 8; i++ {
+	for i := 0; i < 6; i++ {
 		//把KV转化为十六进制
 		kvPairs[i].SetKey(kvPairs[i].GetKey())
 		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
@@ -56,6 +70,9 @@ func main() {
 
 	//打印SEDB
 	sedb.PrintSEDB()
+
+	//测试查询功能
+	// qkey:="00"
 
 	//写seHash和dbPath到文件
 	sedb.WriteSEDBInfoToFile(filePath)

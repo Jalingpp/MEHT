@@ -60,11 +60,11 @@ func Strip(input string, args string) string {
 		argsMap[args_[i]] = true
 	}
 	for i := 0; i < len(s) && (!lok || !rok); i++ {
-		if _, ok := argsMap[s[i]]; !ok {
+		if _, ok := argsMap[s[i]]; !ok && !lok {
 			lok = true
 			lpos = i
 		}
-		if _, ok := argsMap[s[len(s)-i-1]]; !ok {
+		if _, ok := argsMap[s[len(s)-i-1]]; !ok && !rok {
 			rok = true
 			rpos = len(s) - i - 1
 		}

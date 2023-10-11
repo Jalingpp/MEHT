@@ -33,7 +33,7 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 			v_ := ""
 			if traits, ok := v1.(map[string]interface{}); ok {
 				for k2, v2 := range traits {
-					v_ += k2 + ":" + v2.(string) + ", "
+					v_ += k2 + ":" + v2.(string) + ","
 				}
 				v_ = v_[:len(v_)-1]
 			}
@@ -72,7 +72,7 @@ func ReadKVPairFromFile(filepath string) []*KVPair {
 		line = strings.TrimRight(line, "\n")
 		kv := strings.Split(line, ",")
 		//创建一个KVPair
-		kvPair := NewKVPair(kv[0], kv[1])
+		kvPair := NewKVPair(Strip(kv[0], "\n\t\r"), Strip(kv[1], "\n\t\r"))
 		//将KVPair加入数组
 		kvPairs = append(kvPairs, kvPair)
 	}

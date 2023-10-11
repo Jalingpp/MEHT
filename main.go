@@ -15,7 +15,7 @@ func main() {
 	//测试StorageEngine
 
 	//参数设置
-	// siMode := "meht" //辅助索引类型，meht或mpt
+	//siMode := "meht" //辅助索引类型，meht或mpt
 	siMode := "mpt"
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 	bc := 4   //meht中bucket的容量，即每个bucket中最多存储的KVPair数
@@ -31,6 +31,9 @@ func main() {
 	//插入KVPair数组
 	for i := 0; i < len(kvPairs); i++ {
 		//把KV转化为十六进制
+		if kvPairs[i].GetValue() == "6071" {
+			fmt.Println("XXX")
+		}
 		kvPairs[i].SetKey(util.StringToHex(kvPairs[i].GetKey()))
 		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
 		//插入StorageEngine
@@ -48,32 +51,32 @@ func main() {
 	// storageEngine.GetSecondaryIndex_meht().PrintMEHT()
 
 	// //测试查询（MEHT）
-	// fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
-	// qk_meht := "Bob"
-	// qv_meht, qvProof_meht := storageEngine.GetSecondaryIndex_meht().QueryByKey(util.StringToHex(qk_meht)) //需要将qk先转换为十六进制
-	// qvs_meht := strings.Split(qv_meht, ",")                                                               //将查询结果qv按逗号分隔
-	// fmt.Printf("key=%s查询结果：\n", qk_meht)
-	// for i := 0; i < len(qvs_meht); i++ {
-	// 	fmt.Printf("value=%s\n", util.HexToString(qvs_meht[i])) //将分裂后的查询结果转换为字符串输出
-	// }
-	// //打印查询结果（MEHT）
-	// meht.PrintQueryResult(qk_meht, qv_meht, qvProof_meht)
-	// //验证查询结果（MEHT）
-	// // storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qvBob, qvBobProof)
-	// meht.VerifyQueryResult(qv_meht, qvProof_meht)
+	fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
+	//qk_meht := "6071"
+	//qv_meht, qvProof_meht := storageEngine.GetSecondaryIndex_meht().QueryByKey(util.StringToHex(qk_meht)) //需要将qk先转换为十六进制
+	//qvs_meht := strings.Split(qv_meht, ",")                                                               //将查询结果qv按逗号分隔
+	//fmt.Printf("key=%s查询结果：\n", qk_meht)
+	//for i := 0; i < len(qvs_meht); i++ {
+	//	fmt.Printf("value=%s\n", util.HexToString(qvs_meht[i])) //将分裂后的查询结果转换为字符串输出
+	//}
+	//打印查询结果（MEHT）
+	//meht.PrintQueryResult(qk_meht, qv_meht, qvProof_meht)
+	//验证查询结果（MEHT）
+	////storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qvBob, qvBobProof)
+	//meht.VerifyQueryResult(qv_meht, qvProof_meht)
 
 	//测试查询（MPT）
 	fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
-	qk_mpt := "1"
+	qk_mpt := "6071"
 	qv_mpt, qvProof_mpt := storageEngine.GetSecondaryIndex_mpt().QueryByKey(util.StringToHex(qk_mpt)) //需要将qk先转换为十六进制
 	qvs_mpt := strings.Split(qv_mpt, ",")                                                             //将查询结果qv按逗号分隔
 	fmt.Printf("key=%s查询结果：\n", qk_mpt)
 	for i := 0; i < len(qvs_mpt); i++ {
 		fmt.Printf("value=%s\n", util.HexToString(qvs_mpt[i])) //将分裂后的查询结果转换为字符串输出
 	}
-	//打印查询结果（MPT）
+	////打印查询结果（MPT）
 	storageEngine.GetSecondaryIndex_mpt().PrintQueryResult(qk_mpt, qv_mpt, qvProof_mpt)
-	//验证查询结果（MPT）
+	////验证查询结果（MPT）
 	storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qv_mpt, qvProof_mpt)
 
 }

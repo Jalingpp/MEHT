@@ -240,6 +240,7 @@ func (b *Bucket) SplitBucket() []*Bucket {
 		for _, kvpair := range kvpairs {
 			k := kvpair.GetKey()
 			//获取key的倒数第ld位
+			//bk := k[len(k)-b.ld:][0] - '0'
 			bk := k[len(k)-b.ld] - '0'
 			//将数据对象插入到对应的bucket中
 			buckets[bk].Insert(kvpair)

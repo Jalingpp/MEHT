@@ -126,17 +126,27 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 		} else {
 			//获取两个suffix的共同前缀
 			comprefix := util.CommPrefix(cnode.suffix, suffix)
-			//更新当前叶节点的prefix和suffix，nodeHash
-			cnode.prefix = append(cnode.prefix, cnode.suffix[0:len(comprefix)+1]...)
-			cnode.suffix = cnode.suffix[len(comprefix)+1:]
-			UpdateShortNodeHash(cnode)
-			//新建一个LeafNode
-			newLeaf := NewShortNode(append(prefix, suffix[0:len(comprefix)+1]...), true, suffix[len(comprefix)+1:], nil, value)
-			//创建一个BranchNode
 			var children [16]*ShortNode
-			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
-			children[util.ByteToHexIndex(suffix[len(comprefix)])] = newLeaf
-			newBranch := NewFullNode(children)
+			var newBranch *FullNode
+			if len(cnode.suffix) > len(comprefix) && len(suffix) >= len(comprefix) {
+				cnode.prefix = append(cnode.prefix, cnode.suffix[0:len(comprefix)+1]...)
+				cnode.suffix = cnode.suffix[len(comprefix)+1:]
+				UpdateShortNodeHash(cnode)
+				children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
+				if len(suffix) > len(comprefix) {
+					newLeaf := NewShortNode(append(prefix, suffix[0:len(comprefix)+1]...), true, suffix[len(comprefix)+1:], nil, value)
+					children[util.ByteToHexIndex(suffix[len(comprefix)])] = newLeaf
+				}
+				newBranch = NewFullNode(children)
+				if len(suffix) == len(comprefix) {
+					newBranch.value = value
+				}
+			} else {
+				newLeaf := NewShortNode(append(prefix, suffix[0:len(comprefix)+1]...), true, suffix[len(comprefix)+1:], nil, value)
+				children[util.ByteToHexIndex(suffix[len(comprefix)])] = newLeaf
+				newBranch = NewFullNode(children)
+				newBranch.value = cnode.value
+			}
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为一个FullNode
 			newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil)
 			return newExtension
@@ -157,17 +167,27 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 			return cnode
 		} else {
 			//如果当前节点的suffix和suffix有部分公共前缀
-			//更新当前节点的prefix和suffix，nodeHash
-			cnode.prefix = append(cnode.prefix, suffix[0:len(commPrefix)+1]...)
-			cnode.suffix = nil
-			UpdateShortNodeHash(cnode)
-			//新建一个LeafNode
-			newLeaf := NewShortNode(append(prefix, suffix[0:len(commPrefix)+1]...), true, suffix[len(commPrefix)+1:], nil, value)
-			//创建一个BranchNode
 			var children [16]*ShortNode
-			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
-			children[util.ByteToHexIndex(suffix[len(commPrefix)])] = newLeaf
-			newBranch := NewFullNode(children)
+			var newBranch *FullNode
+			if len(cnode.suffix) > len(commPrefix) && len(suffix) >= len(commPrefix) {
+				cnode.prefix = append(cnode.prefix, cnode.suffix[0:len(commPrefix)+1]...)
+				cnode.suffix = cnode.suffix[len(commPrefix)+1:]
+				UpdateShortNodeHash(cnode)
+				children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
+				if len(suffix) > len(commPrefix) {
+					newLeaf := NewShortNode(append(prefix, suffix[0:len(commPrefix)+1]...), true, suffix[len(commPrefix)+1:], nil, value)
+					children[util.ByteToHexIndex(suffix[len(commPrefix)])] = newLeaf
+				}
+				newBranch = NewFullNode(children)
+				if len(suffix) == len(commPrefix) {
+					newBranch.value = value
+				}
+			} else {
+				newLeaf := NewShortNode(append(prefix, suffix[0:len(commPrefix)+1]...), true, suffix[len(commPrefix)+1:], nil, value)
+				children[util.ByteToHexIndex(suffix[len(commPrefix)])] = newLeaf
+				newBranch = NewFullNode(children)
+				newBranch.value = cnode.value
+			}
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为一个FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil)
 			return newExtension

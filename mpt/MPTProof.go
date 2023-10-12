@@ -2,6 +2,8 @@ package mpt
 
 import "fmt"
 
+//func (mptProof *MPTProof) PrintMPTProof() {}： 打印 MPTProof
+
 type ProofElement struct {
 	level int // level of proof
 
@@ -39,7 +41,7 @@ func (mptProof *MPTProof) GetLevels() int {
 	return mptProof.levels
 }
 
-// PrintMPTProof prints MPTProof
+// 打印 MPTProof
 func (mptProof *MPTProof) PrintMPTProof() {
 	fmt.Printf("打印MPTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("isExist=%t, levels=%d\n", mptProof.isExist, mptProof.levels)

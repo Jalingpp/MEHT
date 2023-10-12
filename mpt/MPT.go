@@ -14,10 +14,14 @@ import (
 //func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {}：获取MPT的根节点，如果为nil，则从数据库中查询
 //func NewMPT() *MPT {}： NewMPT creates a empty MPT
 //func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {}: 插入一个KVPair到MPT中,返回新的根节点的哈希值
-//PrintMPT() {}: 打印MPT
-//QueryByKey(key string) (string, *MPTProof) {}: 根据key查询value，返回value和证明
-//PrintQueryResult(key string, value string, mptProof *MPTProof) {}: 打印查询结果
-//VerifyQueryResult(value string, mptProof *MPTProof) bool {}: 验证查询结果
+//func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {}：用newRootHash更新mpt的哈希，并更新至DB中
+//func (mpt *MPT) PrintMPT(db *leveldb.DB) {}: 打印MPT
+//func (mpt *MPT) QueryByKey(key string, db *leveldb.DB) (string, *MPTProof) {}： 根据key查询value，返回value和证明
+//func (mpt *MPT) PrintQueryResult(key string, value string, mptProof *MPTProof) {}: 打印查询结果
+//func (mpt *MPT) VerifyQueryResult(value string, mptProof *MPTProof) bool {}: 验证查询结果
+//func ComputMPTRoot(value string, mptProof *MPTProof) []byte {}： 根据MPTProof计算MPT根节点哈希
+//func SerializeMPT(mpt *MPT) []byte {}：序列化MPT
+//func DeserializeMPT(data []byte) (*MPT, error) {}： 反序列化MPT
 
 type MPT struct {
 	rootHash []byte     //MPT的哈希值，对根节点哈希值哈希得到
@@ -160,7 +164,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 			//更新当前节点的prefix和suffix，nodeHash
 			cnode.prefix = append(cnode.prefix, cnode.suffix[0:len(commPrefix)+1]...)
 			if len(cnode.suffix) > len(commPrefix)+1 {
-				cnode.suffix = suffix[len(commPrefix)+1:]
+				cnode.suffix = cnode.suffix[len(commPrefix)+1:]
 			} else {
 				cnode.suffix = nil
 			}
@@ -213,6 +217,7 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix []byte, suffix []byte, value []by
 	}
 }
 
+// 用newRootHash更新mpt的哈希，并更新至DB中
 func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	//DB 中索引MPT的是其根哈希的哈希
 	hashs := sha256.Sum256(mpt.rootHash)
@@ -314,7 +319,7 @@ func (mpt *MPT) RecursiveQueryShortNode(key []byte, p int, level int, cnode *Sho
 		//构造当前节点的证明
 		proofElement := NewProofElement(level, 1, cnode.prefix, cnode.suffix, nil, cnode.nextNodeHash, [16][]byte{})
 		//当前节点的suffix被key的suffix完全包含，则继续递归查询nextNode，将子查询结果与当前结果合并返回
-		if len(util.CommPrefix(cnode.suffix, key[p:])) == len(cnode.suffix) {
+		if cnode.suffix == nil || p < len(key) && len(util.CommPrefix(cnode.suffix, key[p:])) == len(cnode.suffix) {
 			nextNode := cnode.GetNextNode(db)
 			valuestr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cnode.suffix), level+1, nextNode, db)
 			proofElements := append(mptProof.GetProofs(), proofElement)
@@ -431,6 +436,7 @@ type SeMPT struct {
 	RootHash []byte //MPT的哈希值，对根节点哈希值哈希得到
 }
 
+// 序列化MPT
 func SerializeMPT(mpt *MPT) []byte {
 	smpt := &SeMPT{mpt.rootHash}
 	jsonSSN, err := json.Marshal(smpt)
@@ -441,6 +447,7 @@ func SerializeMPT(mpt *MPT) []byte {
 	return jsonSSN
 }
 
+// 反序列化MPT
 func DeserializeMPT(data []byte) (*MPT, error) {
 	var smpt SeMPT
 	err := json.Unmarshal(data, &smpt)

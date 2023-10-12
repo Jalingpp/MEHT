@@ -30,7 +30,7 @@ func ReverseKVPair(kvpair *KVPair) *KVPair {
 	return &KVPair{kvpair.value, kvpair.key}
 }
 
-// AddValue adds a new value to the KVPair
+// AddValue adds a new value to the KVPair, if value is changed, returns true
 func (kv *KVPair) AddValue(newValue string) bool {
 	if kv.value == "" {
 		kv.value = newValue

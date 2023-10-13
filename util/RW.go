@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -30,15 +31,19 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 	}
 	if content_, ok := content_.(map[string]interface{}); ok {
 		for k1, v1 := range content_ {
-			v_ := ""
+			var v_ []string
 			if traits, ok := v1.(map[string]interface{}); ok {
-				for k2, v2 := range traits {
-					v_ += k2 + ":" + v2.(string) + ","
+				v_ = make([]string, 0)
+				k2List := make([]string, 0)
+				for k2, _ := range traits {
+					k2List = append(k2List, k2)
 				}
-				v_ = v_[:len(v_)-1]
+				sort.Strings(k2List)
+				for _, v2 := range k2List {
+					v_ = append(v_, traits[v2].(string))
+				}
 			}
-			kvPair := NewKVPair(v_, k1)
-			fmt.Println(v_, k1)
+			kvPair := NewKVPair(strings.Join(v_, ","), k1)
 			kvPairs = append(kvPairs, kvPair)
 		}
 	}

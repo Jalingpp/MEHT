@@ -11,6 +11,16 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+//func NewStorageEngine(siMode string, rdx int, bc int, bs int) *StorageEngine {}： 返回一个新的StorageEngine
+//func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {}： 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
+//func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {}： 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
+//func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]byte, *mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {}： 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
+//func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {}： 打印查询结果
+//func (se *StorageEngine) UpdataStorageEngine(db *leveldb.DB) []byte {}： 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
+//func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {}： 打印StorageEngine
+//func SerializeStorageEngine(se *StorageEngine) []byte {}：序列化存储引擎
+//func DeserializeStorageEngine(sestring []byte) (*StorageEngine, error) {}： 反序列化存储引擎
+
 type StorageEngine struct {
 	seHash []byte //搜索引擎的哈希值，由主索引根哈希和辅助索引根哈希计算得到
 
@@ -35,7 +45,7 @@ func NewStorageEngine(siMode string, rdx int, bc int, bs int) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil, nil, nil, rdx, bc, bs}
 }
 
-// GetPrimaryIndex() *mpt.MPT: 返回primaryIndex
+// 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
 	if se.primaryIndex == nil && len(se.primaryIndexRootHash) != 0 {
@@ -50,7 +60,7 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	return se.primaryIndex
 }
 
-// GetSecondaryIndex_mpt() *mpt.MPT: 返回secondaryIndex_mpt
+// 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 	//如果当前secondaryIndex_mpt为空，则从数据库中查询
 	if se.secondaryIndex_mpt == nil && len(se.secondaryIndexRootHash_mpt) != 0 {
@@ -63,7 +73,7 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 	return se.secondaryIndex_mpt
 }
 
-// GetSecondaryIndex_meht() *meht.MEHT: 返回secondaryIndex_meht
+// 返回meht类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetSecondaryIndex_meht() *meht.MEHT {
 	return se.secondaryIndex_meht
 }
@@ -151,6 +161,7 @@ func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {
 	mptProof.PrintMPTProof()
 }
 
+// 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
 func (se *StorageEngine) UpdataStorageEngine(db *leveldb.DB) []byte {
 	//删除db中原有的se
 	err := db.Delete(se.seHash, nil)
@@ -206,6 +217,7 @@ type SeStorageEngine struct {
 	Bs  int //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 }
 
+// 序列化存储引擎
 func SerializeStorageEngine(se *StorageEngine) []byte {
 	sese := &SeStorageEngine{se.seHash, se.primaryIndexRootHash, se.secondaryIndexMode, se.secondaryIndexRootHash_mpt, se.rdx, se.bc, se.bs}
 	jsonSE, err := json.Marshal(sese)
@@ -216,6 +228,7 @@ func SerializeStorageEngine(se *StorageEngine) []byte {
 	return jsonSE
 }
 
+// 反序列化存储引擎
 func DeserializeStorageEngine(sestring []byte) (*StorageEngine, error) {
 	var sese SeStorageEngine
 	err := json.Unmarshal(sestring, &sese)

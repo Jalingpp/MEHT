@@ -1,0 +1,66 @@
+["TokenID": 7605,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/7605,
+"Attributes":{
+	"image": "https://i.seadn.io/gae/FuCbabrVswmadZlCxgsDOK-MhPJlWMs7YxM2xQ8LYa0C3MXeAYszwC8oDPSC42RT_WxKMUyLvXigKR3n52WrMRCHniRk8AYcJBlE?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#7605"
+}],
+["TokenID": 6997,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/6997,
+"Attributes":{
+	"image": "https://i.seadn.io/gae/oRPCt7yGisoP4ORi28kFk2e2ON2Wplt8sNOyMtvf2ocFTwXXzkm21znnoMZU3_DydHIS7wIkz2T-ICM4PmIx5aY9lS4j0sJA-4CAjOY?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#6997"
+}],
+["TokenID": 6561,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/6561,
+"Attributes":{
+	"image": "https://i.seadn.io/gcs/files/037bf2a9bc2e380e29a4e632fd5e7ffe.png?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#6561"
+}],
+["TokenID": 9080,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/9080,
+"Attributes":{
+	"image": "https://i.seadn.io/gae/F_fLwEVcZnjNDxfHkCNdMwTeusg4cpODC4Cx_7k1JuORKkrY59qhRrv1cvDOsZShQdSCzA68_MvQiZmNkWZjmAlFHL3bktyijztFsg?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#9080"
+}],
+["TokenID": 2040,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/2040,
+"Attributes":{
+	"image": "https://i.seadn.io/gcs/files/0ae0e94cc196b4359030e285d2815618.png?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#2040"
+}],
+["TokenID": 8708,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/8708,
+"Attributes":{
+	"image": "https://i.seadn.io/gcs/files/0d74c23e4b7546c73c19915ae81b6f0b.png?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#8708"
+}],
+["TokenID": 4930,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/4930,
+"Attributes":{
+	"image": "https://i.seadn.io/gcs/files/70385a0471d486edf6f23703ff3bd1ad.png?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#4930"
+}],
+["TokenID": 2037,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/2037,
+"Attributes":{
+	"image": "https://i.seadn.io/gcs/files/9f70e8d394ea24b7aa6c184380395661.png?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#2037"
+}],
+["TokenID": 6213,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/6213,
+"Attributes":{
+	"image": "https://i.seadn.io/gae/Wj8K_oZIewOxmdl1aGlgeLxfbMNJLXACwFwGKfAkVnns_4bxnhzEVVQs8CpP80Gx57gAGuASS4SRElMaZOgkDCEvVnXY1z_-5F5_1w?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#6213"
+}],
+["TokenID": 9922,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/9922,
+"Attributes":{
+	"image": "https://i.seadn.io/gcs/files/f850e1ea2ec37d9f2abbe72b90e0c826.png?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#9922"
+}],
+["TokenID": 4541,
+"TokenURI": https://opensea.io/assets/ethereum/0xb7f7f6c52f2e2fdb1963eab30438024864c313f6/4541,
+"Attributes":{
+	"image": "https://i.seadn.io/gae/qKM6Eea0ntkY_JilPXtMkrLIdJUA8duegQD9U9BW8gZs79lzv41ATSSpwJLZIMnF5y4Va7udSwvt4JBLa0OCYcvo2jzYS92lcXpKxg?auto=format&amp;dpr=1&amp;w=1000",
+	"name": "W#4541"
+}]

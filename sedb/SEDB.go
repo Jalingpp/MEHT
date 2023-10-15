@@ -173,6 +173,8 @@ func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []
 // 验证查询结果
 func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof *SEDBProof) bool {
 	r := false
+	rCh := make(chan bool)
+
 	fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
 	//验证非主键查询结果
 	fmt.Printf("验证非主键查询结果:")
@@ -194,12 +196,17 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 		return false
 	}
 	fmt.Printf("验证主键查询结果:\n")
+	primaryIndexProof := sedbProof.GetPrimaryIndexProof()
 	for i := 0; i < len(result); i++ {
-		fmt.Printf("KV[%d]:", i)
-		r = sedb.se.GetPrimaryIndex(sedb.db).VerifyQueryResult(result[i].GetValue(), sedbProof.GetPrimaryIndexProof()[i])
+		go func(result string, proof *mpt.MPTProof) {
+			rCh <- sedb.se.GetPrimaryIndex(sedb.db).VerifyQueryResult(result, proof)
+		}(result[i].GetValue(), primaryIndexProof[i])
+	}
+	for i := 0; i < len(result); i++ {
+		r = <-rCh
 		if !r {
-			fmt.Println("主键查询结果验证失败！")
-			return false
+			fmt.Println("主键查询结果验证失败!")
+			return r
 		}
 	}
 	return r

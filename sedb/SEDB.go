@@ -6,10 +6,10 @@ import (
 	"MEHT/util"
 	"encoding/hex"
 	"fmt"
+	"github.com/syndtr/goleveldb/leveldb"
 	"log"
 	"strings"
-
-	"github.com/syndtr/goleveldb/leveldb"
+	"sync"
 )
 
 //func NewSEDB(seh []byte, dbPath string, siMode string, rdx int, bc int, bs int) *SEDB {}：新建一个SEDB
@@ -73,6 +73,42 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	return sedbProof
 }
 
+//func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
+//	if sedb.GetStorageEngine() == nil {
+//		fmt.Println("SEDB is empty!")
+//		return "", nil, nil
+//	}
+//	//根据Hexkeyword在非主键索引中查询
+//	var primaryKey string
+//	var secondaryMPTProof *mpt.MPTProof
+//	var secondaryMEHTProof *meht.MEHTProof
+//	var primaryProof []*mpt.MPTProof
+//	var queryResult []*util.KVPair
+//	if sedb.siMode == "mpt" {
+//		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.db).QueryByKey(Hexkeyword, sedb.db)
+//		secondaryMEHTProof = nil
+//	} else {
+//		primaryKey, secondaryMEHTProof = sedb.GetStorageEngine().GetSecondaryIndex_meht().QueryByKey(Hexkeyword)
+//		secondaryMPTProof = nil
+//	}
+//	//根据primaryKey在主键索引中查询
+//	if primaryKey == "" {
+//		fmt.Println("No such key!")
+//		return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
+//	}
+//	primarykeys := strings.Split(primaryKey, ",")
+//	for i := 0; i < len(primarykeys); i++ {
+//		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
+//		//用qV和primarykeys[i]构造一个kvpair
+//		kvpair := util.NewKVPair(primarykeys[i], qV)
+//		//把kvpair加入queryResult
+//		queryResult = append(queryResult, kvpair)
+//		//把pProof加入primaryProof
+//		primaryProof = append(primaryProof, pProof)
+//	}
+//	return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
+//}
+
 // 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
@@ -85,6 +121,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var secondaryMEHTProof *meht.MEHTProof
 	var primaryProof []*mpt.MPTProof
 	var queryResult []*util.KVPair
+	var lock sync.Mutex
+	var wg sync.WaitGroup
 	if sedb.siMode == "mpt" {
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.db).QueryByKey(Hexkeyword, sedb.db)
 		secondaryMEHTProof = nil
@@ -98,15 +136,22 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
 	}
 	primarykeys := strings.Split(primaryKey, ",")
+	wg.Add(len(primarykeys))
 	for i := 0; i < len(primarykeys); i++ {
-		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
-		//用qV和primarykeys[i]构造一个kvpair
-		kvpair := util.NewKVPair(primarykeys[i], qV)
-		//把kvpair加入queryResult
-		queryResult = append(queryResult, kvpair)
-		//把pProof加入primaryProof
-		primaryProof = append(primaryProof, pProof)
+		go func(primarykey string, mutex *sync.Mutex) {
+			qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykey, sedb.db)
+			//用qV和primarykeys[i]构造一个kvpair
+			kvpair := util.NewKVPair(primarykey, qV)
+			lock.Lock()
+			//把kvpair加入queryResult
+			queryResult = append(queryResult, kvpair)
+			//把pProof加入primaryProof
+			primaryProof = append(primaryProof, pProof)
+			lock.Unlock()
+			wg.Done()
+		}(primarykeys[i], &lock)
 	}
+	wg.Wait()
 	return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
 }
 

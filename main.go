@@ -41,10 +41,10 @@ func main() {
 	//seDB.InsertKVPair(util.NewKVPair(key3, value3))
 
 	// 读文件创建一个KVPair数组
-	//kvdataPath := "data/testdata.txt"
-	//kvPairs := util.ReadKVPairFromFile(kvdataPath)
-	kvdataPath := "data/testdata3.json"
-	kvPairs := util.ReadKVPairFromJsonFile(kvdataPath)
+	kvdataPath := "data/testdata.txt"
+	kvPairs := util.ReadKVPairFromFile(kvdataPath)
+	//kvdataPath := "data/testdata3.json"
+	//kvPairs := util.ReadKVPairFromJsonFile(kvdataPath)
 
 	//插入KVPair数组
 	for i := 1; i < len(kvPairs); i++ {
@@ -58,7 +58,7 @@ func main() {
 	seDB.PrintSEDB()
 
 	//测试查询功能
-	qkey := util.StringToHex("6071")
+	qkey := util.StringToHex("Alice")
 	qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
 	seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
 	//验证查询结果

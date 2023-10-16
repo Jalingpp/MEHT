@@ -71,8 +71,6 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if bytes.Equal(cnode.suffix, suffix) {
 			if !bytes.Equal(cnode.value, value) {
-				fmt.Println(util.HexToString(string(cnode.value)))
-				fmt.Println(util.HexToString(string(value)))
 				cnode.value = value
 				UpdateShortNodeHash(cnode, db)
 			} else {

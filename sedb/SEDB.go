@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/syndtr/goleveldb/leveldb"
 	"log"
+	"os"
 	"strings"
 	"sync"
 )
@@ -227,8 +228,13 @@ func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {
 		return nil, ""
 	}
 	seh, _ := hex.DecodeString(seh_dbPath[0])
-	// TODO 递归判断当前路径是否存在，不存在则递归至上一级目录，直至找到后逐层os.Mkdir
-	dbPath := util.Strip(seh_dbPath[1], "\r")
+	dbPath := util.Strip(seh_dbPath[1], "\n\t\r")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		err = os.MkdirAll(dbPath, 0750)
+		if err != nil {
+			panic(err)
+		}
+	}
 	return seh, dbPath
 }
 

@@ -9,6 +9,34 @@ import (
 	"strings"
 )
 
+// GetDirAllFilePathsFollowSymlink gets all the file paths in the specified directory recursively.
+func GetDirAllFilePathsFollowSymlink(dirname string) ([]string, error) {
+	// Remove the trailing path separator if dirname has.
+	dirname = strings.TrimSuffix(dirname, string(os.PathSeparator))
+	infos, err := os.ReadDir(dirname)
+	if err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(infos))
+	for _, info := range infos {
+		path := dirname + string(os.PathSeparator) + info.Name()
+		realInfo, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if realInfo.IsDir() {
+			tmp, err := GetDirAllFilePathsFollowSymlink(path)
+			if err != nil {
+				return nil, err
+			}
+			paths = append(paths, tmp...)
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
 func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 	file, err := os.Open(filepath)
 	if err != nil {
@@ -43,7 +71,7 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 					v_ = append(v_, traits[v2].(string))
 				}
 			}
-			kvPair := NewKVPair(strings.Join(v_, ","), k1)
+			kvPair := NewKVPair(k1, strings.Join(v_, ","))
 			kvPairs = append(kvPairs, kvPair)
 		}
 	}

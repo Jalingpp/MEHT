@@ -70,8 +70,14 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 	if cnode.isLeaf {
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if bytes.Equal(cnode.suffix, suffix) {
-			cnode.value = value
-			UpdateShortNodeHash(cnode, db)
+			if !bytes.Equal(cnode.value, value) {
+				fmt.Println(util.HexToString(string(cnode.value)))
+				fmt.Println(util.HexToString(string(value)))
+				cnode.value = value
+				UpdateShortNodeHash(cnode, db)
+			} else {
+				fmt.Println("Duplicate KVPairs in primary index.")
+			}
 			return cnode
 		} else {
 			//获取两个suffix的共同前缀
@@ -193,8 +199,12 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix []byte, suffix []byte, value []by
 	//如果当前节点是FullNode
 	//如果len(suffix)==0，则value插入到当前FullNode的value中；否则，递归插入到children中
 	if len(suffix) == 0 {
-		cnode.value = value
-		UpdateFullNodeHash(cnode, db)
+		if !bytes.Equal(cnode.value, value) {
+			cnode.value = value
+			UpdateFullNodeHash(cnode, db)
+		} else {
+			fmt.Println("Duplicate KVPairs in primary index.")
+		}
 		return cnode
 	} else {
 		var childnode *ShortNode                                                  //新创建的childNode或递归查询返回的childNode

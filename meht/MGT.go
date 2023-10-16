@@ -96,7 +96,7 @@ func GetOldBucketKey(bucket *Bucket) []int {
 // MGT生长,给定新的buckets,返回更新后的MGT
 func (mgt *MGT) MGTUpdate(newBuckets []*Bucket) *MGT {
 	if len(newBuckets) == 0 {
-		fmt.Printf("newBuckets is empty\n")
+		//fmt.Printf("newBuckets is empty\n")
 		return mgt
 	}
 	//如果root为空,则直接为newBuckets创建叶节点(newBuckets中只有一个bucket)

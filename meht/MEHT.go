@@ -143,7 +143,7 @@ func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
 // 验证查询结果
 func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	//验证segProof
-	fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
+	//fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
 	//计算segRootHash
 	//如果key不存在，则判断segment是否存在，存在则根据segment中所有的值构建segment的默克尔树根
 	var segRootHash []byte
@@ -157,7 +157,7 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 			mht := mht.NewMerkleTree(data)
 			segRootHash = mht.GetRootHash()
 			if !bytes.Equal(segRootHash, mehtProof.segRootHash) {
-				fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mht.GetRootHash()))
+				//fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mht.GetRootHash()))
 				return false
 			}
 		} else {
@@ -170,7 +170,7 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 						if isIn {
 							break
 						} else {
-							fmt.Printf("MHTProof中的segRootHashes不在MGTProof的叶节点中,验证不通过\n")
+							//fmt.Printf("MHTProof中的segRootHashes不在MGTProof的叶节点中,验证不通过\n")
 							return false
 						}
 					}
@@ -185,17 +185,17 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 		//如果key存在，则根据key对应的value构建segment的默克尔树根
 		segRootHash = ComputSegHashRoot(value, mehtProof.mhtProof.GetProofPairs())
 		if segRootHash == nil || !bytes.Equal(segRootHash, mehtProof.segRootHash) {
-			fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(segRootHash))
+			//fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(segRootHash))
 			return false
 		}
 	}
 	//计算mgtRootHash
 	mgtRootHash := ComputMGTRootHash(segRootHash, mehtProof.mgtProof)
 	if mgtRootHash == nil || !bytes.Equal(mgtRootHash, mehtProof.mgtRootHash) {
-		fmt.Printf("mgtRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mgtRootHash))
+		//fmt.Printf("mgtRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mgtRootHash))
 		return false
 	}
-	fmt.Printf("验证通过,MGT的根哈希为:%s\n", hex.EncodeToString(mgtRootHash))
+	//fmt.Printf("验证通过,MGT的根哈希为:%s\n", hex.EncodeToString(mgtRootHash))
 	return true
 }
 

@@ -56,7 +56,7 @@ type ShortNode struct {
 func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
 	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
-		fmt.Printf("Find from DB,")
+		//fmt.Printf("Find from DB,")
 		nextNodeString, error := db.Get(sn.nextNodeHash, nil)
 		if error == nil {
 			nextNode, _ := DeserializeFullNode(nextNodeString)

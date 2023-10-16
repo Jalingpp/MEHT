@@ -88,26 +88,28 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]byte, *m
 	}
 	se.primaryIndexRootHash = se.GetPrimaryIndex(db).Insert(kvpair, db)
 	_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
-	fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+	//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 	//构造倒排KV
 	reversedKV := util.ReverseKVPair(kvpair)
 	//插入非主键索引
 	if se.secondaryIndexMode == "mpt" {
-		newValues, mptProof := se.InsertIntoMPT(reversedKV, db)
+		//newValues, mptProof := se.InsertIntoMPT(reversedKV, db)
+		_, mptProof := se.InsertIntoMPT(reversedKV, db)
 		//打印插入结果
-		fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
-		mptProof.PrintMPTProof()
+		//fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
+		//mptProof.PrintMPTProof()
 		//更新搜索引擎的哈希值
 		se.UpdataStorageEngine(db)
 		return se.seHash, primaryProof, mptProof, nil
 	} else if se.secondaryIndexMode == "meht" {
-		newValues, mehtProof := se.InsertIntoMEHT(reversedKV)
+		//newValues, mehtProof := se.InsertIntoMEHT(reversedKV)
 		//打印插入结果
-		fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
-		meht.PrintMEHTProof(mehtProof)
+		_, mehtProof := se.InsertIntoMEHT(reversedKV)
+		//fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
+		//meht.PrintMEHTProof(mehtProof)
 		return se.seHash, primaryProof, nil, mehtProof
 	} else {
-		fmt.Printf("非主键索引类型siMode设置错误\n")
+		//fmt.Printf("非主键索引类型siMode设置错误\n")
 		return se.seHash, nil, nil, nil
 	}
 }

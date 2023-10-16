@@ -160,10 +160,10 @@ func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 		//更新bucket中对应segment的merkle tree
 		b.merkleTrees[segkey].UpdateRoot(index, []byte(kvpair.GetValue()))
 		buckets = append(buckets, b)
-		updateProof := b.merkleTrees[segkey].GetProof(index)
+		//updateProof := b.merkleTrees[segkey].GetProof(index)
 		//输出更新后的value和proof
-		fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
-		PrintMHTProof(updateProof)
+		//fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
+		//PrintMHTProof(updateProof)
 		return buckets
 	} else {
 		//获得kvpair的key的segment
@@ -176,7 +176,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 		if b.number < b.capacity {
 			//未满,插入到对应的segment中
 			b.segments[segkey] = append(b.segments[segkey], kvpair)
-			index := len(b.segments[segkey]) - 1
+			//index := len(b.segments[segkey]) - 1
 			// fmt.Printf("index: %d\n", index)
 			b.number++
 			//若该segment对应的merkle tree不存在,则创建,否则插入value到merkle tree中
@@ -186,14 +186,14 @@ func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 			//插入value到merkle tree中,返回新的根哈希
 			b.merkleTrees[segkey].InsertData([]byte(kvpair.GetValue()))
 			buckets = append(buckets, b)
-			updateProof := b.merkleTrees[segkey].GetProof(index)
+			//updateProof := b.merkleTrees[segkey].GetProof(index)
 			//输出插入的value和proof
-			fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
-			PrintMHTProof(updateProof)
+			//fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
+			//PrintMHTProof(updateProof)
 			return buckets
 		} else {
 			//已满,分裂成rdx个bucket
-			fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey()), b.rdx)
+			//fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey()), b.rdx)
 			buckets = append(buckets, b.SplitBucket()...)
 			//为所有bucket构建merkle tree
 			for _, bucket := range buckets {
@@ -210,7 +210,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair) []*Bucket {
 			//判断key应该插入到哪个bucket中
 			ikey := kvpair.GetKey()
 			bk := ikey[len(ikey)-b.ld] - '0'
-			fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
+			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			buckets[bk].Insert(kvpair)
 			return buckets
 		}

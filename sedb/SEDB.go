@@ -112,7 +112,7 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 // 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
-		fmt.Println("SEDB is empty!")
+		//fmt.Println("SEDB is empty!")
 		return "", nil, nil
 	}
 	//根据Hexkeyword在非主键索引中查询
@@ -132,7 +132,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	}
 	//根据primaryKey在主键索引中查询
 	if primaryKey == "" {
-		fmt.Println("No such key!")
+		//fmt.Println("No such key!")
 		return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
 	}
 	primarykeys := strings.Split(primaryKey, ",")
@@ -162,9 +162,9 @@ func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []
 	for i := 0; i < len(qresult); i++ {
 		fmt.Printf("查询结果[%d]:key=%s,value=%s\n", i, util.HexToString(qresult[i].GetKey()), util.HexToString(qresult[i].GetValue()))
 	}
-	fmt.Printf("查询证明为:\n")
+	//fmt.Printf("查询证明为:\n")
 	if qproof != nil {
-		qproof.PrintSEDBProof()
+		//qproof.PrintSEDBProof()
 	} else {
 		fmt.Printf("查询证明为空\n")
 	}
@@ -227,6 +227,7 @@ func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {
 		return nil, ""
 	}
 	seh, _ := hex.DecodeString(seh_dbPath[0])
+	// TODO 递归判断当前路径是否存在，不存在则递归至上一级目录，直至找到后逐层os.Mkdir
 	dbPath := util.Strip(seh_dbPath[1], "\r")
 	return seh, dbPath
 }

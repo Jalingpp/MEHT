@@ -5,8 +5,10 @@ import (
 	"MEHT/util"
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
-	"strconv"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 //NewMEHT(rdx int, bc int, bs int) *MEHT {}: NewMEHT returns a new MEHT
@@ -18,93 +20,87 @@ import (
 //PrintMEHTProof(mehtProof MEHTProof) {}: 打印MEHTProof
 
 type MEHT struct {
+	name string // name of the MEHT, is used to distinguish different MEHTs in leveldb
+
 	rdx int // radix of one bit, initial  given，key编码的进制数（基数）
 	bc  int // bucket capacity, initial given，每个bucket的容量
 	bs  int // bucket segment number, initial given，key中区分segment的位数
 
-	seh *SEH
-	mgt *MGT
+	seh     *SEH //the key of seh in leveldb is always name+"seh"
+	mgt     *MGT
+	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
+}
+
+// NewMEHT returns a new MEHT
+func NewMEHT(name string, rdx int, bc int, bs int) *MEHT {
+	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(), nil}
+}
+
+// 更新MEHT到db
+func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
+	meMEHT := SerializeMEHT(meht)
+	db.Put([]byte(meht.name+"meht"), meMEHT, nil)
 }
 
 // GetSEH returns the SEH of the MEHT
-func (meht *MEHT) GetSEH() *SEH {
+func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
+	if meht.seh == nil {
+		sehString, error := db.Get([]byte(meht.name+"seh"), nil)
+		if error == nil {
+			seh, _ := DeserializeSEH(sehString)
+			meht.seh = seh
+		}
+	}
 	return meht.seh
 }
 
 // GetMGT returns the MGT of the MEHT
-func (meht *MEHT) GetMGT() *MGT {
+func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
+	if meht.mgt == nil {
+		mgtString, error := db.Get(meht.mgtHash, nil)
+		if error == nil {
+			mgt, _ := DeserializeMGT(mgtString)
+			meht.mgt = mgt
+		}
+	}
 	return meht.mgt
 }
 
-// NewMEHT returns a new MEHT
-func NewMEHT(rdx int, bc int, bs int) *MEHT {
-	return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT()}
-}
-
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-func (meht *MEHT) Insert(kvpair *util.KVPair) (*Bucket, string, *MEHTProof) {
+func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
-	if meht.seh.bucketsNumber == 0 {
-		//创建新的bucket
-		bucket := NewBucket(0, meht.seh.rdx, meht.seh.bucketCapacity, meht.seh.bucketSegNum)
-		bucket.Insert(kvpair)
-		//更新ht
-		meht.seh.ht[""] = bucket
-		meht.seh.bucketsNumber++
-		//更新mgt
-		meht.mgt.Root = NewMGTNode(nil, true, bucket)
-		//获取proof
-		_, segRootHash, mhtProof := meht.seh.ht[""].GetProof(kvpair.GetKey())
-		mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey())
-		return bucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+	if meht.GetSEH(db).bucketsNumber == 0 {
+		//插入KV到SEH
+		buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+		//更新seh到db
+		meht.seh.UpdateSEHToDB(db)
+		//新建mgt的根节点
+		meht.GetMGT(db).Root = NewMGTNode(nil, true, buckets[0], db)
+		//更新mgt的根节点哈希并更新到db
+		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+		mgtRootHash, mgtProof := meht.mgt.GetProof(buckets[0].GetBucketKey(), db)
+		return buckets[0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	bucket := meht.seh.GetBucketByKey(kvpair.GetKey())
-	if bucket != nil {
-		//插入(更新)到已存在的bucket中
-		buckets := bucket.Insert(kvpair)
-		//无论是否分裂，都需要更新mgt
-		meht.mgt.MGTUpdate(buckets)
-		//未发生分裂
-		if len(buckets) == 1 {
-			//获取proof
-			_, segRootHash, mhtProof := meht.seh.ht[kvpair.GetKey()[len(kvpair.GetKey())-meht.seh.gd:]].GetProof(kvpair.GetKey())
-			mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey())
-			return bucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
-		}
-		//发生分裂,更新ht
-		newld := buckets[0].GetLD()
-		if newld > meht.seh.gd {
-			//ht需扩展
-			meht.seh.gd++
-			originHT := meht.seh.ht
-			meht.seh.ht = make(map[string]*Bucket, meht.seh.gd*meht.seh.rdx)
-			//遍历orifinHT,将bucket指针指向新的bucket
-			for k, v := range originHT {
-				for i := 0; i < meht.seh.rdx; i++ {
-					newbkey := strconv.Itoa(i) + k
-					meht.seh.ht[newbkey] = v
-				}
-			}
-		}
-		//无论是否扩展,均需遍历buckets,更新ht
-		for i := 0; i < len(buckets); i++ {
-			bkey := util.IntArrayToString(buckets[i].GetBucketKey())
-			meht.seh.ht[bkey] = buckets[i]
-		}
-		_, segRootHash, mhtProof := meht.seh.ht[kvpair.GetKey()[len(kvpair.GetKey())-meht.seh.gd:]].GetProof(kvpair.GetKey())
-		mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey())
-		return bucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
-	}
-	return nil, "", &MEHTProof{nil, nil, nil, nil}
+	buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+	//更新seh到db
+	meht.seh.UpdateSEHToDB(db)
+	//无论是否分裂，都需要更新mgt
+	meht.GetMGT(db).MGTUpdate(buckets, db)
+	//更新mgt的根节点哈希并更新到db
+	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+	//获取当前KV插入的bucket
+	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db)
+	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db)
+	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
 // 打印整个MEHT
-func (meht *MEHT) PrintMEHT() {
+func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
-	meht.seh.PrintSEH()
-	meht.mgt.PrintMGT()
+	meht.GetSEH(db).PrintSEH(db)
+	meht.GetMGT(db).PrintMGT(db)
 }
 
 type MEHTProof struct {
@@ -114,18 +110,25 @@ type MEHTProof struct {
 	mgtProof    []MGTProof
 }
 
-// 给定一个key，返回它的value及其证明proof，不存在，则返回nil,nil
-func (meht *MEHT) QueryByKey(key string) (string, *MEHTProof) {
+// 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
+func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
-	bucket := meht.seh.GetBucketByKey(key)
+	bucket := meht.GetSEH(db).GetBucketByKey(key, db)
 	if bucket != nil {
-		//根据key找到segRootHash和segProof
-		value, segRootHash, mhtProof := meht.seh.ht[key[len(key)-meht.seh.gd:]].GetProof(key)
-		//根据key找到mgtRootHash和mgtProof
-		mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey())
-		return value, &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		//根据key找到value
+		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db)
+		return value, bucket, segkey, isSegExist, index
 	}
-	return "", &MEHTProof{nil, nil, nil, nil}
+	return "", nil, "", false, -1
+}
+
+// 根据查询结果构建MEHTProof
+func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, index int, db *leveldb.DB) *MEHTProof {
+	//找到segRootHash和segProof
+	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db)
+	//根据key找到mgtRootHash和mgtProof
+	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db)
+	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
 // 打印查询结果
@@ -208,6 +211,39 @@ func PrintMEHTProof(mehtProof *MEHTProof) {
 	fmt.Printf("mgtRootHash=%s\n", hex.EncodeToString(mehtProof.mgtRootHash))
 	fmt.Printf("mgtProof:\n")
 	PrintMGTProof(mehtProof.mgtProof)
+}
+
+type SeMEHT struct {
+	Name string //name of meht
+
+	Rdx int // radix of one bit, initial  given，key编码的进制数（基数）
+	Bc  int // bucket capacity, initial given，每个bucket的容量
+	Bs  int // bucket segment number, initial given，key中区分segment的位数
+
+	MgtHash []byte // hash of the mgt
+}
+
+// 序列化MEHT
+func SerializeMEHT(meht *MEHT) []byte {
+	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash}
+	jsonSSN, err := json.Marshal(seMEHT)
+	if err != nil {
+		fmt.Printf("SerializeMEHT error: %v\n", err)
+		return nil
+	}
+	return jsonSSN
+}
+
+// 反序列化MEHT
+func DeserializeMEHT(data []byte) (*MEHT, error) {
+	var seMEHT SeMEHT
+	err := json.Unmarshal(data, &seMEHT)
+	if err != nil {
+		fmt.Printf("DeserializeMEHT error: %v\n", err)
+		return nil, err
+	}
+	meht := &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash}
+	return meht, nil
 }
 
 // func main() {

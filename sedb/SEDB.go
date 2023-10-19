@@ -15,6 +15,9 @@ import (
 //func NewSEDB(seh []byte, dbPath string, siMode string, rdx int, bc int, bs int) *SEDB {}：新建一个SEDB
 //func (sedb *SEDB) GetStorageEngine() *StorageEngine {}： 获取SEDB中的StorageEngine，如果为空，从db中读取se
 //func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {}： 向SEDB中插入一条记录,返回插入证明
+//func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {}: 根据十六进制的非主键Hexkeyword查询完整的kvpair
+//func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []*util.KVPair, qproof *SEDBProof) {}: 打印非主键查询结果
+//func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof *SEDBProof) bool {}: 验证查询结果
 //func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {}： 写seHash和dbPath到文件
 //func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {}： 从文件中读取seHash和dbPath
 //func (sedb *SEDB) PrintSEDB() {}： 打印SEDB
@@ -25,20 +28,21 @@ type SEDB struct {
 	db     *leveldb.DB    //底层存储的指针
 	dbPath string         //底层存储的文件路径
 
-	siMode string //se的参数，辅助索引类型，meht或mpt
-	rdx    int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc     int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs     int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	siMode   string //se的参数，辅助索引类型，meht或mpt
+	mehtName string //se的参数，meht的名字
+	rdx      int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc       int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs       int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 }
 
 // NewSEDB() *SEDB: 返回一个新的SEDB
-func NewSEDB(seh []byte, dbPath string, siMode string, rdx int, bc int, bs int) *SEDB {
+func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int, bc int, bs int) *SEDB {
 	//打开或创建数据库
 	db, err := leveldb.OpenFile(dbPath, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return &SEDB{nil, seh, db, dbPath, siMode, rdx, bc, bs}
+	return &SEDB{nil, seh, db, dbPath, siMode, mehtName, rdx, bc, bs}
 }
 
 // 获取SEDB中的StorageEngine，如果为空，从db中读取se
@@ -59,13 +63,12 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//如果是第一次插入
 	if sedb.GetStorageEngine() == nil {
 		//创建一个新的StorageEngine
-		sedb.se = NewStorageEngine(sedb.siMode, sedb.rdx, sedb.bc, sedb.bs)
+		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs)
 	}
 	//向StorageEngine中插入一条记录
-	newSEHash, primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
-	//更新seHash
-	sedb.seHash = newSEHash
-	//构造SEDBProof
+	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
+	//更新seHash，并将se更新至db
+	sedb.seHash = sedb.GetStorageEngine().UpdateStorageEngineToDB(sedb.db)
 	var pProof []*mpt.MPTProof
 	pProof = append(pProof, primaryProof)
 	sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)
@@ -88,26 +91,55 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	if sedb.siMode == "mpt" {
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.db).QueryByKey(Hexkeyword, sedb.db)
 		secondaryMEHTProof = nil
-	} else {
-		primaryKey, secondaryMEHTProof = sedb.GetStorageEngine().GetSecondaryIndex_meht().QueryByKey(Hexkeyword)
+		//根据primaryKey在主键索引中查询
+		if primaryKey == "" {
+			fmt.Println("No such key!")
+			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
+		}
+		primarykeys := strings.Split(primaryKey, ",")
+		for i := 0; i < len(primarykeys); i++ {
+			qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
+			//用qV和primarykeys[i]构造一个kvpair
+			kvpair := util.NewKVPair(primarykeys[i], qV)
+			//把kvpair加入queryResult
+			queryResult = append(queryResult, kvpair)
+			//把pProof加入primaryProof
+			primaryProof = append(primaryProof, pProof)
+		}
+		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
+	} else if sedb.siMode == "meht" {
 		secondaryMPTProof = nil
+		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).QueryValueByKey(Hexkeyword, sedb.db)
+		primaryKey = pKey
+
+		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
+		ch := make(chan *meht.MEHTProof)
+		go func(ch chan *meht.MEHTProof) {
+			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.db)
+			ch <- seMEHTProof
+		}(ch)
+
+		//根据primaryKey在主键索引中查询
+		if primaryKey == "" {
+			fmt.Println("No such key!")
+		} else {
+			primarykeys := strings.Split(primaryKey, ",")
+			for i := 0; i < len(primarykeys); i++ {
+				qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
+				//用qV和primarykeys[i]构造一个kvpair
+				kvpair := util.NewKVPair(primarykeys[i], qV)
+				//把kvpair加入queryResult
+				queryResult = append(queryResult, kvpair)
+				//把pProof加入primaryProof
+				primaryProof = append(primaryProof, pProof)
+			}
+		}
+		secondaryMEHTProof = <-ch
+		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
+	} else {
+		fmt.Println("siMode is wrong!")
+		return "", nil, nil
 	}
-	//根据primaryKey在主键索引中查询
-	if primaryKey == "" {
-		fmt.Println("No such key!")
-		return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
-	}
-	primarykeys := strings.Split(primaryKey, ",")
-	for i := 0; i < len(primarykeys); i++ {
-		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
-		//用qV和primarykeys[i]构造一个kvpair
-		kvpair := util.NewKVPair(primarykeys[i], qV)
-		//把kvpair加入queryResult
-		queryResult = append(queryResult, kvpair)
-		//把pProof加入primaryProof
-		primaryProof = append(primaryProof, pProof)
-	}
-	return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
 }
 
 // 打印非主键查询结果

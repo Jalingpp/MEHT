@@ -53,15 +53,13 @@ func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {
 		mpt.root = NewShortNode(nil, true, []byte(kvpair.GetKey()), nil, []byte(kvpair.GetValue()), db)
 		//更新mpt根哈希并更新到数据库
 		mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
-		hash := sha256.Sum256(mpt.rootHash)
-		return hash[:]
+		return mpt.rootHash
 	}
 	//如果不是第一次插入，递归插入
 	mpt.root = mpt.RecursiveInsertShortNode(nil, []byte(kvpair.GetKey()), []byte(kvpair.GetValue()), mpt.GetRoot(db), db)
 	//更新mpt根哈希并更新到数据库
 	mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
-	hash := sha256.Sum256(mpt.rootHash)
-	return hash[:]
+	return mpt.rootHash
 }
 
 // 递归插入当前MPT Node

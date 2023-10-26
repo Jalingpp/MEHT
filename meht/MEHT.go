@@ -75,7 +75,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
-		meht.GetMGT(db).Root = NewMGTNode(nil, true, buckets[0], db)
+		meht.mgt.Root = NewMGTNode(nil, true, buckets[0], db)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		mgtRootHash, mgtProof := meht.mgt.GetProof(buckets[0].GetBucketKey(), db)
@@ -246,53 +246,60 @@ func DeserializeMEHT(data []byte) (*MEHT, error) {
 	return meht, nil
 }
 
+func (meht *MEHT) SetSEH(seh *SEH) {
+	meht.seh = seh
+}
+
+func (meht *MEHT) SetMGT(mgt *MGT) {
+	meht.mgt = mgt
+}
+
 // func main() {
 
-// 	//测试MEHT
-// 	//创建一个bucket
-// 	MEHT := meht.NewMEHT(2, 2, 1) //rdx,capacity,segNum
-// 	//创建4个KVPair
-// 	kvpair1 := util.NewKVPair("0000", "value1")
-// 	kvpair2 := util.NewKVPair("1001", "value2")
-// 	kvpair3 := util.NewKVPair("0010", "value3")
-// 	kvpair4 := util.NewKVPair("0000", "value4")
+// //测试MEHT
+// //创建一个bucket
+// MEHT := meht.NewMEHT(mehtName, 2, 2, 1) //rdx,capacity,segNum
+// //创建4个KVPair
+// kvpair1 := util.NewKVPair("0000", "value1")
+// kvpair2 := util.NewKVPair("1001", "value2")
+// kvpair3 := util.NewKVPair("0010", "value3")
+// kvpair4 := util.NewKVPair("0000", "value4")
 
-// 	// //插入kvpair1到MEHT
-// 	// bucket1, insertedV1, MEHTProof1 := MEHT.Insert(*kvpair1)
-// 	// bucket2, insertedV2, MEHTProof2 := MEHT.Insert(*kvpair2)
-// 	MEHT.Insert(*kvpair1)
-// 	MEHT.Insert(*kvpair2)
-// 	MEHT.Insert(*kvpair3)
-// 	MEHT.Insert(*kvpair4)
+// //插入kvpair1到MEHT
+// MEHT.Insert(kvpair1, db)
+// //打印整个MEHT
+// MEHT.PrintMEHT(db)
 
-// 	//查询kvpair1
-// 	qv1, qpf1 := MEHT.QueryByKey(kvpair1.GetKey())
-// 	//打印查询结果
-// 	meht.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
-// 	//验证查询结果
-// 	meht.VerifyQueryResult(qv1, qpf1)
+// //插入kvpair2到MEHT
+// MEHT.Insert(kvpair2, db)
+// //打印整个MEHT
+// MEHT.PrintMEHT(db)
 
-// 	//查询kvpair2
-// 	qv2, qpf2 := MEHT.QueryByKey(kvpair2.GetKey())
-// 	//打印查询结果
-// 	meht.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
-// 	//验证查询结果
-// 	meht.VerifyQueryResult(qv2, qpf2)
+// //插入kvpair3到MEHT
+// MEHT.Insert(kvpair3, db)
+// //打印整个MEHT
+// MEHT.PrintMEHT(db)
 
-// 	//查询kvpair3
-// 	qv3, qpf3 := MEHT.QueryByKey("1010")
-// 	//打印查询结果
-// 	meht.PrintQueryResult(kvpair3.GetKey(), qv3, qpf3)
-// 	//验证查询结果
-// 	meht.VerifyQueryResult(qv3, qpf3)
+// //插入kvpair4到MEHT
+// MEHT.Insert(kvpair4, db)
+// //打印整个MEHT
+// MEHT.PrintMEHT(db)
 
-// 	//查询kvpair4
-// 	qv4, qpf4 := MEHT.QueryByKey(kvpair4.GetKey())
-// 	//打印查询结果
-// 	meht.PrintQueryResult(kvpair4.GetKey(), qv4, qpf4)
-// 	//验证查询结果
-// 	meht.VerifyQueryResult(qv4, qpf4)
+// // //查询kvpair1
+// // qv1, bucket1, segkey1, isSegExist1, index1 := MEHT.QueryValueByKey(kvpair1.GetKey(), db)
+// // //获取查询证明
+// // qpf1 := MEHT.GetQueryProof(bucket1, segkey1, isSegExist1, index1, db)
+// // //打印查询结果
+// // meht.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
+// // //验证查询结果
+// // meht.VerifyQueryResult(qv1, qpf1)
 
-// 	//打印整个MEHT
-// 	MEHT.PrintMEHT()
+// // //查询kvpair1
+// // qv2, bucket2, segkey2, isSegExist2, index2 := MEHT.QueryValueByKey(kvpair2.GetKey(), db)
+// // //获取查询证明
+// // qpf2 := MEHT.GetQueryProof(bucket2, segkey2, isSegExist2, index2, db)
+// // //打印查询结果
+// // meht.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
+// // //验证查询结果
+// // meht.VerifyQueryResult(qv2, qpf2)
 // }

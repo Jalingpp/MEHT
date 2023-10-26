@@ -1,26 +1,16 @@
-=============== Oct 18, 2023 (CST) ===============
-15:24:54.268377 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-15:24:54.280028 db@open opening
-15:24:54.280390 version@stat F·[] S·0B[] Sc·[]
-15:24:54.283176 db@janitor F·2 G·0
-15:24:54.283196 db@open done T·3.151615ms
-=============== Oct 18, 2023 (CST) ===============
-15:25:49.114046 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-15:25:49.114202 version@stat F·[] S·0B[] Sc·[]
-15:25:49.114220 db@open opening
-15:25:49.114263 journal@recovery F·1
-15:25:49.118332 journal@recovery recovering @1
-15:25:49.121500 memdb@flush created L0@2 N·20 S·553B "Own..ht0,v19":"Own..nt0,v1"
-15:25:49.121655 version@stat F·[1] S·553B[553B] Sc·[0.25]
-15:25:49.133331 db@janitor F·3 G·0
-15:25:49.133363 db@open done T·19.120538ms
-=============== Oct 18, 2023 (CST) ===============
-15:27:03.471590 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-15:27:03.471813 version@stat F·[1] S·553B[553B] Sc·[0.25]
-15:27:03.471837 db@open opening
-15:27:03.471871 journal@recovery F·1
-15:27:03.472138 journal@recovery recovering @3
-15:27:03.478070 memdb@flush created L0@5 N·20 S·558B "Own..ht1,v40":"Own..nt1,v22"
-15:27:03.478256 version@stat F·[2] S·1KiB[1KiB] Sc·[0.50]
-15:27:03.491628 db@janitor F·4 G·0
-15:27:03.491668 db@open done T·19.814375ms
+=============== Oct 20, 2023 (CST) ===============
+09:40:33.592031 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+09:40:33.602722 db@open opening
+09:40:33.603124 version@stat F·[] S·0B[] Sc·[]
+09:40:33.606030 db@janitor F·2 G·0
+09:40:33.606052 db@open done T·3.314874ms
+=============== Oct 20, 2023 (CST) ===============
+09:40:40.094610 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+09:40:40.094753 version@stat F·[] S·0B[] Sc·[]
+09:40:40.094770 db@open opening
+09:40:40.094798 journal@recovery F·1
+09:40:40.095035 journal@recovery recovering @1
+09:40:40.105611 memdb@flush created L0@2 N·43 S·2KiB "\x1c\x1di..[$\x05,v13":"\xe3\xb0\xc4..R\xb8U,d6"
+09:40:40.105864 version@stat F·[1] S·2KiB[2KiB] Sc·[0.25]
+09:40:40.117038 db@janitor F·3 G·0
+09:40:40.117060 db@open done T·22.277714ms

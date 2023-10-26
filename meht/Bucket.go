@@ -58,7 +58,7 @@ func NewSegment(segkey string) []util.KVPair {
 // 获取segment,若不存在,则从db中获取
 func (b *Bucket) GetSegment(segkey string, db *leveldb.DB) []util.KVPair {
 	if len(b.segments[segkey]) == 0 {
-		fmt.Printf("read segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
+		fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 		kvString, error := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey), nil)
 		if error == nil {
 			kvs, _ := DeserializeSegment(kvString)
@@ -461,7 +461,9 @@ func DeserializeSegment(data []byte) ([]util.KVPair, error) {
 	kvpairs := make([]util.KVPair, 0)
 	for i := 0; i < len(kvstrings); i++ {
 		kvpair := strings.Split(kvstrings[i], ":")
-		kvpairs = append(kvpairs, *util.NewKVPair(kvpair[0], kvpair[1]))
+		if len(kvpair) == 2 {
+			kvpairs = append(kvpairs, *util.NewKVPair(kvpair[0], kvpair[1]))
+		}
 	}
 	return kvpairs, nil
 }
@@ -513,44 +515,45 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	return bucket, nil
 }
 
-//拷贝到main.go中测试
-// func main() {
-
-// 	//测试Bucket
+// //测试Bucket
 // 	//创建一个bucket
-// 	bucket := meht.NewBucket(nil,0, 2, 2, 1) //ld,rdx,capacity,segNum
+// 	bucket := meht.NewBucket(mehtName, 0, 2, 2, 1) //ld,rdx,capacity,segNum
 // 	//创建4个KVPair
-// 	kvpair1 := util.NewKVPair("0000", "value1")
-// 	kvpair2 := util.NewKVPair("0001", "value2")
-// 	kvpair3 := util.NewKVPair("0010", "value3")
-// 	kvpair4 := util.NewKVPair("0011", "value4")
-// 	//插入4个KVPair
-// 	buckets1 := bucket.Insert(*kvpair1)
-// 	buckets2 := bucket.Insert(*kvpair2)
-// 	buckets3 := bucket.Insert(*kvpair3)
-// 	buckets4 := bucket.Insert(*kvpair4)
+// 	kvpair1 := util.NewKVPair("1000", "value5")
+// 	kvpair2 := util.NewKVPair("1001", "value6")
+// 	kvpair3 := util.NewKVPair("1010", "value7")
+// 	kvpair4 := util.NewKVPair("1000", "value8")
 
+// 	//插入4个KVPair
+
+// 	buckets1 := bucket.Insert(kvpair1, db)
 // 	//打印buckets1中所有的bucket
 // 	fmt.Printf("buckets1中所有的bucket\n")
 // 	for _, bucket := range buckets1 {
-// 		bucket.PrintBucket()
+// 		bucket.PrintBucket(db)
+// 		bucket.UpdateBucketToDB(db)
 // 	}
 
+// 	buckets2 := bucket.Insert(kvpair2, db)
 // 	//打印buckets2中所有的bucket
 // 	fmt.Printf("buckets2中所有的bucket\n")
 // 	for _, bucket := range buckets2 {
-// 		bucket.PrintBucket()
+// 		bucket.PrintBucket(db)
+// 		bucket.UpdateBucketToDB(db)
 // 	}
 
+// 	buckets3 := bucket.Insert(kvpair3, db)
 // 	//打印buckets3中所有的bucket
 // 	fmt.Printf("buckets3中所有的bucket\n")
 // 	for _, bucket := range buckets3 {
-// 		bucket.PrintBucket()
+// 		bucket.PrintBucket(db)
+// 		bucket.UpdateBucketToDB(db)
 // 	}
 
+// 	buckets4 := bucket.Insert(kvpair4, db)
 // 	//打印buckets4中所有的bucket
 // 	fmt.Printf("buckets4中所有的bucket\n")
 // 	for _, bucket := range buckets4 {
-// 		bucket.PrintBucket()
+// 		bucket.PrintBucket(db)
+// 		bucket.UpdateBucketToDB(db)
 // 	}
-// }

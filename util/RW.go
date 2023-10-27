@@ -54,6 +54,8 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 		panic(err)
 	}
 	var content_ interface{}
+	address_ := strings.Split(filepath, string(os.PathSeparator))
+	address := strings.Split(address_[len(address_)-1], ".")[0]
 	if err := json.Unmarshal(content, &content_); err != nil {
 		panic(err)
 	}
@@ -71,7 +73,8 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 					v_ = append(v_, traits[v2].(string))
 				}
 			}
-			kvPair := NewKVPair(k1, strings.Join(v_, ","))
+			kvPair := NewKVPair(address+string(os.PathSeparator)+k1, strings.Join(v_, ","))
+			fmt.Println(kvPair.GetKey())
 			kvPairs = append(kvPairs, kvPair)
 		}
 	}

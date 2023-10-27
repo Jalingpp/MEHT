@@ -73,8 +73,6 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix []byte, suffix []byte, value []b
 			if !bytes.Equal(cnode.value, value) {
 				cnode.value = value
 				UpdateShortNodeHash(cnode, db)
-			} else {
-				fmt.Println("Duplicate KVPairs in primary index.")
 			}
 			return cnode
 		} else {
@@ -200,8 +198,6 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix []byte, suffix []byte, value []by
 		if !bytes.Equal(cnode.value, value) {
 			cnode.value = value
 			UpdateFullNodeHash(cnode, db)
-		} else {
-			fmt.Println("Duplicate KVPairs in primary index.")
 		}
 		return cnode
 	} else {

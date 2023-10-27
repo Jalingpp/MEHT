@@ -1,11 +1,13 @@
 package main
 
 import (
-	"MEHT/sedb"
 	"MEHT/util"
-	"fmt"
 	"time"
-	// "github.com/syndtr/goleveldb/leveldb"
+
+	"MEHT/sedb"
+
+	// "encoding/hex"
+	"fmt"
 )
 
 func main() {
@@ -20,22 +22,25 @@ func main() {
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 
-	//fmt.Printf("seHash:%s\n", hex.EncodeToString(seHash))
-
 	//创建一个SEDB
-	seDB := sedb.NewSEDB(seHash, dbPath, siMode, rdx, bc, bs)
+	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs)
 
 	// //打印SEDB
 	//seDB.PrintSEDB()
 
-	// 读txt文件创建一个KVPair数组
-	//kvdataPath := "data/testdata2.txt"
-	//kvPairs := util.ReadKVPairFromFile(kvdataPath)
-	//for i := 0; i < len(kvPairs); i++ {
-	//	kvPairs[i].SetKey(kvPairs[i].GetKey())
-	//	kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
-	//	seDB.InsertKVPair(kvPairs[i])
-	//}
+	// //测试查询功能
+	// qkey := util.StringToHex("Cindy")
+	// qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
+	// seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
+	// //验证查询结果
+	// seDB.VerifyQueryResult(qvalue, qresult, qproof)
+
+	// //测试查询功能
+	// qkey2 := util.StringToHex("value6")
+	// qvalue2, qresult2, qproof2 := seDB.QueryKVPairsByHexKeyword(qkey2)
+	// seDB.PrintKVPairsQueryResult(qkey2, qvalue2, qresult2, qproof2)
+	// //验证查询结果
+	// seDB.VerifyQueryResult(qvalue2, qresult2, qproof2)
 
 	//读json文件创建KVPair数组
 	kvdataPath := "data/OK"
@@ -66,14 +71,41 @@ func main() {
 	//打印SEDB
 	//seDB.PrintSEDB()
 
-	//测试查询功能
-	//qkey := util.StringToHex("Alice")
-	//qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
-	//seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
-	////验证查询结果
-	//seDB.VerifyQueryResult(qvalue, qresult, qproof)
+	// 插入kvpair2到MEHT
+	//MEHT.Insert(kvpair2, db)
+	//// 打印整个MEHT
+	//MEHT.PrintMEHT(db)
 	//
-	////写seHash和dbPath到文件
+	////插入kvpair3到MEHT
+	//MEHT.Insert(kvpair3, db)
+	////打印整个MEHT
+	//MEHT.PrintMEHT(db)
+	//
+	////插入kvpair4到MEHT
+	//MEHT.Insert(kvpair4, db)
+	//// //打印整个MEHT
+	//MEHT.PrintMEHT(db)
+	//
+	//MEHT.UpdateMEHTToDB(db)
+
+	// //查询kvpair1
+	// qv1, bucket1, segkey1, isSegExist1, index1 := MEHT.QueryValueByKey(kvpair1.GetKey(), db)
+	// //获取查询证明
+	// qpf1 := MEHT.GetQueryProof(bucket1, segkey1, isSegExist1, index1, db)
+	// //打印查询结果
+	// meht.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
+	// //验证查询结果
+	// meht.VerifyQueryResult(qv1, qpf1)
+
+	// //查询kvpair1
+	// qv2, bucket2, segkey2, isSegExist2, index2 := MEHT.QueryValueByKey(kvpair2.GetKey(), db)
+	// //获取查询证明
+	// qpf2 := MEHT.GetQueryProof(bucket2, segkey2, isSegExist2, index2, db)
+	// //打印查询结果
+	// meht.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
+	// //验证查询结果
+	// meht.VerifyQueryResult(qv2, qpf2)
+
 	seDB.WriteSEDBInfoToFile(filePath)
 
 }

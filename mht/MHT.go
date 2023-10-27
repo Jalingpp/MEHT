@@ -3,6 +3,7 @@ package mht
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 )
 
@@ -166,12 +167,42 @@ func (tree *MerkleTree) GetProof(i int) *MHTProof {
 
 // 插入一个data,更新默克尔树,返回新的根节点哈希
 func (tree *MerkleTree) InsertData(data []byte) []byte {
+	if tree.DataList == nil {
+		tree.DataList = make([][]byte, 0)
+	}
 	tree.DataList = append(tree.DataList, data)
 	//重建默克尔树
 	newTree := NewMerkleTree(tree.DataList)
 	tree.Root = newTree.Root
 	tree.LeafNodes = newTree.LeafNodes
 	return tree.Root.Data
+}
+
+type SeMHT struct {
+	DataList [][]byte // data list of the merkle tree, is used for reconstructing the merkle tree
+}
+
+// 序列化默克尔树
+func SerializeMHT(mht *MerkleTree) []byte {
+	seMHT := &SeMHT{mht.DataList}
+	jsonMHT, err := json.Marshal(seMHT)
+	if err != nil {
+		fmt.Printf("SerializeMHT error: %v\n", err)
+		return nil
+	}
+	return jsonMHT
+}
+
+// 反序列化默克尔树
+func DeserializeMHT(data []byte) (*MerkleTree, error) {
+	var seMHT SeMHT
+	err := json.Unmarshal(data, &seMHT)
+	if err != nil {
+		fmt.Printf("DeserializeMHT error: %v\n", err)
+		return nil, err
+	}
+	mht := NewMerkleTree(seMHT.DataList)
+	return mht, nil
 }
 
 // func main() {

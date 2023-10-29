@@ -102,14 +102,20 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		primarykeys := strings.Split(primaryKey, ",")
 		wg.Add(len(primarykeys))
 		for i := 0; i < len(primarykeys); i++ {
-			qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
-			//用qV和primarykeys[i]构造一个kvpair
-			kvpair := util.NewKVPair(primarykeys[i], qV)
-			//把kvpair加入queryResult
-			queryResult = append(queryResult, kvpair)
-			//把pProof加入primaryProof
-			primaryProof = append(primaryProof, pProof)
+			go func(primarykey string, mutex *sync.Mutex) {
+				qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykey, sedb.db)
+				//用qV和primarykeys[i]构造一个kvpair
+				kvpair := util.NewKVPair(primarykey, qV)
+				lock.Lock()
+				//把kvpair加入queryResult
+				queryResult = append(queryResult, kvpair)
+				//把pProof加入primaryProof
+				primaryProof = append(primaryProof, pProof)
+				lock.Unlock()
+				wg.Done()
+			}(primarykeys[i], &lock)
 		}
+		wg.Wait()
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
 		secondaryMPTProof = nil
@@ -130,12 +136,9 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 			for i := 0; i < len(primarykeys); i++ {
 				go func(primarykey string, mutex *sync.Mutex) {
 					qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykey, sedb.db)
-					//用qV和primarykeys[i]构造一个kvpair
 					kvpair := util.NewKVPair(primarykey, qV)
 					lock.Lock()
-					//把kvpair加入queryResult
 					queryResult = append(queryResult, kvpair)
-					//把pProof加入primaryProof
 					primaryProof = append(primaryProof, pProof)
 					lock.Unlock()
 					wg.Done()

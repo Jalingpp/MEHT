@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-
 	"github.com/syndtr/goleveldb/leveldb"
+	"sort"
 	// "MEHT/util"
 )
 
@@ -48,8 +48,8 @@ func NewMGT() *MGT {
 // 获取root,如果root为空,则从leveldb中读取
 func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {
-		mgtString, error := db.Get(mgt.mgtRootHash, nil)
-		if error == nil {
+		mgtString, error_ := db.Get(mgt.mgtRootHash, nil)
+		if error_ == nil {
 			m, _ := DeserializeMGT(mgtString)
 			mgt.Root = m.Root
 		}
@@ -60,8 +60,8 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 // 获取subnode,如果subnode为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB) *MGTNode {
 	if mgtNode.subNodes[index] == nil {
-		nodeString, error := db.Get(mgtNode.dataHashes[index], nil)
-		if error == nil {
+		nodeString, error_ := db.Get(mgtNode.dataHashes[index], nil)
+		if error_ == nil {
 			node, _ := DeserializeMGTNode(nodeString)
 			mgtNode.subNodes[index] = node
 		}
@@ -72,8 +72,8 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB) *MGTNode {
 // 获取bucket,如果bucket为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetBucket(name string, db *leveldb.DB) *Bucket {
 	if mgtNode.bucket == nil {
-		bucketString, error := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey)), nil)
-		if error == nil {
+		bucketString, error_ := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey)), nil)
+		if error_ == nil {
 			bucket, _ := DeserializeBucket(bucketString)
 			mgtNode.bucket = bucket
 		}
@@ -100,17 +100,31 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 // NewMGTNode creates a new MGTNode
 func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB) *MGTNode {
 	var nodeHash []byte
-	var dataHashes [][]byte
-
+	dataHashes := make([][]byte, 16)
+	if subNodes == nil {
+		subNodes = make([]*MGTNode, 16)
+	}
 	//如果是叶子节点,遍历其所有segment,将每个segment的根hash加入dataHashes
 	if isLeaf {
-		for _, merkleTree := range bucket.GetMerkleTrees() {
-			dataHashes = append(dataHashes, merkleTree.GetRootHash())
+		for segkey, merkleTree := range bucket.GetMerkleTrees() {
+			//dataHashes = append(dataHashes, merkleTree.GetRootHash())
+			idx := 0
+			for _, char_ := range segkey {
+				tmp := char_ - '0'
+				if tmp > 9 {
+					tmp -= 'a' - '9' - 1
+				}
+				idx = 16*idx + int(tmp)
+			}
+			dataHashes[idx] = merkleTree.GetRootHash()
 			nodeHash = append(nodeHash, merkleTree.GetRootHash()...)
 		}
 	} else {
 		for i := 0; i < len(subNodes); i++ {
-			dataHashes = append(dataHashes, subNodes[i].nodeHash)
+			if subNodes[i] == nil {
+				continue
+			}
+			dataHashes[i] = subNodes[i].nodeHash
 			nodeHash = append(nodeHash, subNodes[i].nodeHash...)
 		}
 	}
@@ -189,15 +203,24 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 	//如果newBuckets中只有一个bucket，则说明没有发生分裂，只更新nodePath中所有的哈希值
 	if len(newBuckets) == 1 {
 		nodePath = mgt.GetLeafNodeAndPath(newBuckets[0].bucketKey, db)
+		targetMerkleTrees := newBuckets[0].GetMerkleTrees()
 		//更新叶子节点的dataHashes
-		nodePath[0].dataHashes = nil
-		for _, merkleTree := range newBuckets[0].GetMerkleTrees() {
-			nodePath[0].dataHashes = append(nodePath[0].dataHashes, merkleTree.GetRootHash())
+		nodePath[0].dataHashes = make([][]byte, 0)
+		segKeyInorder := make([]string, 0)
+		for segKey, _ := range newBuckets[0].GetMerkleTrees() {
+			segKeyInorder = append(segKeyInorder, segKey)
+		}
+		sort.Strings(segKeyInorder)
+		for _, key := range segKeyInorder {
+			nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTrees[key].GetRootHash())
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
 		nodePath[0].UpdateMGTNodeToDB(db)
 		//更新所有父节点的nodeHashs,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
+			if len(nodePath[i].dataHashes) != 16 {
+				nodePath[i].dataHashes = make([][]byte, 16)
+			}
 			nodePath[i].dataHashes[newBuckets[0].bucketKey[i-1]] = nodePath[i-1].nodeHash
 			nodePath[i].UpdateMGTNodeToDB(db)
 		}
@@ -243,8 +266,15 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 // 根据子节点哈希计算当前节点哈希
 func UpdateNodeHash(node *MGTNode) {
 	var nodeHash []byte
-	for _, dataHash := range node.dataHashes {
-		nodeHash = append(nodeHash, dataHash...)
+	var keys []int
+	for key := range node.dataHashes {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i int, j int) bool {
+		return i < j
+	})
+	for _, key := range keys {
+		nodeHash = append(nodeHash, node.dataHashes[key]...)
 	}
 	hash := sha256.Sum256(nodeHash)
 	node.nodeHash = hash[:]

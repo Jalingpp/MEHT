@@ -16,7 +16,8 @@ func main() {
 	//参数设置
 	filePath := "data/levelDB/config.txt" //存储seHash和dbPath的文件路径
 	//// siMode := "meht" //辅助索引类型，meht或mpt
-	siMode := "mpt"
+	//siMode := "mpt"
+	siMode := "meht"
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 	bc := 4   //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
@@ -24,23 +25,6 @@ func main() {
 
 	//创建一个SEDB
 	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs)
-
-	// //打印SEDB
-	//seDB.PrintSEDB()
-
-	// //测试查询功能
-	// qkey := util.StringToHex("Cindy")
-	// qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
-	// seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
-	// //验证查询结果
-	// seDB.VerifyQueryResult(qvalue, qresult, qproof)
-
-	// //测试查询功能
-	// qkey2 := util.StringToHex("value6")
-	// qvalue2, qresult2, qproof2 := seDB.QueryKVPairsByHexKeyword(qkey2)
-	// seDB.PrintKVPairsQueryResult(qkey2, qvalue2, qresult2, qproof2)
-	// //验证查询结果
-	// seDB.VerifyQueryResult(qvalue2, qresult2, qproof2)
 
 	//读json文件创建KVPair数组
 	kvdataPath := "data/OK"
@@ -68,6 +52,10 @@ func main() {
 		break
 	}
 	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
+
+	qrKey := "human"
+	qrValue, qrKVPair, qrProof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qrKey))
+	seDB.PrintKVPairsQueryResult(qrKey, qrValue, qrKVPair, qrProof)
 	//打印SEDB
 	//seDB.PrintSEDB()
 

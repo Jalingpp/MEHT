@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="30b1825c-a745-4976-aeb4-84e4d10c03a7" name="更改" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/MEHT.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/MEHT.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/dictionaries/Lenovo.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/config.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/000002.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/000003.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/CURRENT" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/CURRENT.bak" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/LOCK" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/LOG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/test/MANIFEST-000004" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/000002.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/000005.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/000006.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/CURRENT" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/CURRENT.bak" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/LOCK" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/LOG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/MANIFEST-000007" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMEHT/config.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMPT/000001.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMPT/CURRENT" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMPT/LOCK" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMPT/LOG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMPT/MANIFEST-000000" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testMPT/config.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000011.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000012.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000014.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000015.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000017.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000019.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000021.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000023.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000024.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000025.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000026.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000027.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT.bak" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000022" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/SEDB.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDB.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/util/RW.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/RW.go" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="GOROOT" url="file://$PROJECT_DIR$/../../../../Program Files/Go" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "customColor": "",
+  "associatedIndex": 6
+}]]></component>
+  <component name="ProjectId" id="2XQM9LJ6JpsxasjjZLMvflbnejI" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.go.formatter.settings.were.checked": "true",
+    "RunOnceActivity.go.migrated.go.modules.settings": "true",
+    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
+    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "git-widget-placeholder": "zyfChange",
+    "go.import.settings.migrated": "true",
+    "go.sdk.automatically.set": "true",
+    "last_opened_file_path": "C:/Users/Lenovo",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)"
+  }
+}]]></component>
+  <component name="RunManager">
+    <configuration name="go build MEHT" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
+      <module name="MEHT" />
+      <working_directory value="$PROJECT_DIR$" />
+      <kind value="PACKAGE" />
+      <package value="MEHT" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$/main.go" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go 构建.go build MEHT" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="应用程序级" UseSingleDictionary="true" transferred="true" />
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="VgoProject">
+    <settings-migrated>true</settings-migrated>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/SEH.go</url>
+          <line>144</line>
+          <option name="timeStamp" value="5" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
+          <line>228</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/Bucket.go</url>
+          <line>305</line>
+          <option name="timeStamp" value="10" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
+          <line>254</line>
+          <option name="timeStamp" value="13" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
+          <line>65</line>
+          <option name="timeStamp" value="14" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
+          <line>53</line>
+          <option name="timeStamp" value="15" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
+          <line>197</line>
+          <option name="timeStamp" value="16" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
+          <line>251</line>
+          <option name="timeStamp" value="17" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MEHT.go</url>
+          <line>62</line>
+          <option name="timeStamp" value="18" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/meht/MEHT.go</url>
+          <line>77</line>
+          <option name="timeStamp" value="19" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>

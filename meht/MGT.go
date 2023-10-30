@@ -72,7 +72,7 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB) *MGTNode {
 // 获取bucket,如果bucket为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetBucket(name string, db *leveldb.DB) *Bucket {
 	if mgtNode.bucket == nil {
-		bucketString, error_ := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey)), nil)
+		bucketString, error_ := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey, mgtNode.bucket.rdx)), nil)
 		if error_ == nil {
 			bucket, _ := DeserializeBucket(bucketString)
 			mgtNode.bucket = bucket
@@ -227,7 +227,7 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 	} else {
 		//如果newBuckets中有多个bucket，则说明发生了分裂，MGT需要生长
 		oldBucketKey := GetOldBucketKey(newBuckets[0])
-		fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey))
+		fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, newBuckets[0].rdx))
 		//根据旧bucketKey,找到旧bucket所在的叶子节点
 		nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db)
 		mgt.MGTGrow(oldBucketKey, nodePath, newBuckets, db)
@@ -301,7 +301,7 @@ func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB) {
 
 	if node.isLeaf {
 		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash))
-		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey))
+		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey, node.bucket.rdx))
 	} else {
 		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash))
 	}

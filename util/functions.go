@@ -4,14 +4,38 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
-func IntArrayToString(intArray []int) string {
-	s := ""
-	for _, v := range intArray {
-		s += strconv.Itoa(v)
+func HexIntToString(num int) string {
+	if num < 0 {
+		return ""
 	}
-	return s
+	if num < 10 {
+		return strconv.Itoa(num)
+	} else if num < 16 {
+		return string(rune('a' + num - 10))
+	}
+	cur := num % 16
+	if cur > 9 {
+		return HexIntToString(num/16) + string(rune('a'+cur-10))
+	} else {
+		return HexIntToString(num/16) + strconv.Itoa(cur)
+	}
+}
+
+func IntArrayToString(intArray []int, rdx int) string {
+	ret := ""
+	power := 0
+	for rdx >= 16 {
+		power += 1
+		rdx /= 16
+	}
+	for _, val := range intArray {
+		cur := HexIntToString(val)
+		ret += strings.Repeat("0", power-len(cur)) + cur
+	}
+	return ret
 }
 
 func ByteToHexIndex(b byte) int {

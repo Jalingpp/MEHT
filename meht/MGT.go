@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	// "MEHT/util"
@@ -50,8 +51,8 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {
 		mgtString, error := db.Get(mgt.mgtRootHash, nil)
 		if error == nil {
-			m, _ := DeserializeMGT(mgtString)
-			mgt.Root = m.Root
+			m, _ := DeserializeMGTNode(mgtString)
+			mgt.Root = m
 		}
 	}
 	return mgt.Root
@@ -88,8 +89,8 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 	oldMgtHash := hash[:]
 	//delete the old mgt in leveldb
 	db.Delete(oldMgtHash, nil)
-	//update mgtRootHash
-	mgt.mgtRootHash = mgt.Root.nodeHash
+	// update mgtRootHash
+	mgt.mgtRootHash = mgt.GetRoot(db).nodeHash
 	//insert mgt in leveldb
 	hash = sha256.Sum256(mgt.mgtRootHash)
 	mgtHash := hash[:]
@@ -109,9 +110,15 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 			nodeHash = append(nodeHash, merkleTree.GetRootHash()...)
 		}
 	} else {
+		if subNodes == nil {
+			subNodes = make([]*MGTNode, bucket.rdx)
+			dataHashes = make([][]byte, bucket.rdx)
+		}
 		for i := 0; i < len(subNodes); i++ {
-			dataHashes = append(dataHashes, subNodes[i].nodeHash)
-			nodeHash = append(nodeHash, subNodes[i].nodeHash...)
+			if subNodes[i] != nil {
+				dataHashes = append(dataHashes, subNodes[i].nodeHash)
+				nodeHash = append(nodeHash, subNodes[i].nodeHash...)
+			}
 		}
 	}
 
@@ -138,6 +145,7 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB) {
 	//update nodeHash
 	UpdateNodeHash(mgtNode)
 	//insert node in leveldb
+	// fmt.Printf("When write MGTNode to DB, mgtNode.nodeHash: %x\n", mgtNode.nodeHash)
 	db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil)
 }
 
@@ -182,6 +190,7 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 	//如果root为空,则直接为newBuckets创建叶节点(newBuckets中只有一个bucket)
 	if mgt.GetRoot(db) == nil {
 		mgt.Root = NewMGTNode(nil, true, newBuckets[0], db)
+		mgt.Root.UpdateMGTNodeToDB(db)
 		return mgt
 	}
 
@@ -220,13 +229,16 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	for i := 0; i < len(newBuckets); i++ {
 		newNode := NewMGTNode(nil, true, newBuckets[i], db)
 		subNodes = append(subNodes, newNode)
+		newNode.UpdateMGTNodeToDB(db)
 	}
 	//创建新的父节点
 	newFatherNode := NewMGTNode(subNodes, false, nil, db)
+	newFatherNode.UpdateMGTNodeToDB(db)
 
 	//更新父节点的chid为新的父节点
 	if len(nodePath) == 1 {
 		mgt.Root = newFatherNode
+		mgt.Root.UpdateMGTNodeToDB(db)
 		return mgt
 	}
 	nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
@@ -243,8 +255,8 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 // 根据子节点哈希计算当前节点哈希
 func UpdateNodeHash(node *MGTNode) {
 	var nodeHash []byte
-	for _, dataHash := range node.dataHashes {
-		nodeHash = append(nodeHash, dataHash...)
+	for i := 0; i < len(node.dataHashes); i++ {
+		nodeHash = append(nodeHash, node.dataHashes[i]...)
 	}
 	hash := sha256.Sum256(nodeHash)
 	node.nodeHash = hash[:]
@@ -259,6 +271,7 @@ func (mgt *MGT) PrintMGT(db *leveldb.DB) {
 	//递归打印MGT
 	fmt.Printf("MGTRootHash: %x\n", mgt.mgtRootHash)
 	mgt.PrintMGTNode(mgt.GetRoot(db), 0, db)
+
 }
 
 // 递归打印MGT
@@ -279,8 +292,10 @@ func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB) {
 	for _, dataHash := range node.dataHashes {
 		fmt.Printf("%s\n", hex.EncodeToString(dataHash))
 	}
-	for i := 0; i < len(node.subNodes); i++ {
-		mgt.PrintMGTNode(node.GetSubnode(i, db), level+1, db)
+	for i := 0; i < len(node.dataHashes); i++ {
+		if !node.isLeaf && node.dataHashes[i] != nil {
+			mgt.PrintMGTNode(node.GetSubnode(i, db), level+1, db)
+		}
 	}
 }
 
@@ -371,15 +386,23 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 }
 
 type SeMGTNode struct {
-	NodeHash   []byte   // hash of this node, consisting of the hash of its children
-	DataHashes [][]byte // hashes of data elements, computed from subNodes, is used for indexing children nodes in leveldb
+	NodeHash   []byte // hash of this node, consisting of the hash of its children
+	DataHashes string // hashes of data elements, computed from subNodes, is used for indexing children nodes in leveldb
 
 	IsLeaf    bool  // whether this node is a leaf node
 	BucketKey []int // bucketkey related to this leaf node,is used for indexing bucket in leveldb
 }
 
 func SerializeMGTNode(node *MGTNode) []byte {
-	seMGTNode := &SeMGTNode{node.nodeHash, node.dataHashes, node.isLeaf, node.bucketKey}
+	dataHashString := ""
+	for i := 0; i < len(node.dataHashes); i++ {
+		dataHashString += hex.EncodeToString(node.dataHashes[i])
+		if i != len(node.dataHashes)-1 {
+			dataHashString += ","
+		}
+	}
+	fmt.Printf("dataHashString is %s\n", dataHashString)
+	seMGTNode := &SeMGTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucketKey}
 	jsonMGTNode, err := json.Marshal(seMGTNode)
 	if err != nil {
 		fmt.Printf("SerializeMGTNode error: %v\n", err)
@@ -395,7 +418,14 @@ func DeserializeMGTNode(data []byte) (*MGTNode, error) {
 		fmt.Printf("DeserializeMGTNode error: %v\n", err)
 		return nil, err
 	}
-	mgtNode := &MGTNode{seMGTNode.NodeHash, nil, seMGTNode.DataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey}
+	dataHashes := make([][]byte, 0)
+	dataHashStrings := strings.Split(seMGTNode.DataHashes, ",")
+	for i := 0; i < len(dataHashStrings); i++ {
+		dataHash, _ := hex.DecodeString(dataHashStrings[i])
+		dataHashes = append(dataHashes, dataHash)
+	}
+	subnodes := make([]*MGTNode, len(dataHashes))
+	mgtNode := &MGTNode{seMGTNode.NodeHash, subnodes, dataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey}
 	return mgtNode, nil
 }
 

@@ -2,8 +2,6 @@ package main
 
 import (
 	"MEHT/meht"
-	"MEHT/util"
-
 	"MEHT/sedb"
 
 	// "encoding/hex"
@@ -98,11 +96,11 @@ func main() {
 		fmt.Printf("meht is nil, new meht\n")
 		MEHT = meht.NewMEHT(mehtName, 2, 2, 1) //rdx, bc, bs
 	}
-	//创建4个KVPair
-	kvpair1 := util.NewKVPair("0000", "value1")
-	kvpair2 := util.NewKVPair("1001", "value2")
-	kvpair3 := util.NewKVPair("0010", "value3")
-	kvpair4 := util.NewKVPair("0000", "value4")
+	// //创建4个KVPair
+	// kvpair1 := util.NewKVPair("0000", "value1")
+	// kvpair2 := util.NewKVPair("1001", "value2")
+	// kvpair3 := util.NewKVPair("0010", "value3")
+	// kvpair4 := util.NewKVPair("0000", "value4")
 
 	// MEHT.SetSEH(nil)
 	// MEHT.SetMGT(nil)
@@ -110,24 +108,24 @@ func main() {
 	MEHT.PrintMEHT(db)
 
 	// //插入kvpair1到MEHT
-	MEHT.Insert(kvpair1, db)
-	//打印整个MEHT
-	MEHT.PrintMEHT(db)
-
-	// 插入kvpair2到MEHT
-	MEHT.Insert(kvpair2, db)
-	// 打印整个MEHT
-	MEHT.PrintMEHT(db)
-
-	//插入kvpair3到MEHT
-	MEHT.Insert(kvpair3, db)
-	//打印整个MEHT
-	MEHT.PrintMEHT(db)
-
-	//插入kvpair4到MEHT
-	MEHT.Insert(kvpair4, db)
+	// MEHT.Insert(kvpair1, db)
 	// //打印整个MEHT
-	MEHT.PrintMEHT(db)
+	// MEHT.PrintMEHT(db)
+
+	// // 插入kvpair2到MEHT
+	// MEHT.Insert(kvpair2, db)
+	// // 打印整个MEHT
+	// MEHT.PrintMEHT(db)
+
+	// //插入kvpair3到MEHT
+	// MEHT.Insert(kvpair3, db)
+	// //打印整个MEHT
+	// MEHT.PrintMEHT(db)
+
+	// //插入kvpair4到MEHT
+	// MEHT.Insert(kvpair4, db)
+	// // //打印整个MEHT
+	// MEHT.PrintMEHT(db)
 
 	MEHT.UpdateMEHTToDB(db)
 

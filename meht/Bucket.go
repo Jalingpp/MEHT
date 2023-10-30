@@ -45,7 +45,7 @@ func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 // 更新bucket至db中
 func (b *Bucket) UpdateBucketToDB(db *leveldb.DB) {
 	seBucket := SerializeBucket(b)
-	fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.bucketKey))
+	// fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.bucketKey))
 	db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.bucketKey)), seBucket, nil)
 }
 
@@ -58,7 +58,7 @@ func NewSegment(segkey string) []util.KVPair {
 // 获取segment,若不存在,则从db中获取
 func (b *Bucket) GetSegment(segkey string, db *leveldb.DB) []util.KVPair {
 	if len(b.segments[segkey]) == 0 {
-		fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
+		// fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 		kvString, error := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey), nil)
 		if error == nil {
 			kvs, _ := DeserializeSegment(kvString)
@@ -74,7 +74,7 @@ func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB) {
 		return
 	}
 	seSeg := SerializeSegment(b.segments[segkey])
-	fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
+	// fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 	db.Put([]byte(b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey), seSeg, nil)
 }
 
@@ -121,7 +121,7 @@ func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 // 获取segment对应的merkle tree,若不存在,则从db中获取
 func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB) *mht.MerkleTree {
 	if b.merkleTrees[index] == nil {
-		fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
+		// fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
 		mtString, error := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey)+"mht"+index), nil)
 		if error == nil {
 			mt, _ := mht.DeserializeMHT(mtString)
@@ -138,7 +138,7 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB) {
 	}
 	mt := b.GetMerkleTrees()[index]
 	seMHT := mht.SerializeMHT(mt)
-	fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
+	// fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
 	db.Put([]byte(b.name+util.IntArrayToString(b.bucketKey)+"mht"+index), seMHT, nil)
 }
 

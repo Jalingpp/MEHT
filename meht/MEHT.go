@@ -71,27 +71,27 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//判断是否为第一次插入
 	if meht.GetSEH(db).bucketsNumber == 0 {
 		//插入KV到SEH
-		buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+		bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
-		meht.mgt.Root = NewMGTNode(nil, true, buckets[0], db)
+		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx)
 		//更新mgt的根节点哈希并更新到db
-		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		mgtRootHash, mgtProof := meht.mgt.GetProof(buckets[0].GetBucketKey(), db)
-		return buckets[0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		meht.mgtHash = meht.mgt.UpdateMGTToDB(db, meht.rdx)
+		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.rdx)
+		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+	bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
 	//更新seh到db
 	//meht.seh.UpdateSEHToDB(db)
 	//无论是否分裂，都需要更新mgt
-	meht.mgt = meht.GetMGT(db).MGTUpdate(buckets, db)
+	meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db)
 	//更新mgt的根节点哈希并更新到db
-	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+	meht.mgtHash = meht.mgt.UpdateMGTToDB(db, meht.rdx)
 	//获取当前KV插入的bucket
 	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db)
-	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db)
+	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.rdx)
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
@@ -100,7 +100,7 @@ func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
 	meht.GetSEH(db).PrintSEH(db)
-	meht.GetMGT(db).PrintMGT(db)
+	meht.GetMGT(db).PrintMGT(db, meht.rdx)
 }
 
 type MEHTProof struct {
@@ -127,7 +127,7 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	//找到segRootHash和segProof
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db)
 	//根据key找到mgtRootHash和mgtProof
-	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db)
+	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db, meht.rdx)
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 

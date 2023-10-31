@@ -116,7 +116,7 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB) (string, []byte, *mht.MHTPr
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, []byte, *mht.MHTProof) {
+func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string, []byte, *mht.MHTProof) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -128,40 +128,45 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
-		return buckets, kvpair.GetValue(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetRootHash(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetProof(0)
+		return [][]*Bucket{buckets}, kvpair.GetValue(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetRootHash(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetProof(0)
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	bucket := seh.GetBucketByKey(kvpair.GetKey(), db)
 	if bucket != nil {
 		//插入(更新)到已存在的bucket中
-		buckets := bucket.Insert(kvpair, db)
-		seh.bucketsNumber += len(buckets) - 1
-		if len(buckets) == 1 {
+		bucketss := bucket.Insert(kvpair, db)
+		newBucketsNumber := 0
+		for _, b := range bucketss {
+			newBucketsNumber += len(b)
+		}
+		seh.bucketsNumber += newBucketsNumber - len(bucketss)
+		if newBucketsNumber == 1 {
 			//未发生分裂
 			//只将bucket[0]更新至db
-			buckets[0].UpdateBucketToDB(db)
-			return buckets, kvpair.GetValue(), buckets[0].merkleTrees[buckets[0].GetSegmentKey(kvpair.GetKey())].GetRootHash(), buckets[0].merkleTrees[buckets[0].GetSegmentKey(kvpair.GetKey())].GetProof(0)
+			bk := bucketss[0][0]
+			bk.UpdateBucketToDB(db)
+			return bucketss, kvpair.GetValue(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetRootHash(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetProof(0)
 		}
 		//发生分裂,更新ht
-		newld := buckets[0].GetLD()
-		if newld > seh.gd {
-			//ht需扩展
-			seh.gd++
-			//newht := make(map[string]*Bucket, seh.gd*seh.rdx)
-			////遍历orifinHT,将bucket指针指向新的bucket
-			//for k, _ := range seh.ht {
-			//	for i := 0; i < seh.rdx; i++ {
-			//		newbkey := util.IntArrayToString([]int{i}, buckets[0].rdx) + k
-			//		newht[newbkey] = seh.GetBucket(k, db)
-			//	}
-			//}
-			//seh.ht = newht
-		}
+		// 新的ld是第一层大多数bucket的ld+层数-1，层数-1是特定桶连环分裂的次数
+		newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
+		seh.gd = max(seh.gd, newld)
 		//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
-		for i := 0; i < len(buckets); i++ {
-			bkey := util.IntArrayToString(buckets[i].GetBucketKey(), buckets[i].rdx)
-			seh.ht[bkey] = buckets[i]
-			buckets[i].UpdateBucketToDB(db)
+		var bucketKeyWithBiggerLd []int
+		offset := min(len(bucketss[0][0].bucketKey), len(bucketss[0][1].bucketKey))
+		for i, buckets := range bucketss {
+			for j, bucket := range buckets {
+				if i == 0 && bucket.ld == newld { // 找到连环分裂桶
+					bucketKeyWithBiggerLd = bucket.bucketKey
+				}
+				if i > 0 && j == bucketKeyWithBiggerLd[len(bucketKeyWithBiggerLd)-offset-i] { // 每一层都会有一个重复的桶，那就是第一层时发生连环分裂的那个
+					continue
+				}
+				bkey := util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+				seh.ht[bkey] = buckets[j]
+				buckets[j].UpdateBucketToDB(db)
+			}
+
 		}
 		// ZYFCHANGE
 		seh.UpdateSEHToDB(db)
@@ -169,7 +174,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db)
 		insertedV, segkey, issegExist, index := kvbucket.GetValueByKey(kvpair.GetKey(), db)
 		segRootHash, proof := kvbucket.GetProof(segkey, issegExist, index, db)
-		return buckets, insertedV, segRootHash, proof
+		return bucketss, insertedV, segRootHash, proof
 	}
 	return nil, "", nil, nil
 }

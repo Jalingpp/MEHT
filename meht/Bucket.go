@@ -145,6 +145,12 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB) {
 // SetBucketKey sets the bucket key of the Bucket
 func (b *Bucket) SetBucketKey(bucketKey []int) {
 	b.bucketKey = bucketKey
+	if len(bucketKey) == 3 {
+		bk := bucketKey
+		if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
+			fmt.Println("why ?")
+		}
+	}
 }
 
 // SetLD sets the local depth of the Bucket
@@ -215,7 +221,7 @@ func (b *Bucket) GetIndex(key string, db *leveldb.DB) (string, bool, int) {
 }
 
 // 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
-func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
+func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
 	segkey, _, index := b.GetIndex(kvpair.GetKey(), db)
@@ -234,7 +240,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 		//输出更新后的value和proof
 		//fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
 		//PrintMHTProof(updateProof)
-		return buckets
+		return [][]*Bucket{buckets}
 	} else {
 		//获得kvpair的key的segment
 		segkey := b.GetSegmentKey(kvpair.GetKey())
@@ -267,10 +273,11 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 			//输出插入的value和proof
 			//fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
 			//PrintMHTProof(updateProof)
-			return buckets
+			return [][]*Bucket{buckets}
 		} else {
 			//已满,分裂成rdx个bucket
 			//fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey()), b.rdx)
+			ret := make([][]*Bucket, 0)
 			buckets = append(buckets, b.SplitBucket(db)...)
 			//为所有bucket构建merkle tree
 			for _, bucket := range buckets {
@@ -286,15 +293,22 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 					bucket.UpdateMerkleTreeToDB(segkey, db)
 				}
 			}
-			//判断key应该插入到哪个bucket中
+			//判断key应该插入到哪个bucket中,后续需要根据进制做调整 TODO
 			ikey := kvpair.GetKey()
 			bk := ikey[len(ikey)-b.ld] - '0'
 			if bk > 9 {
 				bk -= 'a' - '9' - 1
 			}
 			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
-			buckets[bk].Insert(kvpair, db)
-			return buckets
+			//buckets[bk].Insert(kvpair, db)
+			//return buckets
+			ret = append(ret, buckets)
+			ret_ := buckets[bk].Insert(kvpair, db)
+			if len(ret_[0]) != b.rdx {
+				return ret
+			} else {
+				return append(ret, ret_...)
+			}
 		}
 	}
 }
@@ -311,23 +325,40 @@ func (b *Bucket) SplitBucket(db *leveldb.DB) []*Bucket {
 	b.merkleTrees = make(map[string]*mht.MerkleTree)
 	buckets = append(buckets, b)
 	//创建rdx-1个新bucket
+	fmt.Println("---------------------------------")
 	for i := 0; i < b.rdx-1; i++ {
 		newBucket := NewBucket(b.name, b.ld, b.rdx, b.capacity, b.segNum)
 		newBucket.SetBucketKey(append([]int{i + 1}, originBkey...))
 		//将新bucket插入到db中
 		newBucket.UpdateBucketToDB(db)
 		buckets = append(buckets, newBucket)
+		if len(newBucket.bucketKey) == 3 {
+			bk := newBucket.bucketKey
+			if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
+				fmt.Println("why ?")
+			}
+		}
+		fmt.Println(newBucket.ld)
 	}
 	//获取原bucket中所有数据对象
+	power := 0
+	rdx_ := b.rdx
+	BASE_ := 16
+	for rdx_ >= BASE_ {
+		power += 1
+		rdx_ /= BASE_
+	}
 	for _, value := range bsegments {
 		kvpairs := value
 		for _, kvpair := range kvpairs {
 			k := kvpair.GetKey()
 			//获取key的倒数第ld位
-			//bk := k[len(k)-b.ld:][0] - '0'
-			bk := k[len(k)-b.ld] - '0'
-			if bk > 9 {
-				bk -= 'a' - '9' - 1
+			bk := 0
+			for i := 0; i < power; i++ {
+				bk = BASE_*bk + util.ByteToHexIndex(k[max(0, len(k)-power*b.ld-i)])
+				if len(k)-power*b.ld-i <= 0 {
+					break
+				}
 			}
 			//将数据对象插入到对应的bucket中
 			buckets[bk].Insert(&kvpair, db)
@@ -492,6 +523,12 @@ type SeBucket struct {
 
 // 序列化Bucket
 func SerializeBucket(b *Bucket) []byte {
+	if len(b.bucketKey) == 3 {
+		bk := b.bucketKey
+		if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
+			fmt.Println("why ?")
+		}
+	}
 	seBucket := &SeBucket{b.name, b.bucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
 	for k, _ := range b.segments {
 		seBucket.SegKeys = append(seBucket.SegKeys, k)
@@ -519,6 +556,12 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		mhts[seBucket.SegKeys[i]] = nil
 	}
 	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number, seBucket.SegNum, segments, mhts}
+	if len(bucket.bucketKey) == 3 {
+		bk := bucket.bucketKey
+		if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
+			fmt.Println("why ?")
+		}
+	}
 	return bucket, nil
 }
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func HexIntToString(num int) string {
+func IntToHEXString(num int) string {
 	if num < 0 {
 		return ""
 	}
@@ -18,9 +18,9 @@ func HexIntToString(num int) string {
 	}
 	cur := num % 16
 	if cur > 9 {
-		return HexIntToString(num/16) + string(rune('a'+cur-10))
+		return IntToHEXString(num/16) + string(rune('a'+cur-10))
 	} else {
-		return HexIntToString(num/16) + strconv.Itoa(cur)
+		return IntToHEXString(num/16) + strconv.Itoa(cur)
 	}
 }
 
@@ -32,7 +32,7 @@ func IntArrayToString(intArray []int, rdx int) string {
 		rdx /= 16
 	}
 	for _, val := range intArray {
-		cur := HexIntToString(val)
+		cur := IntToHEXString(val)
 		ret += strings.Repeat("0", power-len(cur)) + cur
 	}
 	return ret

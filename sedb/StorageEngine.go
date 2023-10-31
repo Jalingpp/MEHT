@@ -124,7 +124,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
 	oldvalue, oldprimaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
 	if oldvalue == kvpair.GetValue() {
-		fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 		return oldprimaryProof, nil, nil
 	}
 	//将KV插入到主键索引中

@@ -4,21 +4,15 @@
     <option name="autoReloadType" value="ALL" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="30b1825c-a745-4976-aeb4-84e4d10c03a7" name="更改" comment="">
+    <list default="true" id="30b1825c-a745-4976-aeb4-84e4d10c03a7" name="更改" comment="10301741">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000011.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000012.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000014.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000016.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000017.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000018.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000019.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000020.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOCK" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000000" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/util/RW.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/RW.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/config.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/MEHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MEHT.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/SEH.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/SEH.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/StorageEngine.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/StorageEngine.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -40,6 +34,7 @@
   </component>
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
+    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
@@ -86,6 +81,10 @@
       </map>
     </option>
   </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="10301741" />
+    <option name="LAST_COMMIT_MESSAGE" value="10301741" />
+  </component>
   <component name="VgoProject">
     <settings-migrated>true</settings-migrated>
   </component>
@@ -94,23 +93,8 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">
           <url>file://$PROJECT_DIR$/meht/MGT.go</url>
-          <line>65</line>
-          <option name="timeStamp" value="14" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
-          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
-          <line>197</line>
+          <line>192</line>
           <option name="timeStamp" value="16" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
-          <url>file://$PROJECT_DIR$/meht/MEHT.go</url>
-          <line>77</line>
-          <option name="timeStamp" value="19" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
-          <url>file://$PROJECT_DIR$/meht/MGT.go</url>
-          <line>53</line>
-          <option name="timeStamp" value="21" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

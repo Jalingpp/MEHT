@@ -121,7 +121,7 @@ func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 // 获取segment对应的merkle tree,若不存在,则从db中获取
 func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB) *mht.MerkleTree {
 	if b.merkleTrees[index] == nil {
-		fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
+		//fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
 		mtString, error := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index), nil)
 		if error == nil {
 			mt, _ := mht.DeserializeMHT(mtString)

@@ -84,7 +84,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
 	//更新seh到db
-	meht.seh.UpdateSEHToDB(db)
+	//meht.seh.UpdateSEHToDB(db)
 	//无论是否分裂，都需要更新mgt
 	meht.mgt = meht.GetMGT(db).MGTUpdate(buckets, db)
 	//更新mgt的根节点哈希并更新到db

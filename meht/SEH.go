@@ -43,22 +43,26 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 
 // 获取bucket，如果内存中没有，从db中读取
 func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB) *Bucket {
-	if seh.ht[bucketKey] == nil {
-		bucketString, error := db.Get([]byte(seh.name+"bucket"+bucketKey), nil)
-		if error == nil {
+	ret := seh.ht[bucketKey]
+	if ret == nil {
+		bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bucketKey), nil)
+		if error_ == nil {
 			bucket, _ := DeserializeBucket(bucketString)
-			seh.ht[bucketKey] = bucket
+			ret = bucket
 		}
 		//如果当前bucket仍然为空，且bucketKey的最左位不为0,则说明该bucket指向与左位为0的bucket同一个bucket
-		if seh.ht[bucketKey] == nil && bucketKey[0] != '0' {
-			firstBucketKey := "0" + bucketKey[1:]
-			seh.ht[firstBucketKey] = seh.GetBucket(bucketKey[1:], db)
-			seh.ht[bucketKey] = seh.ht[firstBucketKey]
-		} else if seh.ht[bucketKey] == nil && bucketKey[0] == '0' {
-			seh.ht[bucketKey] = seh.GetBucket(bucketKey[1:], db)
+		//if seh.ht[bucketKey] == nil && bucketKey[0] != '0' {
+		//	firstBucketKey := "0" + bucketKey[1:]
+		//	seh.ht[firstBucketKey] = seh.GetBucket(bucketKey[1:], db)
+		//	seh.ht[bucketKey] = seh.ht[firstBucketKey]
+		//} else if seh.ht[bucketKey] == nil && bucketKey[0] == '0' {
+		//	seh.ht[bucketKey] = seh.GetBucket(bucketKey[1:], db)
+		//}
+		if ret == nil {
+			ret = seh.GetBucket(bucketKey[1:], db)
 		}
 	}
-	return seh.ht[bucketKey]
+	return ret
 }
 
 // GetBucket returns the bucket with the given key
@@ -72,10 +76,11 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB) *Bucket {
 	} else {
 		bkey = strings.Repeat("0", seh.gd-len(key)) + key
 	}
-	if seh.GetBucket(bkey, db) == nil {
-		return nil
-	}
-	return seh.ht[bkey]
+	return seh.GetBucket(bkey, db)
+	//if seh.GetBucket(bkey, db) == nil {
+	//	return nil
+	//}
+	//return seh.ht[bkey]
 }
 
 // GetGD returns the global depth of the SEH
@@ -139,21 +144,18 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 		}
 		//发生分裂,更新ht
 		newld := buckets[0].GetLD()
-		if newld == 1 {
-			fmt.Println("newld = 1 ?!")
-		}
 		if newld > seh.gd {
 			//ht需扩展
 			seh.gd++
-			newht := make(map[string]*Bucket, seh.gd*seh.rdx)
-			//遍历orifinHT,将bucket指针指向新的bucket
-			for k, _ := range seh.ht {
-				for i := 0; i < seh.rdx; i++ {
-					newbkey := util.IntArrayToString([]int{i}, buckets[0].rdx) + k
-					newht[newbkey] = seh.GetBucket(k, db)
-				}
-			}
-			seh.ht = newht
+			//newht := make(map[string]*Bucket, seh.gd*seh.rdx)
+			////遍历orifinHT,将bucket指针指向新的bucket
+			//for k, _ := range seh.ht {
+			//	for i := 0; i < seh.rdx; i++ {
+			//		newbkey := util.IntArrayToString([]int{i}, buckets[0].rdx) + k
+			//		newht[newbkey] = seh.GetBucket(k, db)
+			//	}
+			//}
+			//seh.ht = newht
 		}
 		//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
 		for i := 0; i < len(buckets); i++ {
@@ -161,6 +163,9 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 			seh.ht[bkey] = buckets[i]
 			buckets[i].UpdateBucketToDB(db)
 		}
+		// ZYFCHANGE
+		seh.UpdateSEHToDB(db)
+		//
 		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db)
 		insertedV, segkey, issegExist, index := kvbucket.GetValueByKey(kvpair.GetKey(), db)
 		segRootHash, proof := kvbucket.GetProof(segkey, issegExist, index, db)
@@ -195,10 +200,16 @@ type SeSEH struct {
 }
 
 func SerializeSEH(seh *SEH) []byte {
-	hashTableKeys := ""
+	kList := make([]string, 0)
 	for k, _ := range seh.ht {
-		hashTableKeys += k + ","
+		kList = append(kList, k)
 	}
+	hashTableKeys := strings.Join(kList, ",")
+	//hashTableKeys := ""
+	//for k, _ := range seh.ht {
+	//	hashTableKeys += k + ","
+	//}
+	//hashTableKeys = strings.Join(seh.ht)
 	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, hashTableKeys, seh.bucketsNumber}
 	jsonSEH, err := json.Marshal(seSEH)
 	if err != nil {

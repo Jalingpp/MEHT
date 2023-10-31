@@ -19,7 +19,7 @@ func main() {
 	//siMode := "mpt"
 	siMode := "meht"
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc := 4   //meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bc := 128 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 
@@ -35,7 +35,8 @@ func main() {
 	insertNum := 0
 	var start time.Time
 	var duration time.Duration = 0
-	for _, file := range kvPairsJsonFiles {
+	//for _, file := range kvPairsJsonFiles {
+	for j, file := range kvPairsJsonFiles {
 		fmt.Println(file)
 		kvPairs := util.ReadKVPairFromJsonFile(file)
 		insertNum += len(kvPairs)
@@ -49,11 +50,15 @@ func main() {
 		}
 		duration += time.Since(start)
 		start = time.Now()
-		break
+		if j > 1 {
+			fmt.Println("now: ", j)
+			//break
+		}
+		//break
 	}
 	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
 
-	qrKey := "human"
+	qrKey := "https://raw.seadn.io/files/e2205125604cfca54281e88783b4cd2b.gif,Human T1 [HATCHING],xs,human"
 	qrValue, qrKVPair, qrProof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qrKey))
 	seDB.PrintKVPairsQueryResult(qrKey, qrValue, qrKVPair, qrProof)
 	//打印SEDB

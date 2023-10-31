@@ -121,10 +121,12 @@ func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 // 获取segment对应的merkle tree,若不存在,则从db中获取
 func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB) *mht.MerkleTree {
 	if b.merkleTrees[index] == nil {
-		// fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
+		// fmt.Printf("read mht %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
 		mtString, error := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index), nil)
+		// fmt.Printf("mtString=%x\n", mtString)
 		if error == nil {
 			mt, _ := mht.DeserializeMHT(mtString)
+			// fmt.Printf("mt.rootHash=%x\n", mt.GetRootHash())
 			b.merkleTrees[index] = mt
 		}
 	}
@@ -138,7 +140,8 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB) {
 	}
 	mt := b.GetMerkleTrees()[index]
 	seMHT := mht.SerializeMHT(mt)
-	// fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
+	// fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
+	// fmt.Printf("mhtRootHash: %x\n", b.GetMerkleTrees()[index].GetRootHash())
 	db.Put([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index), seMHT, nil)
 }
 
@@ -446,7 +449,10 @@ type SeSegment struct {
 func SerializeSegment(kvpairs []util.KVPair) []byte {
 	kvstring := ""
 	for i := 0; i < len(kvpairs); i++ {
-		kvstring += kvpairs[i].GetKey() + ":" + kvpairs[i].GetValue() + ";"
+		kvstring += kvpairs[i].GetKey() + ":" + kvpairs[i].GetValue()
+		if i < len(kvpairs)-1 {
+			kvstring += ";"
+		}
 	}
 	seSegment := &SeSegment{kvstring}
 	jsonSegment, err := json.Marshal(seSegment)

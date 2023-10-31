@@ -33,7 +33,7 @@ type MEHT struct {
 
 // NewMEHT returns a new MEHT
 func NewMEHT(name string, rdx int, bc int, bs int) *MEHT {
-	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(), nil}
+	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil}
 }
 
 // 更新MEHT到db
@@ -100,7 +100,7 @@ func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
 	meht.GetSEH(db).PrintSEH(db)
-	meht.GetMGT(db).PrintMGT(db)
+	meht.GetMGT(db).PrintMGT(meht.name, db)
 }
 
 type MEHTProof struct {
@@ -122,7 +122,7 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 	return "", nil, "", false, -1
 }
 
-// 根据查询结果构建MEHTProof
+// 根据查询结果构建MEHTProof, mgtNode.bucket.rdx
 func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, index int, db *leveldb.DB) *MEHTProof {
 	//找到segRootHash和segProof
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db)
@@ -182,7 +182,11 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 					}
 				}
 			}
-			segRootHash = segRootHashes[0]
+			if len(segRootHashes) == 0 {
+				segRootHash = nil
+			} else {
+				segRootHash = segRootHashes[0]
+			}
 		}
 	} else {
 		//如果key存在，则根据key对应的value构建segment的默克尔树根
@@ -256,23 +260,44 @@ func (meht *MEHT) SetMGT(mgt *MGT) {
 
 // func main() {
 
-// //测试MEHT
-// //创建一个bucket
+//new a database
+// dbPath := "data/levelDB/test"
+// db, err := leveldb.OpenFile(dbPath, nil)
+// if err != nil {
+// 	fmt.Printf("OpenDB error: %v\n", err)
+// 	return
+// }
+
+//测试MEHT
+//创建一个bucket
 // MEHT := meht.NewMEHT(mehtName, 2, 2, 1) //rdx,capacity,segNum
+
+// var MEHT *meht.MEHT
+// seTest := sedb.NewStorageEngine("meht", mehtName, 2, 2, 1)
+// MEHT = seTest.GetSecondaryIndex_meht(db)
+// if MEHT == nil {
+// 	fmt.Printf("meht is nil, new meht\n")
+// 	MEHT = meht.NewMEHT(mehtName, 2, 2, 1) //rdx, bc, bs
+// }
 // //创建4个KVPair
 // kvpair1 := util.NewKVPair("0000", "value1")
 // kvpair2 := util.NewKVPair("1001", "value2")
 // kvpair3 := util.NewKVPair("0010", "value3")
 // kvpair4 := util.NewKVPair("0000", "value4")
 
+// MEHT.SetSEH(nil)
+// MEHT.SetMGT(nil)
+
+// MEHT.PrintMEHT(db)
+
 // //插入kvpair1到MEHT
 // MEHT.Insert(kvpair1, db)
 // //打印整个MEHT
 // MEHT.PrintMEHT(db)
 
-// //插入kvpair2到MEHT
+// // 插入kvpair2到MEHT
 // MEHT.Insert(kvpair2, db)
-// //打印整个MEHT
+// // 打印整个MEHT
 // MEHT.PrintMEHT(db)
 
 // //插入kvpair3到MEHT
@@ -282,24 +307,26 @@ func (meht *MEHT) SetMGT(mgt *MGT) {
 
 // //插入kvpair4到MEHT
 // MEHT.Insert(kvpair4, db)
-// //打印整个MEHT
+// // //打印整个MEHT
 // MEHT.PrintMEHT(db)
 
-// // //查询kvpair1
-// // qv1, bucket1, segkey1, isSegExist1, index1 := MEHT.QueryValueByKey(kvpair1.GetKey(), db)
-// // //获取查询证明
-// // qpf1 := MEHT.GetQueryProof(bucket1, segkey1, isSegExist1, index1, db)
-// // //打印查询结果
-// // meht.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
-// // //验证查询结果
-// // meht.VerifyQueryResult(qv1, qpf1)
+// MEHT.UpdateMEHTToDB(db)
 
-// // //查询kvpair1
-// // qv2, bucket2, segkey2, isSegExist2, index2 := MEHT.QueryValueByKey(kvpair2.GetKey(), db)
-// // //获取查询证明
-// // qpf2 := MEHT.GetQueryProof(bucket2, segkey2, isSegExist2, index2, db)
-// // //打印查询结果
-// // meht.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
-// // //验证查询结果
-// // meht.VerifyQueryResult(qv2, qpf2)
+// //查询kvpair1
+// qv1, bucket1, segkey1, isSegExist1, index1 := MEHT.QueryValueByKey(kvpair1.GetKey(), db)
+// //获取查询证明
+// qpf1 := MEHT.GetQueryProof(bucket1, segkey1, isSegExist1, index1, db)
+// //打印查询结果
+// meht.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
+// //验证查询结果
+// meht.VerifyQueryResult(qv1, qpf1)
+
+// //查询kvpair1
+// qv2, bucket2, segkey2, isSegExist2, index2 := MEHT.QueryValueByKey(kvpair2.GetKey(), db)
+// //获取查询证明
+// qpf2 := MEHT.GetQueryProof(bucket2, segkey2, isSegExist2, index2, db)
+// //打印查询结果
+// meht.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
+// //验证查询结果
+// meht.VerifyQueryResult(qv2, qpf2)
 // }

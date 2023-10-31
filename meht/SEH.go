@@ -5,7 +5,6 @@ import (
 	"MEHT/util"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -147,7 +146,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 			//遍历orifinHT,将bucket指针指向新的bucket
 			for k, _ := range seh.ht {
 				for i := 0; i < seh.rdx; i++ {
-					newbkey := strconv.Itoa(i) + k
+					newbkey := util.IntArrayToString([]int{i}, buckets[0].rdx) + k
 					newht[newbkey] = seh.GetBucket(k, db)
 				}
 			}
@@ -155,7 +154,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 		}
 		//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
 		for i := 0; i < len(buckets); i++ {
-			bkey := util.IntArrayToString(buckets[i].GetBucketKey())
+			bkey := util.IntArrayToString(buckets[i].GetBucketKey(), buckets[i].rdx)
 			seh.ht[bkey] = buckets[i]
 			buckets[i].UpdateBucketToDB(db)
 		}

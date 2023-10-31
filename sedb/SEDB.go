@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -88,6 +90,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var secondaryMEHTProof *meht.MEHTProof
 	var primaryProof []*mpt.MPTProof
 	var queryResult []*util.KVPair
+	var lock sync.Mutex
+	var wg sync.WaitGroup
 	if sedb.siMode == "mpt" {
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.db).QueryByKey(Hexkeyword, sedb.db)
 		secondaryMEHTProof = nil
@@ -97,42 +101,54 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
 		}
 		primarykeys := strings.Split(primaryKey, ",")
+		wg.Add(len(primarykeys))
 		for i := 0; i < len(primarykeys); i++ {
-			qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
-			//用qV和primarykeys[i]构造一个kvpair
-			kvpair := util.NewKVPair(primarykeys[i], qV)
-			//把kvpair加入queryResult
-			queryResult = append(queryResult, kvpair)
-			//把pProof加入primaryProof
-			primaryProof = append(primaryProof, pProof)
+			go func(primarykey string, mutex *sync.Mutex) {
+				qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykey, sedb.db)
+				//用qV和primarykeys[i]构造一个kvpair
+				kvpair := util.NewKVPair(primarykey, qV)
+				lock.Lock()
+				//把kvpair加入queryResult
+				queryResult = append(queryResult, kvpair)
+				//把pProof加入primaryProof
+				primaryProof = append(primaryProof, pProof)
+				lock.Unlock()
+				wg.Done()
+			}(primarykeys[i], &lock)
 		}
+		wg.Wait()
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
 		secondaryMPTProof = nil
 		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).QueryValueByKey(Hexkeyword, sedb.db)
 		primaryKey = pKey
-
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
 		go func(ch chan *meht.MEHTProof) {
 			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.db)
 			ch <- seMEHTProof
 		}(ch)
-
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			fmt.Println("No such key!")
 		} else {
 			primarykeys := strings.Split(primaryKey, ",")
+			wg.Add(len(primarykeys))
 			for i := 0; i < len(primarykeys); i++ {
-				qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykeys[i], sedb.db)
-				//用qV和primarykeys[i]构造一个kvpair
-				kvpair := util.NewKVPair(primarykeys[i], qV)
-				//把kvpair加入queryResult
-				queryResult = append(queryResult, kvpair)
-				//把pProof加入primaryProof
-				primaryProof = append(primaryProof, pProof)
+				go func(primarykey string, mutex *sync.Mutex) {
+					qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).QueryByKey(primarykey, sedb.db)
+					//用qV和primarykeys[i]构造一个kvpair
+					kvpair := util.NewKVPair(primarykey, qV)
+					lock.Lock()
+					//把kvpair加入queryResult
+					queryResult = append(queryResult, kvpair)
+					//把pProof加入primaryProof
+					primaryProof = append(primaryProof, pProof)
+					lock.Unlock()
+					wg.Done()
+				}(primarykeys[i], &lock)
 			}
+			wg.Wait()
 		}
 		secondaryMEHTProof = <-ch
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
@@ -160,6 +176,7 @@ func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []
 // 验证查询结果
 func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof *SEDBProof) bool {
 	r := false
+	rCh := make(chan bool)
 	fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
 	//验证非主键查询结果
 	fmt.Printf("验证非主键查询结果:")
@@ -181,12 +198,17 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 		return false
 	}
 	fmt.Printf("验证主键查询结果:\n")
+	primaryIndexProof := sedbProof.GetPrimaryIndexProof()
 	for i := 0; i < len(result); i++ {
-		fmt.Printf("KV[%d]:", i)
-		r = sedb.se.GetPrimaryIndex(sedb.db).VerifyQueryResult(result[i].GetValue(), sedbProof.GetPrimaryIndexProof()[i])
+		go func(result string, proof *mpt.MPTProof) {
+			rCh <- sedb.se.GetPrimaryIndex(sedb.db).VerifyQueryResult(result, proof)
+		}(result[i].GetValue(), primaryIndexProof[i])
+	}
+	for i := 0; i < len(result); i++ {
+		r = <-rCh
 		if !r {
-			fmt.Println("主键查询结果验证失败！")
-			return false
+			fmt.Println("主键查询结果验证失败!")
+			return r
 		}
 	}
 	return r
@@ -207,7 +229,13 @@ func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {
 		return nil, ""
 	}
 	seh, _ := hex.DecodeString(seh_dbPath[0])
-	dbPath := seh_dbPath[1]
+	dbPath := util.Strip(seh_dbPath[1], "\n\t\r")
+	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
+		err = os.MkdirAll(dbPath, 0750)
+		if err != nil {
+			panic(err)
+		}
+	}
 	return seh, dbPath
 }
 

@@ -50,11 +50,9 @@ func main() {
 		}
 		duration += time.Since(start)
 		start = time.Now()
-		if j > 1 {
-			fmt.Println("now: ", j)
-			//break
+		if j == 4 {
+			break
 		}
-		//break
 	}
 	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
 

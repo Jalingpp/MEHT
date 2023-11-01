@@ -142,24 +142,19 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string
 		seh.bucketsNumber += newBucketsNumber - len(bucketss)
 		if newBucketsNumber == 1 {
 			//未发生分裂
-			//只将bucket[0]更新至db
+			//只将bucket[0][0]更新至db
 			bk := bucketss[0][0]
 			bk.UpdateBucketToDB(db)
 			return bucketss, kvpair.GetValue(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetRootHash(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetProof(0)
 		}
 		//发生分裂,更新ht
-		// 新的ld是第一层大多数bucket的ld+层数-1，层数-1是特定桶连环分裂的次数
+		//新的ld是第一层大多数bucket的ld+(层数-1),(层数-1)是连环分裂的次数
 		newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
 		seh.gd = max(seh.gd, newld)
 		//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
-		var bucketKeyWithBiggerLd []int
-		offset := min(len(bucketss[0][0].bucketKey), len(bucketss[0][1].bucketKey))
 		for i, buckets := range bucketss {
-			for j, bucket := range buckets {
-				if i == 0 && bucket.ld == newld { // 找到连环分裂桶
-					bucketKeyWithBiggerLd = bucket.bucketKey
-				}
-				if i > 0 && j == bucketKeyWithBiggerLd[len(bucketKeyWithBiggerLd)-offset-i] { // 每一层都会有一个重复的桶，那就是第一层时发生连环分裂的那个
+			for j := range buckets {
+				if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
 					continue
 				}
 				bkey := util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
@@ -169,6 +164,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string
 
 		}
 		// ZYFCHANGE
+		// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
 		seh.UpdateSEHToDB(db)
 		//
 		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db)

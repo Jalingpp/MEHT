@@ -71,17 +71,7 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int) *MGTNode 
 			if node.isLeaf {
 				node.GetBucket(util.IntArrayToString(node.bucketKey, rdx), db)
 			}
-			if node.bucket != nil {
-				if node.bucketKey[0] != index {
-					fmt.Println("why ? ")
-				}
-			}
 			mgtNode.subNodes[index] = node
-		}
-	}
-	if mgtNode.subNodes[index].bucket != nil {
-		if mgtNode.subNodes[index].bucketKey[0] != index {
-			fmt.Println("why ? ")
 		}
 	}
 	return mgtNode.subNodes[index]
@@ -276,12 +266,6 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 
 	for i := 0; i < len(newBuckets); i++ {
 		newNode := NewMGTNode(nil, true, newBuckets[i], db, newBuckets[0].rdx)
-		if len(newNode.bucket.bucketKey) == 3 {
-			bk := newNode.bucket.bucketKey
-			if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
-				fmt.Println("why ?")
-			}
-		}
 		subNodes = append(subNodes, newNode)
 		newNode.UpdateMGTNodeToDB(db)
 	}
@@ -302,14 +286,6 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	for i := 2; i < len(nodePath); i++ {
 		nodePath[i].dataHashes[oldBucketKey[i-1]] = nodePath[i-1].nodeHash
 		nodePath[i].UpdateMGTNodeToDB(db)
-	}
-	for i, node := range nodePath {
-		fmt.Println("--------------------------------------------")
-		if node.bucket != nil {
-			if len(node.bucketKey) != len(nodePath)-i-1 {
-				fmt.Println("YYY")
-			}
-		}
 	}
 	return mgt
 }

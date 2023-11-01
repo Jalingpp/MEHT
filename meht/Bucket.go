@@ -145,12 +145,6 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB) {
 // SetBucketKey sets the bucket key of the Bucket
 func (b *Bucket) SetBucketKey(bucketKey []int) {
 	b.bucketKey = bucketKey
-	if len(bucketKey) == 3 {
-		bk := bucketKey
-		if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
-			fmt.Println("why ?")
-		}
-	}
 }
 
 // SetLD sets the local depth of the Bucket
@@ -313,20 +307,12 @@ func (b *Bucket) SplitBucket(db *leveldb.DB) []*Bucket {
 	b.merkleTrees = make(map[string]*mht.MerkleTree)
 	buckets = append(buckets, b)
 	//创建rdx-1个新bucket
-	fmt.Println("---------------------------------")
 	for i := 0; i < b.rdx-1; i++ {
 		newBucket := NewBucket(b.name, b.ld, b.rdx, b.capacity, b.segNum)
 		newBucket.SetBucketKey(append([]int{i + 1}, originBkey...))
 		//将新bucket插入到db中
 		newBucket.UpdateBucketToDB(db)
 		buckets = append(buckets, newBucket)
-		if len(newBucket.bucketKey) == 3 {
-			bk := newBucket.bucketKey
-			if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
-				fmt.Println("why ?")
-			}
-		}
-		fmt.Println(newBucket.ld)
 	}
 	//获取原bucket中所有数据对象
 	for _, value := range bsegments {
@@ -496,12 +482,6 @@ type SeBucket struct {
 
 // 序列化Bucket
 func SerializeBucket(b *Bucket) []byte {
-	if len(b.bucketKey) == 3 {
-		bk := b.bucketKey
-		if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
-			fmt.Println("why ?")
-		}
-	}
 	seBucket := &SeBucket{b.name, b.bucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
 	for k, _ := range b.segments {
 		seBucket.SegKeys = append(seBucket.SegKeys, k)
@@ -529,12 +509,6 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		mhts[seBucket.SegKeys[i]] = nil
 	}
 	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number, seBucket.SegNum, segments, mhts}
-	if len(bucket.bucketKey) == 3 {
-		bk := bucket.bucketKey
-		if (bk[0] == 0 || bk[0] == 1) && bk[1] == 6 && bk[2] == 13 {
-			fmt.Println("why ?")
-		}
-	}
 	return bucket, nil
 }
 

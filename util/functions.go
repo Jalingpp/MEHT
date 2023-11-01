@@ -63,16 +63,14 @@ func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
 	return ret
 }
 
-func CommPrefix(a []byte, b []byte) []byte {
+func CommPrefix(a string, b string) string {
 	var idx int
 	for idx = 0; idx < len(a) && idx < len(b); idx++ {
 		if a[idx] != b[idx] {
 			break
 		}
 	}
-	ret := make([]byte, idx)
-	copy(ret, a)
-	return ret
+	return a[:idx]
 }
 
 func StringToHex(s string) string {

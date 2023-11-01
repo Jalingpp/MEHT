@@ -9,8 +9,8 @@ type ProofElement struct {
 
 	proofType int // 0:leaf node, 1: extension node, 2: branch node
 
-	prefix         []byte     // prefix of leaf node or extension node
-	suffix         []byte     // suffix of leaf node or extension node
+	prefix         string     // prefix of leaf node or extension node
+	suffix         string     // suffix of leaf node or extension node
 	value          []byte     // value of leaf node or branch node
 	nextNodeHash   []byte     // next node hash of extension node
 	childrenHashes [16][]byte // children hashes of branch node
@@ -22,7 +22,7 @@ type MPTProof struct {
 	proofs  []*ProofElement //存在证明的elements
 }
 
-func NewProofElement(level int, proofType int, prefix []byte, suffix []byte, value []byte, nextNodeHash []byte, childrenHashes [16][]byte) *ProofElement {
+func NewProofElement(level int, proofType int, prefix string, suffix string, value []byte, nextNodeHash []byte, childrenHashes [16][]byte) *ProofElement {
 	return &ProofElement{level, proofType, prefix, suffix, value, nextNodeHash, childrenHashes}
 }
 

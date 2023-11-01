@@ -174,7 +174,11 @@ func (b *Bucket) SetSegNum(segNum int) {
 
 // 给定一个key，返回该key所在的segment map key
 func (b *Bucket) GetSegmentKey(key string) string {
-	return key[:b.segNum]
+	if b.segNum < len(key) {
+		return key[:b.segNum]
+	} else {
+		return ""
+	}
 }
 
 // 给定一个key, 判断它是否在该bucket中
@@ -230,10 +234,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 		b.UpdateMerkleTreeToDB(segkey, db)
 		//返回更新后的bucket
 		buckets = append(buckets, b)
-		//updateProof := b.GetMerkleTree(segkey, db).GetProof(index)
-		//输出更新后的value和proof
-		//fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
-		//PrintMHTProof(updateProof)
 		return [][]*Bucket{buckets}
 	} else {
 		//获得kvpair的key的segment
@@ -258,10 +258,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 			//将更新后的merkle tree更新至db中
 			b.UpdateMerkleTreeToDB(segkey, db)
 			buckets = append(buckets, b)
-			//updateProof := b.merkleTrees[segkey].GetProof(index)
-			//输出插入的value和proof
-			//fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey()), kvpair.GetKey(), kvpair.GetValue())
-			//PrintMHTProof(updateProof)
 			return [][]*Bucket{buckets}
 		} else {
 			//已满,分裂成rdx个bucket
@@ -286,9 +282,9 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			ret = append(ret, buckets)
 			ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db)
-			if len(ret_[0]) != b.rdx {
+			if len(ret_[0]) != b.rdx { //说明这一次的插入没有引起桶分裂
 				return ret
-			} else {
+			} else { //此次插入引发桶分裂,分裂的rdx个桶作为新的一层桶加入到ret末尾
 				return append(ret, ret_...)
 			}
 		}
@@ -505,8 +501,8 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		fmt.Printf("DeserializeBucket error: %v\n", err)
 		return nil, err
 	}
-	segments := make(map[string][]util.KVPair, 0)
-	mhts := make(map[string]*mht.MerkleTree, 0)
+	segments := make(map[string][]util.KVPair)
+	mhts := make(map[string]*mht.MerkleTree)
 	for i := 0; i < len(seBucket.SegKeys); i++ {
 		segments[seBucket.SegKeys[i]] = nil
 		mhts[seBucket.SegKeys[i]] = nil

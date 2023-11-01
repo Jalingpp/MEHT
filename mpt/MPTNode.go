@@ -1,11 +1,12 @@
 package mpt
 
 import (
+	"MEHT/util"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-
 	"github.com/syndtr/goleveldb/leveldb"
+	"strings"
 )
 
 //MPT节点相关的结构体和方法
@@ -43,10 +44,10 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB) *ShortNode {
 type ShortNode struct {
 	nodeHash []byte //当前节点的哈希值，由prefix+suffix+value/nextNodeHash计算得到
 
-	prefix []byte //前缀
+	prefix string //前缀
 
 	isLeaf       bool      //是否是叶子节点
-	suffix       []byte    //后缀，shared nibble（extension node）或key-end（leaf node）
+	suffix       string    //后缀，shared nibble（extension node）或key-end（leaf node）
 	nextNode     *FullNode //下一个FullNode节点(当前节点是extension node时)
 	nextNodeHash []byte    //下一个FullNode节点的哈希值
 	value        []byte    //value（当前节点是leaf node时）
@@ -60,14 +61,17 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {
 		if error == nil {
 			nextNode, _ := DeserializeFullNode(nextNodeString)
 			sn.nextNode = nextNode
+			if strings.Compare(string(sn.prefix), util.StringToHex("0x142e03367ede17cd851477a4287d1f35676e6dc2\\527")) == 0 && nextNode == nil {
+				fmt.Println("FullNode from db is null ")
+			}
 		}
 	}
 	return sn.nextNode
 }
 
 // NewShortNode creates a ShortNode and computes its nodeHash
-func NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode, value []byte, db *leveldb.DB) *ShortNode {
-	nodeHash := append(prefix, suffix...)
+func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode, value []byte, db *leveldb.DB) *ShortNode {
+	nodeHash := append([]byte(prefix), suffix...)
 	var nextNodeHash []byte
 	if isLeaf {
 		nodeHash = append(nodeHash, value...)
@@ -95,7 +99,7 @@ func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {
 	// if err != nil {
 	// 	fmt.Println("Delete ShortNode from DB error:", err)
 	// }
-	nodeHash := append(sn.prefix, sn.suffix...)
+	nodeHash := append([]byte(sn.prefix), sn.suffix...)
 	if sn.isLeaf {
 		nodeHash = append(nodeHash, sn.value...)
 	} else {
@@ -162,9 +166,9 @@ func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {
 
 type SeShortNode struct {
 	NodeHash     []byte //当前节点的哈希值，由prefix+suffix+value/nextNodeHash计算得到
-	Prefix       []byte //前缀
+	Prefix       string //前缀
 	IsLeaf       bool   //是否是叶子节点
-	Suffix       []byte //后缀，shared nibble（extension node）或key-end（leaf node）
+	Suffix       string //后缀，shared nibble（extension node）或key-end（leaf node）
 	NextNodeHash []byte //下一个FullNode节点的哈希值
 	Value        []byte //value（当前节点是leaf node时）
 }
@@ -231,11 +235,11 @@ func (sn *ShortNode) GetNodeHash() []byte {
 	return sn.nodeHash
 }
 
-func (sn *ShortNode) GetPrefix() []byte {
+func (sn *ShortNode) GetPrefix() string {
 	return sn.prefix
 }
 
-func (sn *ShortNode) GetSuffix() []byte {
+func (sn *ShortNode) GetSuffix() string {
 	return sn.suffix
 }
 

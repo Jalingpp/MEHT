@@ -6,12 +6,39 @@
   <component name="ChangeListManager">
     <list default="true" id="30b1825c-a745-4976-aeb4-84e4d10c03a7" name="更改" comment="10301741">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/config.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000958.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000962.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000963.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000964.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000965.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000966.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000967.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000968.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000969.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000970.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000971.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000972.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000973.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000974.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000975.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000976.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000977.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000978.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000979.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000980.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000981.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT.bak" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOCK" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000959" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/SEH.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/SEH.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/util/RW.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/RW.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mpt/MPT.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPT.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mpt/MPTNode.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTNode.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mpt/MPTProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTProof.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/StorageEngine.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/StorageEngine.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/util/functions.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/functions.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -31,24 +58,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
-    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;zyfChange&quot;,
-    &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
-    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/Lenovo&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_ADD_EXTERNAL_FILES": "true",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.go.formatter.settings.were.checked": "true",
+    "RunOnceActivity.go.migrated.go.modules.settings": "true",
+    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
+    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "git-widget-placeholder": "zyfChange",
+    "go.import.settings.migrated": "true",
+    "go.sdk.automatically.set": "true",
+    "last_opened_file_path": "C:/Users/Lenovo",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "settings.editor.selected.configurable": "http.proxy"
   }
-}</component>
+}]]></component>
   <component name="RunManager">
     <configuration name="go build MEHT" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
       <module name="MEHT" />
@@ -92,8 +120,18 @@
       <breakpoints>
         <line-breakpoint enabled="true" type="DlvLineBreakpoint">
           <url>file://$PROJECT_DIR$/meht/MGT.go</url>
-          <line>204</line>
+          <line>207</line>
           <option name="timeStamp" value="16" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/mpt/MPT.go</url>
+          <line>75</line>
+          <option name="timeStamp" value="39" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" type="DlvLineBreakpoint">
+          <url>file://$PROJECT_DIR$/mpt/MPTNode.go</url>
+          <line>64</line>
+          <option name="timeStamp" value="51" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>

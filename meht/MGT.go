@@ -248,7 +248,13 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 		//如果newBuckets中有多个bucket，则说明发生了分裂，MGT需要生长
 		//分层依次生长,这样每次都只需要在一条路径上多扩展出一层mgtLeafNodes
 		for _, newBuckets := range newBucketss {
-			oldBucketKey := GetOldBucketKey(newBuckets[0])
+			var oldBucketKey []int
+			// oldBucketKey应该由非连环分裂的桶决定，因为连环分裂桶的ld会因为下一层的更新而加一，连环分裂桶的bk也会因此比同一层的其他桶长一些
+			if len(newBuckets[0].bucketKey) <= len(newBuckets[1].bucketKey) {
+				oldBucketKey = GetOldBucketKey(newBuckets[0])
+			} else {
+				oldBucketKey = GetOldBucketKey(newBuckets[1])
+			}
 			//fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, newBuckets[0].rdx))
 			//根据旧bucketKey,找到旧bucket所在的叶子节点
 			nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db, newBuckets[0].rdx)

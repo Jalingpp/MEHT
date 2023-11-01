@@ -48,6 +48,21 @@ func ByteToHexIndex(b byte) int {
 	return -1
 }
 
+func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
+	BASE_ := 16
+	power := 0
+	rdx_ := rdx
+	ret := 0
+	for rdx_ >= BASE_ {
+		power++
+		rdx_ /= BASE_
+	}
+	for i := power - 1; i >= 0; i-- {
+		ret = BASE_*ret + ByteToHexIndex(str[max(0, len(str)-power*offset-i)])
+	}
+	return ret
+}
+
 func CommPrefix(a []byte, b []byte) []byte {
 	var idx int
 	for idx = 0; idx < len(a) && idx < len(b); idx++ {

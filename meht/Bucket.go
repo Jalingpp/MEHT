@@ -254,11 +254,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 			b.segments[segkey] = append(b.segments[segkey], *kvpair)
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segkey, db)
-			//index := len(b.segments[segkey]) - 1
-			// for i := 0; i < len(b.segments[segkey]); i++ {
-			// 	fmt.Printf("key=%s, value=%s", b.segments[segkey][i].GetKey(), b.segments[segkey][i].GetValue())
-			// }
-			// fmt.Printf("index: %d\n", index)
 			b.number++
 			//若该segment对应的merkle tree不存在,则创建,否则插入value到merkle tree中
 			if b.GetMerkleTree(segkey, db) == nil {
@@ -293,17 +288,10 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 					bucket.UpdateMerkleTreeToDB(segkey, db)
 				}
 			}
-			//判断key应该插入到哪个bucket中,后续需要根据进制做调整 TODO
-			ikey := kvpair.GetKey()
-			bk := ikey[len(ikey)-b.ld] - '0'
-			if bk > 9 {
-				bk -= 'a' - '9' - 1
-			}
+			//判断key应该插入到哪个bucket中
 			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
-			//buckets[bk].Insert(kvpair, db)
-			//return buckets
 			ret = append(ret, buckets)
-			ret_ := buckets[bk].Insert(kvpair, db)
+			ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db)
 			if len(ret_[0]) != b.rdx {
 				return ret
 			} else {
@@ -341,27 +329,12 @@ func (b *Bucket) SplitBucket(db *leveldb.DB) []*Bucket {
 		fmt.Println(newBucket.ld)
 	}
 	//获取原bucket中所有数据对象
-	power := 0
-	rdx_ := b.rdx
-	BASE_ := 16
-	for rdx_ >= BASE_ {
-		power += 1
-		rdx_ /= BASE_
-	}
 	for _, value := range bsegments {
 		kvpairs := value
 		for _, kvpair := range kvpairs {
-			k := kvpair.GetKey()
 			//获取key的倒数第ld位
-			bk := 0
-			for i := 0; i < power; i++ {
-				bk = BASE_*bk + util.ByteToHexIndex(k[max(0, len(k)-power*b.ld-i)])
-				if len(k)-power*b.ld-i <= 0 {
-					break
-				}
-			}
 			//将数据对象插入到对应的bucket中
-			buckets[bk].Insert(&kvpair, db)
+			buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(&kvpair, db)
 		}
 	}
 	return buckets

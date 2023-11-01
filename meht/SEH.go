@@ -50,14 +50,6 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB) *Bucket {
 			bucket, _ := DeserializeBucket(bucketString)
 			ret = bucket
 		}
-		//如果当前bucket仍然为空，且bucketKey的最左位不为0,则说明该bucket指向与左位为0的bucket同一个bucket
-		//if seh.ht[bucketKey] == nil && bucketKey[0] != '0' {
-		//	firstBucketKey := "0" + bucketKey[1:]
-		//	seh.ht[firstBucketKey] = seh.GetBucket(bucketKey[1:], db)
-		//	seh.ht[bucketKey] = seh.ht[firstBucketKey]
-		//} else if seh.ht[bucketKey] == nil && bucketKey[0] == '0' {
-		//	seh.ht[bucketKey] = seh.GetBucket(bucketKey[1:], db)
-		//}
 		if ret == nil {
 			ret = seh.GetBucket(bucketKey[1:], db)
 		}
@@ -77,6 +69,7 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB) *Bucket {
 		bkey = strings.Repeat("0", seh.gd-len(key)) + key
 	}
 	return seh.GetBucket(bkey, db)
+	//不在ht中保存跳转桶
 	//if seh.GetBucket(bkey, db) == nil {
 	//	return nil
 	//}
@@ -201,16 +194,10 @@ type SeSEH struct {
 }
 
 func SerializeSEH(seh *SEH) []byte {
-	kList := make([]string, 0)
+	hashTableKeys := ""
 	for k, _ := range seh.ht {
-		kList = append(kList, k)
+		hashTableKeys += k + ","
 	}
-	hashTableKeys := strings.Join(kList, ",")
-	//hashTableKeys := ""
-	//for k, _ := range seh.ht {
-	//	hashTableKeys += k + ","
-	//}
-	//hashTableKeys = strings.Join(seh.ht)
 	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, hashTableKeys, seh.bucketsNumber}
 	jsonSEH, err := json.Marshal(seSEH)
 	if err != nil {

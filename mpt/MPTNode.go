@@ -56,7 +56,6 @@ type ShortNode struct {
 func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
 	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
-		//fmt.Printf("Find from DB,")
 		nextNodeString, error := db.Get(sn.nextNodeHash, nil)
 		if error == nil {
 			nextNode, _ := DeserializeFullNode(nextNodeString)
@@ -170,54 +169,6 @@ type SeShortNode struct {
 	Value        []byte //value（当前节点是leaf node时）
 }
 
-func (sn *ShortNode) GetNodeHash() []byte {
-	return sn.nodeHash
-}
-
-func (sn *ShortNode) GetPrefix() []byte {
-	return sn.prefix
-}
-
-func (sn *ShortNode) GetSuffix() []byte {
-	return sn.suffix
-}
-
-func (sn *ShortNode) GetValue() []byte {
-	return sn.value
-}
-
-func (sn *ShortNode) GetNextNodeHash() []byte {
-	return sn.nextNodeHash
-}
-
-func (sn *ShortNode) GetIsLeaf() bool {
-	return sn.isLeaf
-}
-
-func (sn *ShortNode) SetNextNodeHash(nnh []byte) {
-	sn.nextNodeHash = nnh
-}
-
-func (fn *FullNode) GetNodeHash() []byte {
-	return fn.nodeHash
-}
-
-func (fn *FullNode) GetChildren() [16]*ShortNode {
-	return fn.children
-}
-
-func (fn *FullNode) GetChildrenHash() [16][]byte {
-	return fn.childrenHash
-}
-
-func (fn *FullNode) SetChild(index int, sn *ShortNode) {
-	fn.children[index] = sn
-}
-
-func (fn *FullNode) GetValue() []byte {
-	return fn.value
-}
-
 // 序列化ShortNode
 func SerializeShortNode(sn *ShortNode) []byte {
 	ssn := &SeShortNode{sn.GetNodeHash(), sn.GetPrefix(), sn.GetIsLeaf(), sn.GetSuffix(), sn.GetNextNodeHash(), sn.GetValue()}
@@ -274,4 +225,52 @@ func DeserializeFullNode(sfnstring []byte) (*FullNode, error) {
 	}
 	fn := &FullNode{sfn.NodeHash, children, sfn.ChildrenHash, sfn.Value}
 	return fn, nil
+}
+
+func (sn *ShortNode) GetNodeHash() []byte {
+	return sn.nodeHash
+}
+
+func (sn *ShortNode) GetPrefix() []byte {
+	return sn.prefix
+}
+
+func (sn *ShortNode) GetSuffix() []byte {
+	return sn.suffix
+}
+
+func (sn *ShortNode) GetValue() []byte {
+	return sn.value
+}
+
+func (sn *ShortNode) GetNextNodeHash() []byte {
+	return sn.nextNodeHash
+}
+
+func (sn *ShortNode) GetIsLeaf() bool {
+	return sn.isLeaf
+}
+
+func (sn *ShortNode) SetNextNodeHash(nnh []byte) {
+	sn.nextNodeHash = nnh
+}
+
+func (fn *FullNode) GetNodeHash() []byte {
+	return fn.nodeHash
+}
+
+func (fn *FullNode) GetChildren() [16]*ShortNode {
+	return fn.children
+}
+
+func (fn *FullNode) GetChildrenHash() [16][]byte {
+	return fn.childrenHash
+}
+
+func (fn *FullNode) SetChild(index int, sn *ShortNode) {
+	fn.children[index] = sn
+}
+
+func (fn *FullNode) GetValue() []byte {
+	return fn.value
 }

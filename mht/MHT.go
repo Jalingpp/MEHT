@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 //NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {}: 创建一个新的默克尔树节点
@@ -67,8 +68,8 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 	var leafnodes []*MerkleNode
 
 	// 创建叶子节点
-	for _, d := range data {
-		node := NewMerkleNode(nil, nil, d)
+	for i := 0; i < len(data); i++ {
+		node := NewMerkleNode(nil, nil, data[i])
 		nodes = append(nodes, node)
 		leafnodes = append(leafnodes, node)
 	}
@@ -105,8 +106,8 @@ func (tree *MerkleTree) GetRootHash() []byte {
 
 // 修改data中第i个数据后更新默克尔树的根节点,返回新的根节点哈希
 func (tree *MerkleTree) UpdateRoot(i int, data []byte) []byte {
-	//fmt.Printf("value byte:%x\n", data)
-	copy(tree.DataList[i], data)
+	// fmt.Printf("value byte:%x\n", data)
+	tree.DataList[i] = data
 	//修改叶子节点
 	hash := sha256.Sum256(data)
 	tree.LeafNodes[i].Data = hash[:]
@@ -179,12 +180,21 @@ func (tree *MerkleTree) InsertData(data []byte) []byte {
 }
 
 type SeMHT struct {
-	DataList [][]byte // data list of the merkle tree, is used for reconstructing the merkle tree
+	DataList string // data list of the merkle tree, is used for reconstructing the merkle tree
 }
 
 // 序列化默克尔树
 func SerializeMHT(mht *MerkleTree) []byte {
-	seMHT := &SeMHT{mht.DataList}
+	dataListstring := ""
+	for i := 0; i < len(mht.DataList); i++ {
+		data := hex.EncodeToString(mht.DataList[i])
+		dataListstring += data
+		// fmt.Printf("data[%d]=%x\n", i, data)
+		if i < len(mht.DataList)-1 {
+			dataListstring += ","
+		}
+	}
+	seMHT := &SeMHT{dataListstring}
 	jsonMHT, err := json.Marshal(seMHT)
 	if err != nil {
 		fmt.Printf("SerializeMHT error: %v\n", err)
@@ -201,7 +211,14 @@ func DeserializeMHT(data []byte) (*MerkleTree, error) {
 		fmt.Printf("DeserializeMHT error: %v\n", err)
 		return nil, err
 	}
-	mht := NewMerkleTree(seMHT.DataList)
+	dataList := make([][]byte, 0)
+	dataListstrings := strings.Split(seMHT.DataList, ",")
+	for i := 0; i < len(dataListstrings); i++ {
+		data, _ := hex.DecodeString(dataListstrings[i])
+		// fmt.Printf("data[%d]=%x\n", i, data)
+		dataList = append(dataList, data)
+	}
+	mht := NewMerkleTree(dataList)
 	return mht, nil
 }
 

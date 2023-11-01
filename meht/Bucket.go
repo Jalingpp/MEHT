@@ -436,7 +436,10 @@ type SeSegment struct {
 func SerializeSegment(kvpairs []util.KVPair) []byte {
 	kvstring := ""
 	for i := 0; i < len(kvpairs); i++ {
-		kvstring += kvpairs[i].GetKey() + ":" + kvpairs[i].GetValue() + ";"
+		kvstring += kvpairs[i].GetKey() + ":" + kvpairs[i].GetValue()
+		if i < len(kvpairs)-1 {
+			kvstring += ";"
+		}
 	}
 	seSegment := &SeSegment{kvstring}
 	jsonSegment, err := json.Marshal(seSegment)

@@ -38,24 +38,25 @@ type MGTNode struct {
 }
 
 type MGT struct {
+	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
 }
 
 // NewMGT creates a empty MGT
-func NewMGT() *MGT {
-	return &MGT{nil, nil}
+func NewMGT(rdx int) *MGT {
+	return &MGT{rdx, nil, nil}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
-func (mgt *MGT) GetRoot(db *leveldb.DB, rdx int) *MGTNode {
+func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {
 		mgtString, error_ := db.Get(mgt.mgtRootHash, nil)
 		if error_ == nil {
-			m, _ := DeserializeMGTNode(mgtString, rdx)
+			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
 			// ZYFCHANGE
-			mgt.Root.GetBucket(util.IntArrayToString(mgt.Root.bucketKey, rdx), db)
+			mgt.Root.GetBucket(mgt.rdx, util.IntArrayToString(mgt.Root.bucketKey, mgt.rdx), db)
 		}
 	}
 	return mgt.Root
@@ -69,7 +70,7 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int) *MGTNode 
 			node, _ := DeserializeMGTNode(nodeString, rdx)
 			// ZYFCHANGE
 			if node.isLeaf {
-				node.GetBucket(util.IntArrayToString(node.bucketKey, rdx), db)
+				node.GetBucket(rdx, util.IntArrayToString(node.bucketKey, rdx), db)
 			}
 			mgtNode.subNodes[index] = node
 		}
@@ -78,9 +79,9 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int) *MGTNode 
 }
 
 // 获取bucket,如果bucket为空,则从leveldb中读取
-func (mgtNode *MGTNode) GetBucket(name string, db *leveldb.DB) *Bucket {
+func (mgtNode *MGTNode) GetBucket(rdx int, name string, db *leveldb.DB) *Bucket {
 	if mgtNode.bucket == nil {
-		bucketString, error_ := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey, mgtNode.bucket.rdx)), nil)
+		bucketString, error_ := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey, rdx)), nil)
 		if error_ == nil {
 			bucket, _ := DeserializeBucket(bucketString)
 			mgtNode.bucket = bucket
@@ -90,14 +91,14 @@ func (mgtNode *MGTNode) GetBucket(name string, db *leveldb.DB) *Bucket {
 }
 
 // 更新mgtRootHash,并将mgt存入leveldb
-func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB, rdx int) []byte {
+func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 	//get the old mgtHash
 	hash := sha256.Sum256(mgt.mgtRootHash)
 	oldMgtHash := hash[:]
 	//delete the old mgt in leveldb
 	db.Delete(oldMgtHash, nil)
 	// update mgtRootHash
-	mgt.mgtRootHash = mgt.GetRoot(db, rdx).nodeHash
+	mgt.mgtRootHash = mgt.GetRoot(db).nodeHash
 	//insert mgt in leveldb
 	hash = sha256.Sum256(mgt.mgtRootHash)
 	mgtHash := hash[:]
@@ -118,6 +119,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 		}
 	} else {
 		if subNodes == nil {
+			//subNodes是nil说明是非叶子节点,显然非叶子节点没有bucket,因此需要额外的rdx参数
 			subNodes = make([]*MGTNode, rdx)
 			dataHashes = make([][]byte, rdx)
 		}
@@ -133,6 +135,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
 	var mgtNode *MGTNode
+	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
 		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, nil, nil}
 	} else {
@@ -157,12 +160,12 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB) {
 }
 
 // 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点
-func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, rdx int) []*MGTNode {
+func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 	result := make([]*MGTNode, 0)
 	//递归遍历根节点的所有子节点,找到bucketKey对应的叶子节点
-	p := mgt.GetRoot(db, rdx)
+	p := mgt.GetRoot(db)
 	//将p插入到result的第0个位置
-	result = append([]*MGTNode{p}, result...)
+	result = append(result, p)
 	//从根节点开始,逐层向下遍历,直到找到叶子节点
 	if len(bucketKey) == 0 {
 		return result
@@ -171,7 +174,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, rdx int) []*
 		if p == nil {
 			return nil
 		}
-		p = p.GetSubnode(bucketKey[identI], db, rdx)
+		p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
 		//将p插入到result的第0个位置
 		result = append([]*MGTNode{p}, result...)
 	}
@@ -201,7 +204,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 		return mgt
 	}
 	//如果root为空,则直接为newBuckets创建叶节点(newBuckets中只有一个bucket)
-	if mgt.GetRoot(db, newBucketss[0][0].rdx) == nil {
+	if mgt.GetRoot(db) == nil {
 		mgt.Root = NewMGTNode(nil, true, newBucketss[0][0], db, newBucketss[0][0].rdx)
 		mgt.Root.UpdateMGTNodeToDB(db)
 		return mgt
@@ -212,7 +215,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 	//连环分裂至少需要第一层有rdx个桶，因此只需要判断第一层是不是一个桶就知道bucketss里是不是只有一个桶
 	if len(newBucketss[0]) == 1 {
 		bk := newBucketss[0][0]
-		nodePath = mgt.GetLeafNodeAndPath(bk.bucketKey, db, bk.rdx)
+		nodePath = mgt.GetLeafNodeAndPath(bk.bucketKey, db)
 		targetMerkleTrees := bk.GetMerkleTrees()
 		//更新叶子节点的dataHashes
 		nodePath[0].dataHashes = make([][]byte, 0)
@@ -228,9 +231,6 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 		nodePath[0].UpdateMGTNodeToDB(db)
 		//更新所有父节点的nodeHashs,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
-			//if len(nodePath[i].dataHashes) != 16 {
-			//	nodePath[i].dataHashes = make([][]byte, 16)
-			//}
 			nodePath[i].dataHashes[bk.bucketKey[i-1]] = nodePath[i-1].nodeHash
 			nodePath[i].UpdateMGTNodeToDB(db)
 		}
@@ -247,7 +247,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 			}
 			//fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, newBuckets[0].rdx))
 			//根据旧bucketKey,找到旧bucket所在的叶子节点
-			nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db, newBuckets[0].rdx)
+			nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db)
 			mgt.MGTGrow(oldBucketKey, nodePath, newBuckets, db)
 		}
 		//oldBucketKey := GetOldBucketKey(newBuckets[0])
@@ -293,27 +293,34 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 // 根据子节点哈希计算当前节点哈希
 func UpdateNodeHash(node *MGTNode) {
 	var nodeHash []byte
-	for _, dataHash := range node.dataHashes {
-		nodeHash = append(nodeHash, dataHash...)
+	var keys []int
+	for key := range node.dataHashes {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i int, j int) bool {
+		return i < j
+	})
+	for _, key := range keys {
+		nodeHash = append(nodeHash, node.dataHashes[key]...)
 	}
 	hash := sha256.Sum256(nodeHash)
 	node.nodeHash = hash[:]
 }
 
 // 打印MGT
-func (mgt *MGT) PrintMGT(db *leveldb.DB, rdx int) {
+func (mgt *MGT) PrintMGT(mehtName string, db *leveldb.DB) {
 	fmt.Printf("打印MGT-------------------------------------------------------------------------------------------\n")
 	if mgt == nil {
 		return
 	}
 	//递归打印MGT
 	fmt.Printf("MGTRootHash: %x\n", mgt.mgtRootHash)
-	mgt.PrintMGTNode(mgt.GetRoot(db, rdx), 0, db)
+	mgt.PrintMGTNode(mehtName, mgt.GetRoot(db), 0, db)
 
 }
 
 // 递归打印MGT
-func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB) {
+func (mgt *MGT) PrintMGTNode(mehtName string, node *MGTNode, level int, db *leveldb.DB) {
 	if node == nil {
 		return
 	}
@@ -322,7 +329,7 @@ func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB) {
 
 	if node.isLeaf {
 		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash))
-		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey, node.bucket.rdx))
+		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey, mgt.rdx))
 	} else {
 		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash))
 	}
@@ -332,7 +339,7 @@ func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB) {
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
-			mgt.PrintMGTNode(node.GetSubnode(i, db, node.bucket.rdx), level+1, db)
+			mgt.PrintMGTNode(mehtName, node.GetSubnode(i, db, mgt.rdx), level+1, db)
 		}
 	}
 }
@@ -345,10 +352,14 @@ type MGTProof struct {
 // 给定bucketKey，返回它的mgtRootHash和mgtProof，不存在则返回nil
 func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, rdx int) ([]byte, []MGTProof) {
 	//根据bucketKey,找到叶子节点和路径
-	nodePath := mgt.GetLeafNodeAndPath(bucketKey, db, rdx)
+	nodePath := mgt.GetLeafNodeAndPath(bucketKey, db)
 	//找到mgtProof
 	mgtProof := make([]MGTProof, 0)
 	for i := 0; i < len(nodePath); i++ {
+		if nodePath[i] == nil {
+			mgtProof = append(mgtProof, MGTProof{i, nil})
+			break
+		}
 		for j := 0; j < len(nodePath[i].dataHashes); j++ {
 			mgtProof = append(mgtProof, MGTProof{i, nodePath[i].dataHashes[j]})
 		}
@@ -362,24 +373,24 @@ func ComputMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {
 	isSRHExist := false
 	nodeHash0 := segRootHash
 	var nodeHash1 []byte
-	level := 0
-	for i := 0; i < len(mgtProof); i++ {
+	level := mgtProof[len(mgtProof)-1].level
+	for i := len(mgtProof) - 1; i >= 0; i-- {
 		if mgtProof[i].level != level {
 			if !isSRHExist {
 				return nil
 			} else {
-				level++
+				level--
 				isSRHExist = false
 				Hash := sha256.Sum256(nodeHash1)
 				nodeHash0 = Hash[:]
 				nodeHash1 = nodeHash1[:0]
-				i--
+				i++
 			}
 		} else {
 			if bytes.Equal(nodeHash0, mgtProof[i].dataHash) {
 				isSRHExist = true
 			}
-			nodeHash1 = append(nodeHash1, mgtProof[i].dataHash...)
+			nodeHash1 = append(mgtProof[i].dataHash, nodeHash1...)
 		}
 	}
 	if !isSRHExist {
@@ -399,11 +410,12 @@ func PrintMGTProof(mgtProof []MGTProof) {
 }
 
 type SeMGT struct {
+	Rdx         int    //radix of bucket key, decide the number of sub-nodes
 	MgtRootHash []byte // hash of this MGT, equals to the hash of the root node hash
 }
 
 func SerializeMGT(mgt *MGT) []byte {
-	seMGT := &SeMGT{mgt.mgtRootHash}
+	seMGT := &SeMGT{mgt.rdx, mgt.mgtRootHash}
 	jsonMGT, err := json.Marshal(seMGT)
 	if err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
@@ -419,7 +431,7 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
-	mgt := &MGT{nil, seMGT.MgtRootHash}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash}
 	return mgt, nil
 }
 
@@ -439,7 +451,7 @@ func SerializeMGTNode(node *MGTNode) []byte {
 			dataHashString += ","
 		}
 	}
-	//fmt.Printf("dataHashString is %s\n", dataHashString)
+	// fmt.Printf("dataHashString is %s\n", dataHashString)
 	seMGTNode := &SeMGTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucketKey}
 	jsonMGTNode, err := json.Marshal(seMGTNode)
 	if err != nil {

@@ -16,8 +16,8 @@ func main() {
 	//参数设置
 	filePath := "data/levelDB/config.txt" //存储seHash和dbPath的文件路径
 	//// siMode := "meht" //辅助索引类型，meht或mpt
-	siMode := "mpt"
-	//siMode := "meht"
+	//siMode := "mpt"
+	siMode := "meht"
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 	bc := 128 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment

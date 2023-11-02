@@ -26,11 +26,7 @@ func IntToHEXString(num int) string {
 
 func IntArrayToString(intArray []int, rdx int) string {
 	ret := ""
-	power := 0
-	for rdx >= 16 {
-		power += 1
-		rdx /= 16
-	}
+	power := ComputerStrideByBase(rdx)
 	for _, val := range intArray {
 		cur := IntToHEXString(val)
 		ret += strings.Repeat("0", power-len(cur)) + cur
@@ -48,17 +44,32 @@ func ByteToHexIndex(b byte) int {
 	return -1
 }
 
-func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
+func ComputerStrideByBase(rdx int) (power int) {
 	BASE_ := 16
-	power := 0
+	if rdx < BASE_ {
+		panic("Rdx is smaller than base 16.")
+	}
+	power = 1
 	rdx_ := rdx
-	ret := 0
-	for rdx_ >= BASE_ {
+	for rdx_ > BASE_ {
 		power++
 		rdx_ /= BASE_
 	}
-	for i := power - 1; i >= 0; i-- {
-		ret = BASE_*ret + ByteToHexIndex(str[max(0, len(str)-power*offset-i)])
+	return
+}
+
+func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
+	BASE_ := 16
+	ret := 0
+	power := ComputerStrideByBase(rdx)
+	keyPoint := len(str) - power*offset - (power - 1)
+	startPos := max(0, keyPoint)
+	doNum := power
+	if keyPoint < 0 { // 如果起始位置小于0,则从0位开始但截取长度比原先少了起始位置与0的距离的长度
+		doNum += keyPoint
+	}
+	for i := 0; i < doNum; i++ {
+		ret = BASE_*ret + ByteToHexIndex(str[startPos+i])
 	}
 	return ret
 }

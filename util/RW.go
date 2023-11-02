@@ -65,7 +65,7 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 			if traits, ok := v1.(map[string]interface{}); ok {
 				v_ = make([]string, 0)
 				k2List := make([]string, 0)
-				for k2, _ := range traits {
+				for k2 := range traits {
 					k2List = append(k2List, k2)
 				}
 				sort.Strings(k2List)

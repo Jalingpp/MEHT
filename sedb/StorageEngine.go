@@ -48,8 +48,7 @@ func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int) *
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
 func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 	//删除db中原有的se
-	err := db.Delete(se.seHash, nil)
-	if err != nil {
+	if err := db.Delete(se.seHash, nil); err != nil {
 		fmt.Println("Delete StorageEngine from DB error:", err)
 	}
 	//更新seHash的哈希值
@@ -65,8 +64,7 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 	hash := sha256.Sum256(seHashs)
 	se.seHash = hash[:]
 	//将更新后的se写入db中
-	err = db.Put(se.seHash, SerializeStorageEngine(se), nil)
-	if err != nil {
+	if err := db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 		fmt.Println("Insert StorageEngine to DB error:", err)
 	}
 	return se.seHash
@@ -76,12 +74,12 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
 	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 {
-		primaryIndexString, error := db.Get(se.primaryIndexHash, nil)
-		if error == nil {
+		primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil)
+		if error_ == nil {
 			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString)
 			se.primaryIndex = primaryIndex
 		} else {
-			fmt.Printf("GetPrimaryIndex error:%v\n", error)
+			fmt.Printf("GetPrimaryIndex error:%v\n", error_)
 		}
 	}
 	return se.primaryIndex

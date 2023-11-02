@@ -5,9 +5,8 @@ import (
 	"MEHT/util"
 	"encoding/json"
 	"fmt"
-	"strings"
-
 	"github.com/syndtr/goleveldb/leveldb"
+	"strings"
 )
 
 // NewSEH(rdx int, bc int, bs int) *SEH {}:returns a new SEH
@@ -32,28 +31,90 @@ type SEH struct {
 
 // newSEH returns a new SEH
 func NewSEH(name string, rdx int, bc int, bs int) *SEH {
-	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket, 0), 0}
+	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket), 0}
 }
 
 // 更新SEH到db
 func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 	seSEH := SerializeSEH(seh)
-	db.Put([]byte(seh.name+"seh"), seSEH, nil)
+	if err := db.Put([]byte(seh.name+"seh"), seSEH, nil); err != nil {
+		panic(err)
+	}
 }
 
 // 获取bucket，如果内存中没有，从db中读取
 func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB) *Bucket {
 	ret := seh.ht[bucketKey]
-	if ret == nil {
+	if ret == nil { //bucketKey长度一定是 gd*stride(hex时是1)
+		//done := make(chan struct{})
+		//defer close(done)
+		//generateBucketKeyPossibilities := func(bucketKey string, gd int, rdx int) <-chan string {
+		//	stride := util.ComputerStrideByBase(rdx)
+		//	out := make(chan string)
+		//	go func() {
+		//		for i := 0; i <= len(bucketKey); i += stride {
+		//			out <- bucketKey[i:]
+		//		}
+		//		close(out)
+		//	}()
+		//	return out
+		//}(bucketKey, seh.gd, seh.rdx)
+		//DoSearch := func(in <-chan string) <-chan *Bucket {
+		//	out := make(chan *Bucket)
+		//	go func() {
+		//		for bk := range in {
+		//			bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bk), nil)
+		//			if error_ == nil {
+		//				bucket, _ := DeserializeBucket(bucketString)
+		//				out <- bucket
+		//			}
+		//		}
+		//		close(out)
+		//	}()
+		//	return out
+		//}
+		//Merge := func(done <-chan struct{}, ins ...<-chan *Bucket) <-chan *Bucket {
+		//	var wg sync.WaitGroup
+		//	out := make(chan *Bucket)
+		//	output := func(c <-chan *Bucket) {
+		//		for bucket := range c {
+		//			select {
+		//			case out <- bucket:
+		//			case <-done:
+		//			}
+		//		}
+		//		wg.Done()
+		//	}
+		//	wg.Add(len(ins))
+		//	for _, in := range ins {
+		//		go output(in)
+		//	}
+		//	go func() {
+		//		wg.Wait()
+		//		close(out)
+		//	}()
+		//	return out
+		//}
+		//workerList := make([]<-chan *Bucket, 0)
+		//for i := 0; i < 2; i++ {
+		//	worker := DoSearch(generateBucketKeyPossibilities)
+		//	workerList = append(workerList, worker)
+		//}
+		//ret_ := Merge(done, workerList...)
+		//ret = <-ret_
+		//if ret == nil {
+		//	fmt.Println("Ops")
+		//}
 		bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bucketKey), nil)
 		if error_ == nil {
 			bucket, _ := DeserializeBucket(bucketString)
 			ret = bucket
 		}
 		if ret == nil {
-			ret = seh.GetBucket(bucketKey[1:], db)
+			ret = seh.GetBucket(bucketKey[util.ComputerStrideByBase(seh.rdx):], db)
 		}
 	}
+
 	return ret
 }
 
@@ -64,9 +125,9 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB) *Bucket {
 	}
 	var bkey string
 	if len(key) >= seh.gd {
-		bkey = key[len(key)-seh.gd:]
+		bkey = key[len(key)-seh.gd*util.ComputerStrideByBase(seh.rdx):]
 	} else {
-		bkey = strings.Repeat("0", seh.gd-len(key)) + key
+		bkey = strings.Repeat("0", seh.gd*util.ComputerStrideByBase(seh.rdx)-len(key)) + key
 	}
 	return seh.GetBucket(bkey, db)
 	//不在ht中保存跳转桶
@@ -175,7 +236,7 @@ func (seh *SEH) PrintSEH(db *leveldb.DB) {
 		return
 	}
 	fmt.Printf("SEH: gd=%d, rdx=%d, bucketCapacity=%d, bucketSegNum=%d, bucketsNumber=%d\n", seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, seh.bucketsNumber)
-	for k, _ := range seh.ht {
+	for k := range seh.ht {
 		fmt.Printf("bucketKey=%s\n", k)
 		seh.GetBucket(k, db).PrintBucket(db)
 	}
@@ -195,7 +256,7 @@ type SeSEH struct {
 
 func SerializeSEH(seh *SEH) []byte {
 	hashTableKeys := ""
-	for k, _ := range seh.ht {
+	for k := range seh.ht {
 		hashTableKeys += k + ","
 	}
 	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, hashTableKeys, seh.bucketsNumber}
@@ -214,7 +275,7 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		fmt.Printf("DeserializeSEH error: %v\n", err)
 		return nil, err
 	}
-	seh := &SEH{seSEH.Name, seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum, make(map[string]*Bucket, 0), seSEH.BucketsNumber}
+	seh := &SEH{seSEH.Name, seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum, make(map[string]*Bucket), seSEH.BucketsNumber}
 	htKeys := strings.Split(seSEH.HashTableKeys, ",")
 	for i := 0; i < len(htKeys); i++ {
 		if htKeys[i] == "" && seSEH.Gd > 0 {

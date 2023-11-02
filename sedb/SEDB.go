@@ -50,8 +50,8 @@ func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int,
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
 	if sedb.se == nil && sedb.seHash != nil {
-		seString, error := sedb.db.Get(sedb.seHash, nil)
-		if error == nil {
+		seString, error_ := sedb.db.Get(sedb.seHash, nil)
+		if error_ == nil {
 			se, _ := DeserializeStorageEngine(seString)
 			sedb.se = se
 		}

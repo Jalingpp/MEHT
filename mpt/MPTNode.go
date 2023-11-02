@@ -57,11 +57,11 @@ type ShortNode struct {
 func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
 	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
-		nextNodeString, error := db.Get(sn.nextNodeHash, nil)
-		if error == nil {
+		nextNodeString, error_ := db.Get(sn.nextNodeHash, nil)
+		if error_ == nil {
 			nextNode, _ := DeserializeFullNode(nextNodeString)
 			sn.nextNode = nextNode
-			if strings.Compare(string(sn.prefix), util.StringToHex("0x142e03367ede17cd851477a4287d1f35676e6dc2\\527")) == 0 && nextNode == nil {
+			if strings.Compare(sn.prefix, util.StringToHex("0x142e03367ede17cd851477a4287d1f35676e6dc2\\527")) == 0 && nextNode == nil {
 				fmt.Println("FullNode from db is null ")
 			}
 		}
@@ -85,8 +85,7 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value}
 	//将sn写入db中
 	ssn := SerializeShortNode(sn)
-	err := db.Put(sn.nodeHash, ssn, nil)
-	if err != nil {
+	if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
 		fmt.Println("Insert ShortNode to DB error:", err)
 	}
 	return sn
@@ -109,8 +108,7 @@ func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {
 	sn.nodeHash = hash[:]
 	ssn := SerializeShortNode(sn)
 	//将更新后的sn写入db中
-	err := db.Put(sn.nodeHash, ssn, nil)
-	if err != nil {
+	if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
 		fmt.Println("Insert ShortNode to DB error:", err)
 	}
 }
@@ -134,8 +132,7 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNod
 	//将fn写入db中
 	if db != nil {
 		sfn := SerializeFullNode(fn)
-		err := db.Put(fn.nodeHash, sfn, nil)
-		if err != nil {
+		if err := db.Put(fn.nodeHash, sfn, nil); err != nil {
 			fmt.Println("Insert FullNode to DB error:", err)
 		}
 	}
@@ -145,8 +142,7 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNod
 // UpdateFullNodeHash updates the nodeHash of a FullNode
 func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {
 	//先删除db中原有节点
-	err := db.Delete(fn.nodeHash, nil)
-	if err != nil {
+	if err := db.Delete(fn.nodeHash, nil); err != nil {
 		fmt.Println("Delete FullNode from DB error:", err)
 	}
 	var nodeHash []byte
@@ -158,8 +154,7 @@ func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {
 	fn.nodeHash = hash[:]
 	//将更新后的fn写入db中
 	sfn := SerializeFullNode(fn)
-	err = db.Put(fn.nodeHash, sfn, nil)
-	if err != nil {
+	if err := db.Put(fn.nodeHash, sfn, nil); err != nil {
 		fmt.Println("Insert FullNode to DB error:", err)
 	}
 }

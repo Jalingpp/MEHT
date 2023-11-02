@@ -227,8 +227,7 @@ func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	mptHash := hashs[:]
 	if len(mptHash) > 0 {
 		//删除db中原有的MPT
-		err := db.Delete(mptHash, nil)
-		if err != nil {
+		if err := db.Delete(mptHash, nil); err != nil {
 			fmt.Println("Delete MPT from DB error:", err)
 		}
 	}
@@ -238,8 +237,7 @@ func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	hashs = sha256.Sum256(mpt.rootHash)
 	mptHash = hashs[:]
 	//将更新后的mpt写入db中
-	err := db.Put(mptHash, SerializeMPT(mpt), nil)
-	if err != nil {
+	if err := db.Put(mptHash, SerializeMPT(mpt), nil); err != nil {
 		fmt.Println("Insert MPT to DB error:", err)
 	}
 }
@@ -259,11 +257,11 @@ func (mpt *MPT) RecursivePrintShortNode(cnode *ShortNode, level int, db *leveldb
 	if cnode.isLeaf {
 		//打印当前叶子节点
 		fmt.Printf("level: %d, leafNode:%x\n", level, cnode.nodeHash)
-		fmt.Printf("prefix:%s, suffix:%s, value:%s\n", string(cnode.prefix), string(cnode.suffix), string(cnode.value))
+		fmt.Printf("prefix:%s, suffix:%s, value:%s\n", cnode.prefix, cnode.suffix, string(cnode.value))
 	} else {
 		//打印当前Extension节点
 		fmt.Printf("level: %d, extensionNode:%x\n", level, cnode.nodeHash)
-		fmt.Printf("prefix:%s, suffix:%s, next node:%x\n", string(cnode.prefix), string(cnode.suffix), cnode.nextNodeHash)
+		fmt.Printf("prefix:%s, suffix:%s, next node:%x\n", cnode.prefix, cnode.suffix, cnode.nextNodeHash)
 		//递归打印nextNode
 		mpt.RecursivePrintFullNode(cnode.GetNextNode(db), level+1, db)
 	}

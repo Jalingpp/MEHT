@@ -96,13 +96,17 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 	hash := sha256.Sum256(mgt.mgtRootHash)
 	oldMgtHash := hash[:]
 	//delete the old mgt in leveldb
-	db.Delete(oldMgtHash, nil)
+	if err := db.Delete(oldMgtHash, nil); err != nil {
+		panic(err)
+	}
 	// update mgtRootHash
 	mgt.mgtRootHash = mgt.GetRoot(db).nodeHash
 	//insert mgt in leveldb
 	hash = sha256.Sum256(mgt.mgtRootHash)
 	mgtHash := hash[:]
-	db.Put(mgtHash, SerializeMGT(mgt), nil)
+	if err := db.Put(mgtHash, SerializeMGT(mgt), nil); err != nil {
+		panic(err)
+	}
 	return mgtHash
 }
 
@@ -143,7 +147,9 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	}
 	//将mgtNode存入leveldb
 	nodeString := SerializeMGTNode(mgtNode)
-	db.Put(nodeHash, nodeString, nil)
+	if err := db.Put(nodeHash, nodeString, nil); err != nil {
+		panic(err)
+	}
 
 	return mgtNode
 }
@@ -151,12 +157,16 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 // 更新nodeHash,并将node存入leveldb
 func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB) {
 	//delete the old node in leveldb
-	db.Delete(mgtNode.nodeHash, nil)
+	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
+		panic(err)
+	}
 	//update nodeHash
 	UpdateNodeHash(mgtNode)
 	//insert node in leveldb
 	// fmt.Printf("When write MGTNode to DB, mgtNode.nodeHash: %x\n", mgtNode.nodeHash)
-	db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil)
+	if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
+		panic(err)
+	}
 }
 
 // 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点
@@ -220,11 +230,14 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 		//更新叶子节点的dataHashes
 		nodePath[0].dataHashes = make([][]byte, 0)
 		segKeyInorder := make([]string, 0)
-		for segKey, _ := range bk.GetMerkleTrees() {
+		for segKey := range bk.GetMerkleTrees() {
 			segKeyInorder = append(segKeyInorder, segKey)
 		}
 		sort.Strings(segKeyInorder)
 		for _, key := range segKeyInorder {
+			//if targetMerkleTrees[key] == nil {
+			//	bk.GetMerkleTree(key, db)
+			//}
 			nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTrees[key].GetRootHash())
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
@@ -350,7 +363,7 @@ type MGTProof struct {
 }
 
 // 给定bucketKey，返回它的mgtRootHash和mgtProof，不存在则返回nil
-func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, rdx int) ([]byte, []MGTProof) {
+func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB) ([]byte, []MGTProof) {
 	//根据bucketKey,找到叶子节点和路径
 	nodePath := mgt.GetLeafNodeAndPath(bucketKey, db)
 	//找到mgtProof

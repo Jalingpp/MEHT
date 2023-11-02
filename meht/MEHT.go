@@ -39,14 +39,16 @@ func NewMEHT(name string, rdx int, bc int, bs int) *MEHT {
 // 更新MEHT到db
 func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
 	meMEHT := SerializeMEHT(meht)
-	db.Put([]byte(meht.name+"meht"), meMEHT, nil)
+	if err := db.Put([]byte(meht.name+"meht"), meMEHT, nil); err != nil {
+		panic(err)
+	}
 }
 
 // GetSEH returns the SEH of the MEHT
 func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 	if meht.seh == nil {
-		sehString, error := db.Get([]byte(meht.name+"seh"), nil)
-		if error == nil {
+		sehString, error_ := db.Get([]byte(meht.name+"seh"), nil)
+		if error_ == nil {
 			seh, _ := DeserializeSEH(sehString)
 			meht.seh = seh
 		}
@@ -57,8 +59,8 @@ func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 // GetMGT returns the MGT of the MEHT
 func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
 	if meht.mgt == nil {
-		mgtString, error := db.Get(meht.mgtHash, nil)
-		if error == nil {
+		mgtString, error_ := db.Get(meht.mgtHash, nil)
+		if error_ == nil {
 			mgt, _ := DeserializeMGT(mgtString)
 			meht.mgt = mgt
 		}
@@ -78,7 +80,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.rdx)
+		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db)
 		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
@@ -91,7 +93,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	//获取当前KV插入的bucket
 	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db)
-	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.rdx)
+	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db)
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
@@ -127,7 +129,7 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	//找到segRootHash和segProof
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db)
 	//根据key找到mgtRootHash和mgtProof
-	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db, meht.rdx)
+	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db)
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
@@ -157,8 +159,8 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 			for i := 0; i < len(mehtProof.mhtProof.GetValues()); i++ {
 				data = append(data, []byte(mehtProof.mhtProof.GetValues()[i]))
 			}
-			mht := mht.NewMerkleTree(data)
-			segRootHash = mht.GetRootHash()
+			mht_ := mht.NewMerkleTree(data)
+			segRootHash = mht_.GetRootHash()
 			if !bytes.Equal(segRootHash, mehtProof.segRootHash) {
 				//fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mht.GetRootHash()))
 				return false

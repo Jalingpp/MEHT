@@ -143,7 +143,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	if !isLeaf {
 		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, nil, nil}
 	} else {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, bucket, bucket.bucketKey}
+		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, bucket, bucket.BucketKey}
 	}
 	//将mgtNode存入leveldb
 	nodeString := SerializeMGTNode(mgtNode)
@@ -225,7 +225,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 	//连环分裂至少需要第一层有rdx个桶，因此只需要判断第一层是不是一个桶就知道bucketss里是不是只有一个桶
 	if len(newBucketss[0]) == 1 {
 		bk := newBucketss[0][0]
-		nodePath = mgt.GetLeafNodeAndPath(bk.bucketKey, db)
+		nodePath = mgt.GetLeafNodeAndPath(bk.BucketKey, db)
 		targetMerkleTrees := bk.GetMerkleTrees()
 		//更新叶子节点的dataHashes
 		nodePath[0].dataHashes = make([][]byte, 0)
@@ -244,7 +244,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 		nodePath[0].UpdateMGTNodeToDB(db)
 		//更新所有父节点的nodeHashs,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
-			nodePath[i].dataHashes[bk.bucketKey[i-1]] = nodePath[i-1].nodeHash
+			nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
 			nodePath[i].UpdateMGTNodeToDB(db)
 		}
 	} else {
@@ -253,7 +253,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 		for _, newBuckets := range newBucketss {
 			var oldBucketKey []int
 			// oldBucketKey应该由非连环分裂的桶决定，因为连环分裂桶的ld会因为下一层的更新而加一，连环分裂桶的bk也会因此比同一层的其他桶长一些
-			if len(newBuckets[0].bucketKey) <= len(newBuckets[1].bucketKey) {
+			if len(newBuckets[0].BucketKey) <= len(newBuckets[1].BucketKey) {
 				oldBucketKey = GetOldBucketKey(newBuckets[0])
 			} else {
 				oldBucketKey = GetOldBucketKey(newBuckets[1])

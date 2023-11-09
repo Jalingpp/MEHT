@@ -24,7 +24,7 @@ import (
 
 type Bucket struct {
 	name      string //name of meht
-	bucketKey []int  // bucket key, initial nil, related to ld and kvpair.key
+	BucketKey []int  // bucket key, initial nil, related to ld and kvpair.key
 
 	ld  int // local depth, initial zero
 	rdx int // rdx, initial 2
@@ -46,7 +46,7 @@ func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 func (b *Bucket) UpdateBucketToDB(db *leveldb.DB) {
 	seBucket := SerializeBucket(b)
 	//fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.bucketKey))
-	if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.bucketKey, b.rdx)), seBucket, nil); err != nil {
+	if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
 		panic(err)
 	}
 }
@@ -61,7 +61,7 @@ func NewSegment() []util.KVPair {
 func (b *Bucket) GetSegment(segkey string, db *leveldb.DB) []util.KVPair {
 	if len(b.segments[segkey]) == 0 {
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
-		kvString, error_ := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"segment"+segkey), nil)
+		kvString, error_ := db.Get([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), nil)
 		if error_ == nil {
 			kvs, _ := DeserializeSegment(kvString)
 			b.segments[segkey] = kvs
@@ -77,14 +77,19 @@ func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB) {
 	}
 	seSeg := SerializeSegment(b.segments[segkey])
 	//fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
-	if err := db.Put([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
+	if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
 		panic(err)
 	}
 }
 
+// GetName returns the name of the meht
+func (b *Bucket) GetName() string {
+	return b.name
+}
+
 // GetBucketKey returns the bucket key of the Bucket
 func (b *Bucket) GetBucketKey() []int {
-	return b.bucketKey
+	return b.BucketKey
 }
 
 // GetLD returns the local depth of the Bucket
@@ -126,7 +131,7 @@ func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB) *mht.MerkleTree {
 	if b.merkleTrees[index] == nil {
 		//fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
-		mtString, error_ := db.Get([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index), nil)
+		mtString, error_ := db.Get([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), nil)
 		if error_ == nil {
 			mt, _ := mht.DeserializeMHT(mtString)
 			b.merkleTrees[index] = mt
@@ -143,14 +148,14 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB) {
 	mt := b.GetMerkleTrees()[index]
 	seMHT := mht.SerializeMHT(mt)
 	//fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
-	if err := db.Put([]byte(b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
+	if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
 		panic(err)
 	}
 }
 
 // SetBucketKey sets the bucket key of the Bucket
 func (b *Bucket) SetBucketKey(bucketKey []int) {
-	b.bucketKey = bucketKey
+	b.BucketKey = bucketKey
 }
 
 // SetLD sets the local depth of the Bucket
@@ -395,7 +400,7 @@ func ComputSegHashRoot(value string, proofPairs []mht.ProofPair) []byte {
 // 打印bucket中的所有数据对象
 func (b *Bucket) PrintBucket(db *leveldb.DB) {
 	//打印ld,rdx,capacity,number,segNum
-	fmt.Printf("bucketKey:%s,ld: %d,rdx: %d,capacity: %d,number: %d,segNum: %d\n", util.IntArrayToString(b.bucketKey, b.rdx), b.ld, b.rdx, b.capacity, b.number, b.segNum)
+	fmt.Printf("bucketKey:%s,ld: %d,rdx: %d,capacity: %d,number: %d,segNum: %d\n", util.IntArrayToString(b.BucketKey, b.rdx), b.ld, b.rdx, b.capacity, b.number, b.segNum)
 	//打印segments
 	for segkey := range b.GetSegments() {
 		fmt.Printf("segkey: %s\n", segkey)
@@ -491,7 +496,7 @@ type SeBucket struct {
 
 // 序列化Bucket
 func SerializeBucket(b *Bucket) []byte {
-	seBucket := &SeBucket{b.name, b.bucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
+	seBucket := &SeBucket{b.name, b.BucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
 	for k := range b.segments {
 		seBucket.SegKeys = append(seBucket.SegKeys, k)
 	}

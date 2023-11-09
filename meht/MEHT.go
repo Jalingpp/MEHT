@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -29,11 +31,45 @@ type MEHT struct {
 	seh     *SEH //the key of seh in leveldb is always name+"seh"
 	mgt     *MGT
 	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
+
+	mgtNodeCache         *lru.Cache[string, *MGTNode] // lruCache of mgtNode, the key of mgtNode is its nodeHash in the form of string type
+	mgtNodeCacheCapacity int                          // capacity of mgtNode lruCache
+	bucketCache          *lru.Cache[string, *Bucket]  // lruCache of bucket, the key of
+	bucketCacheCapacity  int
+	segmentCache         *lru.Cache[string, *[]util.KVPair]
+	segmentCacheCapacity int
+	lruLock              sync.RWMutex
 }
 
+type MgtNodeCacheCapacity int
+type BucketCacheCapacity int
+type SegmentCacheCapacity int
+
+var DefaultNodeCacheCapacity = 10
+var DefaultBucketCacheCapacity = 10
+var DefaultSegmentCacheCapacity = 10
+
 // NewMEHT returns a new MEHT
-func NewMEHT(name string, rdx int, bc int, bs int) *MEHT {
-	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil}
+func NewMEHT(name string, rdx int, bc int, bs int, cacheCapacity ...interface{}) *MEHT {
+	mgtNodeCacheCapacity := DefaultNodeCacheCapacity
+	bucketNodeCacheCapacity := DefaultBucketCacheCapacity
+	segmentCacheCapacity := DefaultSegmentCacheCapacity
+	for _, capacity := range cacheCapacity {
+		switch capacity.(type) {
+		case MgtNodeCacheCapacity:
+			mgtNodeCacheCapacity = capacity.(int)
+		case BucketCacheCapacity:
+			bucketNodeCacheCapacity = capacity.(int)
+		case SegmentCacheCapacity:
+			segmentCacheCapacity = capacity.(int)
+		}
+	}
+	lMgtNode, _ := lru.New[string, *MGTNode](mgtNodeCacheCapacity)
+	lBucket, _ := lru.New[string, *Bucket](bucketNodeCacheCapacity)
+	lSegment, _ := lru.New[string, *[]util.KVPair](segmentCacheCapacity)
+	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
+		lMgtNode, mgtNodeCacheCapacity, lBucket, bucketNodeCacheCapacity,
+		lSegment, segmentCacheCapacity, sync.RWMutex{}}
 }
 
 // 更新MEHT到db
@@ -227,11 +263,16 @@ type SeMEHT struct {
 	Bs  int // bucket segment number, initial given，key中区分segment的位数
 
 	MgtHash []byte // hash of the mgt
+
+	MgtNodeCacheCapacity int // capacity of lruCache containing mgtNodes
+	BucketCacheCapacity  int // capacity of lruCache containing  buckets
+	SegmentCacheCapacity int
 }
 
 // 序列化MEHT
 func SerializeMEHT(meht *MEHT) []byte {
-	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash}
+	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash,
+		meht.mgtNodeCacheCapacity, meht.bucketCacheCapacity, meht.segmentCacheCapacity}
 	jsonSSN, err := json.Marshal(seMEHT)
 	if err != nil {
 		fmt.Printf("SerializeMEHT error: %v\n", err)
@@ -248,7 +289,12 @@ func DeserializeMEHT(data []byte) (*MEHT, error) {
 		fmt.Printf("DeserializeMEHT error: %v\n", err)
 		return nil, err
 	}
-	meht := &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash}
+	lMgtNode, _ := lru.New[string, *MGTNode](seMEHT.MgtNodeCacheCapacity)
+	lBucket, _ := lru.New[string, *Bucket](seMEHT.BucketCacheCapacity)
+	lSegment, _ := lru.New[string, *[]util.KVPair](seMEHT.SegmentCacheCapacity)
+	meht := &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
+		lMgtNode, seMEHT.MgtNodeCacheCapacity, lBucket, seMEHT.BucketCacheCapacity,
+		lSegment, seMEHT.SegmentCacheCapacity, sync.RWMutex{}}
 	return meht, nil
 }
 

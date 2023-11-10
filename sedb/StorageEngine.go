@@ -104,7 +104,7 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 	if se.secondaryIndex_meht == nil {
 		secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil)
 		if len(secondaryIndexString) != 0 {
-			secondaryIndex, _ := meht.DeserializeMEHT(secondaryIndexString)
+			secondaryIndex, _ := meht.DeserializeMEHT(secondaryIndexString, db)
 			se.secondaryIndex_meht = secondaryIndex
 		}
 	}
@@ -188,7 +188,7 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil {
 		//创建一个新的非主键索引
-		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs)
+		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db)
 	}
 	//先查询得到原有value与待插入value合并
 	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvpair.GetKey(), db)

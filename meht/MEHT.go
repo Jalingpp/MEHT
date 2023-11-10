@@ -50,7 +50,7 @@ var DefaultBucketCacheCapacity = 10
 var DefaultSegmentCacheCapacity = 10
 
 // NewMEHT returns a new MEHT
-func NewMEHT(name string, rdx int, bc int, bs int, cacheCapacity ...interface{}) *MEHT {
+func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, cacheCapacity ...interface{}) *MEHT {
 	mgtNodeCacheCapacity := DefaultNodeCacheCapacity
 	bucketNodeCacheCapacity := DefaultBucketCacheCapacity
 	segmentCacheCapacity := DefaultSegmentCacheCapacity
@@ -64,12 +64,33 @@ func NewMEHT(name string, rdx int, bc int, bs int, cacheCapacity ...interface{})
 			segmentCacheCapacity = capacity.(int)
 		}
 	}
-	lMgtNode, _ := lru.New[string, *MGTNode](mgtNodeCacheCapacity)
-	lBucket, _ := lru.New[string, *Bucket](bucketNodeCacheCapacity)
-	lSegment, _ := lru.New[string, *[]util.KVPair](segmentCacheCapacity)
+	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCacheCapacity, func(k string, v *MGTNode) {
+		callBackFoo[string, *MGTNode](k, v, db)
+	})
+	lBucket, _ := lru.NewWithEvict[string, *Bucket](bucketNodeCacheCapacity, func(k string, v *Bucket) {
+		callBackFoo[string, *Bucket](k, v, db)
+	})
+	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCacheCapacity, func(k string, v *[]util.KVPair) {
+		callBackFoo[string, *[]util.KVPair](k, v, db)
+	})
 	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
 		lMgtNode, mgtNodeCacheCapacity, lBucket, bucketNodeCacheCapacity,
 		lSegment, segmentCacheCapacity, sync.RWMutex{}}
+}
+
+func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
+	k_, err := util.ToStringE(k)
+	if err != nil {
+		panic(err)
+	}
+	v_, err := util.ToStringE(v)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("onEvicted: \n", k_, v_)
+	if err = db.Put([]byte(k_), []byte(v_), nil); err != nil {
+		panic(err)
+	}
 }
 
 // 更新MEHT到db
@@ -282,16 +303,22 @@ func SerializeMEHT(meht *MEHT) []byte {
 }
 
 // 反序列化MEHT
-func DeserializeMEHT(data []byte) (*MEHT, error) {
+func DeserializeMEHT(data []byte, db *leveldb.DB) (*MEHT, error) {
 	var seMEHT SeMEHT
 	err := json.Unmarshal(data, &seMEHT)
 	if err != nil {
 		fmt.Printf("DeserializeMEHT error: %v\n", err)
 		return nil, err
 	}
-	lMgtNode, _ := lru.New[string, *MGTNode](seMEHT.MgtNodeCacheCapacity)
-	lBucket, _ := lru.New[string, *Bucket](seMEHT.BucketCacheCapacity)
-	lSegment, _ := lru.New[string, *[]util.KVPair](seMEHT.SegmentCacheCapacity)
+	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](seMEHT.MgtNodeCacheCapacity, func(k string, v *MGTNode) {
+		callBackFoo[string, *MGTNode](k, v, db)
+	})
+	lBucket, _ := lru.NewWithEvict[string, *Bucket](seMEHT.BucketCacheCapacity, func(k string, v *Bucket) {
+		callBackFoo[string, *Bucket](k, v, db)
+	})
+	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](seMEHT.SegmentCacheCapacity, func(k string, v *[]util.KVPair) {
+		callBackFoo[string, *[]util.KVPair](k, v, db)
+	})
 	meht := &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
 		lMgtNode, seMEHT.MgtNodeCacheCapacity, lBucket, seMEHT.BucketCacheCapacity,
 		lSegment, seMEHT.SegmentCacheCapacity, sync.RWMutex{}}

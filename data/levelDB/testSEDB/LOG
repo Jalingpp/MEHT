@@ -2722,3 +2722,14 @@
 14:34:22.299578 table@remove removed @931
 14:34:22.299578 table@remove removed @932
 14:34:22.299578 table@remove removed @933
+=============== Nov 10, 2023 (CST) ===============
+12:41:04.844788 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+12:41:04.856118 version@stat F·[0 12] S·23MiB[0B 23MiB] Sc·[0.00 0.24]
+12:41:04.856118 db@open opening
+12:41:04.856118 journal@recovery F·1
+12:41:04.856652 journal@recovery recovering @938
+12:41:05.025032 memdb@flush created L0@952 N·23926 S·471KiB "%\x85%..\x05$\xdb,v694259":"%\x85%..\x05$\xdb,d670334"
+12:41:05.025608 version@stat F·[1 12] S·24MiB[471KiB 23MiB] Sc·[0.25 0.24]
+12:41:05.103173 db@janitor F·16 G·1
+12:41:05.103173 db@janitor removing table-937
+12:41:05.103788 db@open done T·247.6706ms

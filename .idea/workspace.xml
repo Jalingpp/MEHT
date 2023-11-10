@@ -5,37 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="30b1825c-a745-4976-aeb4-84e4d10c03a7" name="更改" comment="10301741">
-      <change afterPath="$PROJECT_DIR$/mehtLru/MEHTLru.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000914.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000916.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000918.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000919.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000920.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000922.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000923.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000925.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000926.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000927.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000928.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000929.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000930.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000931.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000932.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000933.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000934.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000935.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000936.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000937.ldb" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/000937.ldb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000937.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000938.log" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT.bak" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT.bak" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000000" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000939" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MEHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MEHT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/util/functions.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/functions.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mehtLru/MEHTLru.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/StorageEngine.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/StorageEngine.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -86,10 +65,10 @@
     "last_opened_file_path": "C:/Users/Lenovo",
     "node.js.detected.package.eslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
-    "settings.editor.selected.configurable": "http.proxy"
+    "settings.editor.selected.configurable": "com.goide.configuration.GoLibrariesConfigurableProvider"
   }
 }]]></component>
-  <component name="RunManager">
+  <component name="RunManager" selected="Go 构建.go build MEHT">
     <configuration name="go build MEHT" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
       <module name="MEHT" />
       <working_directory value="$PROJECT_DIR$" />
@@ -99,9 +78,19 @@
       <filePath value="$PROJECT_DIR$/main.go" />
       <method v="2" />
     </configuration>
+    <configuration name="go build MEHTLru.go" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
+      <module name="MEHT" />
+      <working_directory value="$PROJECT_DIR$" />
+      <kind value="FILE" />
+      <package value="MEHT" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$/mehtLru/MEHTLru.go" />
+      <method v="2" />
+    </configuration>
     <recent_temporary>
       <list>
         <item itemvalue="Go 构建.go build MEHT" />
+        <item itemvalue="Go 构建.go build MEHTLru.go" />
       </list>
     </recent_temporary>
   </component>

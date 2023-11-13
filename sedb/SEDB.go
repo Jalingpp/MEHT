@@ -2,16 +2,13 @@ package sedb
 
 import (
 	"MEHT/meht"
-	"MEHT/mht"
 	"MEHT/mpt"
 	"MEHT/util"
 	"encoding/hex"
 	"fmt"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"log"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -99,7 +96,8 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//如果是第一次插入
 	if sedb.GetStorageEngine() == nil {
 		//创建一个新的StorageEngine
-		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs)
+		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs,
+			sedb.mgtNodeCacheCapacity, sedb.bucketCacheCapacity, sedb.segmentCacheCapacity, sedb.merkleTreeCacheCapacity)
 	}
 	//向StorageEngine中插入一条记录
 	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
@@ -112,32 +110,7 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	return sedbProof
 }
 
-// 将Cache中所有数据都更新到磁盘上
-func (sedb *SEDB) PurgeCache() {
-	if sedb.siMode != "meht" {
-		return
-	}
-	for idx, cache_ := range *(sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).GetCache()) {
-		switch idx {
-		case 0:
-			targetCache, _ := cache_.(*lru.Cache[string, *meht.MGTNode])
-			targetCache.Purge()
-		case 1:
-			targetCache, _ := cache_.(*lru.Cache[string, *meht.Bucket])
-			targetCache.Purge()
-		case 2:
-			targetCache, _ := cache_.(*lru.Cache[string, *[]util.KVPair])
-			targetCache.Purge()
-		case 3:
-			targetCache, _ := cache_.(*lru.Cache[string, *mht.MerkleTree])
-			targetCache.Purge()
-		default:
-			panic("Unknown cache type with idx " + strconv.Itoa(idx) + " in function PurgeCache.")
-		}
-	}
-}
-
-// 根据十六进制的非主键Hexkeyword查询完整的kvpair
+// QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
 		//fmt.Println("SEDB is empty!")
@@ -275,6 +248,9 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 
 // 写seHash和dbPath到文件
 func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
+	if sedb.siMode == "meht" {
+		sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).PurgeCache()
+	}
 	data := hex.EncodeToString(sedb.seHash) + "," + sedb.dbPath + "\n"
 	util.WriteStringToFile(filePath, data)
 }

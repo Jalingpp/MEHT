@@ -2,7 +2,6 @@ package meht
 
 import (
 	"MEHT/mht"
-	"MEHT/sedb"
 	"MEHT/util"
 	"bytes"
 	"encoding/hex"
@@ -11,6 +10,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"reflect"
+	"strconv"
 )
 
 //NewMEHT(rdx int, bc int, bs int) *MEHT {}: NewMEHT returns a new MEHT
@@ -44,40 +44,24 @@ type MEHT struct {
 }
 
 // NewMEHT returns a new MEHT
-func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, cacheCapacity ...interface{}) *MEHT {
-	mgtNodeCacheCapacity := sedb.DefaultNodeCacheCapacity
-	bucketNodeCacheCapacity := sedb.DefaultBucketCacheCapacity
-	segmentCacheCapacity := sedb.DefaultSegmentCacheCapacity
-	merkleTreeCacheCapacity := sedb.DefaultMerkleTreeCapacity
-	for _, capacity := range cacheCapacity {
-		switch capacity.(type) {
-		case sedb.MgtNodeCacheCapacity:
-			mgtNodeCacheCapacity = capacity.(int)
-		case sedb.BucketCacheCapacity:
-			bucketNodeCacheCapacity = capacity.(int)
-		case sedb.SegmentCacheCapacity:
-			segmentCacheCapacity = capacity.(int)
-		case sedb.MerkleTreeCacheCapacity:
-			merkleTreeCacheCapacity = capacity.(int)
-		}
-	}
-	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCacheCapacity, func(k string, v *MGTNode) {
+func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) *MEHT {
+	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCC, func(k string, v *MGTNode) {
 		callBackFoo[string, *MGTNode](k, v, db)
 	})
-	lBucket, _ := lru.NewWithEvict[string, *Bucket](bucketNodeCacheCapacity, func(k string, v *Bucket) {
+	lBucket, _ := lru.NewWithEvict[string, *Bucket](bucketCC, func(k string, v *Bucket) {
 		callBackFoo[string, *Bucket](k, v, db)
 	})
-	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCacheCapacity, func(k string, v *[]util.KVPair) {
+	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCC, func(k string, v *[]util.KVPair) {
 		callBackFoo[string, *[]util.KVPair](k, v, db)
 	})
-	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCacheCapacity, func(k string, v *mht.MerkleTree) {
+	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
 		callBackFoo[string, *mht.MerkleTree](k, v, db)
 	})
 	var c []interface{}
 	c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-		mgtNodeCacheCapacity, bucketNodeCacheCapacity,
-		segmentCacheCapacity, merkleTreeCacheCapacity, &c}
+		mgtNodeCC, bucketCC,
+		segmentCC, merkleTreeCC, &c}
 }
 
 // 更新MEHT到db
@@ -180,6 +164,28 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	//根据key找到mgtRootHash和mgtProof
 	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db)
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+}
+
+// 将Cache中所有数据都更新到磁盘上
+func (meht *MEHT) PurgeCache() {
+	for idx, cache_ := range *(meht.cache) {
+		switch idx {
+		case 0:
+			targetCache, _ := cache_.(*lru.Cache[string, *MGTNode])
+			targetCache.Purge()
+		case 1:
+			targetCache, _ := cache_.(*lru.Cache[string, *Bucket])
+			targetCache.Purge()
+		case 2:
+			targetCache, _ := cache_.(*lru.Cache[string, *[]util.KVPair])
+			targetCache.Purge()
+		case 3:
+			targetCache, _ := cache_.(*lru.Cache[string, *mht.MerkleTree])
+			targetCache.Purge()
+		default:
+			panic("Unknown cache type with idx " + strconv.Itoa(idx) + " in function PurgeCache.")
+		}
+	}
 }
 
 // 打印查询结果
@@ -304,16 +310,16 @@ func DeserializeMEHT(data []byte, db *leveldb.DB) (*MEHT, error) {
 		fmt.Printf("DeserializeMEHT error: %v\n", err)
 		return nil, err
 	}
-	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](seMEHT.MgtNodeCacheCapacity, func(k string, v *MGTNode) {
+	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](int(seMEHT.MgtNodeCacheCapacity), func(k string, v *MGTNode) {
 		callBackFoo[string, *MGTNode](k, v, db)
 	})
-	lBucket, _ := lru.NewWithEvict[string, *Bucket](seMEHT.BucketCacheCapacity, func(k string, v *Bucket) {
+	lBucket, _ := lru.NewWithEvict[string, *Bucket](int(seMEHT.BucketCacheCapacity), func(k string, v *Bucket) {
 		callBackFoo[string, *Bucket](k, v, db)
 	})
-	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](seMEHT.SegmentCacheCapacity, func(k string, v *[]util.KVPair) {
+	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](int(seMEHT.SegmentCacheCapacity), func(k string, v *[]util.KVPair) {
 		callBackFoo[string, *[]util.KVPair](k, v, db)
 	})
-	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](seMEHT.MerkleTreeCacheCapacity, func(k string, v *mht.MerkleTree) {
+	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](int(seMEHT.MerkleTreeCacheCapacity), func(k string, v *mht.MerkleTree) {
 		callBackFoo[string, *mht.MerkleTree](k, v, db)
 	})
 	var c []interface{}

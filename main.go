@@ -25,10 +25,14 @@ func main() {
 	bucketCacheCapacity := 20
 	segmentCacheCapacity := bs * bucketCacheCapacity
 	merkleTreeCacheCapicity := bs * bucketCacheCapacity
+	var cacheArgs []interface{}
+	cacheArgs = append(cacheArgs, sedb.MgtNodeCacheCapacity(mgtNodeCacheCapicity),
+		sedb.BucketCacheCapacity(bucketCacheCapacity), sedb.SegmentCacheCapacity(segmentCacheCapacity),
+		sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapicity))
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 
 	//创建一个SEDB
-	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs)
+	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheArgs)
 
 	//读json文件创建KVPair数组
 	kvdataPath := "data/OK"
@@ -54,15 +58,14 @@ func main() {
 		}
 		duration += time.Since(start)
 		start = time.Now()
-		//if j == 2 {
-		//	break
-		//}
+		if j == 2 {
+			break
+		}
 	}
-	seDB.PurgeCache()
 	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
-	qrKey := "https://raw.seadn.io/files/e2205125604cfca54281e88783b4cd2b.gif,Human T1 [HATCHING],xs,human"
-	qrValue, qrKVPair, qrProof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qrKey))
-	seDB.PrintKVPairsQueryResult(qrKey, qrValue, qrKVPair, qrProof)
+	//qrKey := "https://raw.seadn.io/files/e2205125604cfca54281e88783b4cd2b.gif,Human T1 [HATCHING],xs,human"
+	//qrValue, qrKVPair, qrProof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qrKey))
+	//seDB.PrintKVPairsQueryResult(qrKey, qrValue, qrKVPair, qrProof)
 	//打印SEDB
 	//seDB.PrintSEDB()
 

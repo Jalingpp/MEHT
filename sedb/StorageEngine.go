@@ -195,7 +195,8 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil {
 		//创建一个新的非主键索引
-		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db)
+		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, int(se.mgtNodeCacheCapacity),
+			int(se.bucketCacheCapacity), int(se.segmentCacheCapacity), int(se.merkleTreeCacheCapacity))
 	}
 	//先查询得到原有value与待插入value合并
 	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvpair.GetKey(), db)
@@ -258,7 +259,10 @@ type SeStorageEngine struct {
 
 // 序列化存储引擎
 func SerializeStorageEngine(se *StorageEngine) []byte {
-	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash, se.secondaryIndexMode, se.secondaryIndexHash_mpt, se.mehtName, se.rdx, se.bc, se.bs}
+	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash,
+		se.secondaryIndexMode, se.secondaryIndexHash_mpt,
+		se.mehtName, se.rdx, se.bc, se.bs, se.mgtNodeCacheCapacity,
+		se.bucketCacheCapacity, se.segmentCacheCapacity, se.merkleTreeCacheCapacity}
 	jsonSE, err := json.Marshal(sese)
 	if err != nil {
 		fmt.Printf("SerializeStorageEngine error: %v\n", err)
@@ -275,7 +279,8 @@ func DeserializeStorageEngine(sestring []byte) (*StorageEngine, error) {
 		fmt.Printf("DeserializeStorageEngine error: %v\n", err)
 		return nil, err
 	}
-	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode, nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName, sese.Rdx, sese.Bc, sese.Bs}
+	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode, nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName, sese.Rdx, sese.Bc, sese.Bs,
+		sese.MgtNodeCC, sese.BucketCC, sese.SegmentCC, sese.MerkleTreeCC}
 	return se, nil
 }
 

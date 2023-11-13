@@ -165,11 +165,14 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) 
 	UpdateNodeHash(mgtNode)
 	//insert node in leveldb
 	// fmt.Printf("When write MGTNode to DB, mgtNode.nodeHash: %x\n", mgtNode.nodeHash)
-	targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
-	targetCache.Add(string(mgtNode.nodeHash), mgtNode)
-	//if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
-	//	panic(err)
-	//}
+	if cache != nil {
+		targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
+		targetCache.Add(string(mgtNode.nodeHash), mgtNode)
+	} else {
+		if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"reflect"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -34,30 +35,28 @@ type StorageEngine struct {
 
 	secondaryIndex_meht *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
 
-	mehtName                string //meht的参数，meht的名字，用于区分不同的meht
-	rdx                     int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc                      int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs                      int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-	mgtNodeCacheCapacity    MgtNodeCacheCapacity
-	bucketCacheCapacity     BucketCacheCapacity
-	segmentCacheCapacity    SegmentCacheCapacity
-	merkleTreeCacheCapacity MerkleTreeCacheCapacity
+	mehtName      string //meht的参数，meht的名字，用于区分不同的meht
+	rdx           int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc            int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs            int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	cacheEnable   bool
+	cacheCapacity []interface{}
 }
 
 // NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
 func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
-	mgtNodeC MgtNodeCacheCapacity, bucketC BucketCacheCapacity, segmentC SegmentCacheCapacity, merkleTreeC MerkleTreeCacheCapacity) *StorageEngine {
+	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
 		nil, nil, mehtName, rdx, bc, bs,
-		mgtNodeC, bucketC, segmentC, merkleTreeC}
+		cacheEnable, cacheCapacity}
 }
 
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
 func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 	//删除db中原有的se
-	if err := db.Delete(se.seHash, nil); err != nil {
-		fmt.Println("Delete StorageEngine from DB error:", err)
-	}
+	//if err := db.Delete(se.seHash, nil); err != nil {
+	//	fmt.Println("Delete StorageEngine from DB error:", err)
+	//}
 	//更新seHash的哈希值
 	var seHashs []byte
 	seHashs = append(seHashs, se.primaryIndexHash...)
@@ -71,9 +70,9 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 	hash := sha256.Sum256(seHashs)
 	se.seHash = hash[:]
 	//将更新后的se写入db中
-	if err := db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
-		fmt.Println("Insert StorageEngine to DB error:", err)
-	}
+	//if err := db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
+	//	fmt.Println("Insert StorageEngine to DB error:", err)
+	//}
 	return se.seHash
 }
 
@@ -111,8 +110,9 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 	if se.secondaryIndex_meht == nil {
 		secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil)
 		if len(secondaryIndexString) != 0 {
-			secondaryIndex, _ := meht.DeserializeMEHT(secondaryIndexString, db)
-			se.secondaryIndex_meht = secondaryIndex
+			mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
+			se.secondaryIndex_meht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
+				bucketCC, segmentCC, merkleTreeCC)
 		}
 	}
 	return se.secondaryIndex_meht
@@ -150,7 +150,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//mptProof.PrintMPTProof()
 		//更新搜索引擎的哈希值
-		se.UpdateStorageEngineToDB(db)
+		//se.UpdateStorageEngineToDB(db)
 		return primaryProof, mptProof, nil
 	} else if se.secondaryIndexMode == "meht" {
 		_, mehtProof := se.InsertIntoMEHT(reversedKV, db)
@@ -158,7 +158,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//meht.PrintMEHTProof(mehtProof)
 		//更新搜索引擎的哈希值
-		se.UpdateStorageEngineToDB(db)
+		//se.UpdateStorageEngineToDB(db)
 		return primaryProof, nil, mehtProof
 	} else {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
@@ -195,8 +195,27 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil {
 		//创建一个新的非主键索引
-		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, int(se.mgtNodeCacheCapacity),
-			int(se.bucketCacheCapacity), int(se.segmentCacheCapacity), int(se.merkleTreeCacheCapacity))
+		mgtNodeCC := DefaultNodeCacheCapacity
+		bucketCC := DefaultBucketCacheCapacity
+		segmentCC := DefaultSegmentCacheCapacity
+		merkleTreeCC := DefaultMerkleTreeCapacity
+		if se.cacheEnable {
+			for _, cacheArg := range se.cacheCapacity {
+				switch cacheArg.(type) {
+				case MgtNodeCacheCapacity:
+					mgtNodeCC = cacheArg.(MgtNodeCacheCapacity)
+				case BucketCacheCapacity:
+					bucketCC = cacheArg.(BucketCacheCapacity)
+				case SegmentCacheCapacity:
+					segmentCC = cacheArg.(SegmentCacheCapacity)
+				case MerkleTreeCacheCapacity:
+					merkleTreeCC = cacheArg.(MerkleTreeCacheCapacity)
+				default:
+					panic("Unknown type " + reflect.TypeOf(cacheArg).String() + " in function InsertIntoMEHT.")
+				}
+			}
+		}
+		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, int(mgtNodeCC), int(bucketCC), int(segmentCC), int(merkleTreeCC), se.cacheEnable)
 	}
 	//先查询得到原有value与待插入value合并
 	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvpair.GetKey(), db)
@@ -212,6 +231,28 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 		return newValues, newProof
 	}
 	return values, se.secondaryIndex_meht.GetQueryProof(bucket, segkey, isSegExist, index, db)
+}
+
+func GetCapacity(cacheCapacity *[]interface{}) (mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
+	mgtNodeCC = int(DefaultNodeCacheCapacity)
+	bucketCC = int(DefaultBucketCacheCapacity)
+	segmentCC = int(DefaultSegmentCacheCapacity)
+	merkleTreeCC = int(DefaultMerkleTreeCapacity)
+	for _, capacity := range *cacheCapacity {
+		switch capacity.(type) {
+		case MgtNodeCacheCapacity:
+			mgtNodeCC = int(capacity.(MgtNodeCacheCapacity))
+		case BucketCacheCapacity:
+			bucketCC = int(capacity.(BucketCacheCapacity))
+		case SegmentCacheCapacity:
+			segmentCC = int(capacity.(SegmentCacheCapacity))
+		case MerkleTreeCacheCapacity:
+			merkleTreeCC = int(capacity.(MerkleTreeCacheCapacity))
+		default:
+			panic("Unknown type " + reflect.TypeOf(capacity).String() + " in function GetCapacity.")
+		}
+	}
+	return
 }
 
 // 打印查询结果
@@ -247,22 +288,22 @@ type SeStorageEngine struct {
 	SecondaryIndexMode         string // 标识当前采用的非主键索引的类型，mpt或meht
 	SecondaryIndexRootHash_mpt []byte //mpt类型的非主键索引根哈希
 
-	MEHTName     string                  //meht的参数，meht的名字，用于区分不同的meht
-	Rdx          int                     //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	Bc           int                     //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	Bs           int                     //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-	MgtNodeCC    MgtNodeCacheCapacity    // meht的参数，meht中mgtNodeCache的容量
-	BucketCC     BucketCacheCapacity     // meht的参数，meht中bucketCache的容量
-	SegmentCC    SegmentCacheCapacity    // meht的参数，meht中segmentCache的容量
-	MerkleTreeCC MerkleTreeCacheCapacity // meht的参数，meht中merkleTreeCache的容量
+	MEHTName string //meht的参数，meht的名字，用于区分不同的meht
+	Rdx      int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	Bc       int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	Bs       int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个s	//
+	//MgtNodeCC    MgtNodeCacheCapacity    // meht的参数，meht中mgtNodeCache的容量
+	//BucketCC     BucketCacheCapacity     // meht的参数，meht中bucketCache的容量
+	//SegmentCC    SegmentCacheCapacity    // meht的参数，meht中segmentCache的容量
+	//MerkleTreeCC MerkleTreeCacheCapacity // meht的参数，meht中merkleTreeCache的容量egment
+
 }
 
 // 序列化存储引擎
 func SerializeStorageEngine(se *StorageEngine) []byte {
 	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash,
 		se.secondaryIndexMode, se.secondaryIndexHash_mpt,
-		se.mehtName, se.rdx, se.bc, se.bs, se.mgtNodeCacheCapacity,
-		se.bucketCacheCapacity, se.segmentCacheCapacity, se.merkleTreeCacheCapacity}
+		se.mehtName, se.rdx, se.bc, se.bs}
 	jsonSE, err := json.Marshal(sese)
 	if err != nil {
 		fmt.Printf("SerializeStorageEngine error: %v\n", err)
@@ -272,15 +313,16 @@ func SerializeStorageEngine(se *StorageEngine) []byte {
 }
 
 // 反序列化存储引擎
-func DeserializeStorageEngine(sestring []byte) (*StorageEngine, error) {
+func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity []interface{}) (*StorageEngine, error) {
 	var sese SeStorageEngine
 	err := json.Unmarshal(sestring, &sese)
 	if err != nil {
 		fmt.Printf("DeserializeStorageEngine error: %v\n", err)
 		return nil, err
 	}
-	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode, nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName, sese.Rdx, sese.Bc, sese.Bs,
-		sese.MgtNodeCC, sese.BucketCC, sese.SegmentCC, sese.MerkleTreeCC}
+	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
+		nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName,
+		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity}
 	return se, nil
 }
 

@@ -44,13 +44,16 @@ func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 
 // 更新bucket至db中
 func (b *Bucket) UpdateBucketToDB(db *leveldb.DB, cache *[]interface{}) {
-	//seBucket := SerializeBucket(b)
-	targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
-	targetCache.Add(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx), b)
-	//fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.bucketKey))
-	//if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
-	//	panic(err)
-	//}
+	if cache != nil {
+		targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
+		targetCache.Add(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx), b)
+	} else {
+		seBucket := SerializeBucket(b)
+		//fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx))
+		if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // 新建一个segment
@@ -86,14 +89,17 @@ func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB, cache *[]inter
 	if b.GetSegments()[segkey] == nil {
 		return
 	}
-	targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
-	v := b.segments[segkey]
-	targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey, &v)
-	//seSeg := SerializeSegment(b.segments[segkey])
-	////fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
-	//if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
-	//	panic(err)
-	//}
+	if cache != nil {
+		targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
+		v := b.segments[segkey]
+		targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey, &v)
+	} else {
+		seSeg := SerializeSegment(b.segments[segkey])
+		//fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
+		if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // GetName returns the name of the meht
@@ -160,13 +166,16 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB, cache *[]int
 		return
 	}
 	mt := b.GetMerkleTrees()[index]
-	targetCache, _ := (*cache)[3].(*lru.Cache[string, *mht.MerkleTree])
-	targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index, mt)
-	//seMHT := mht.SerializeMHT(mt)
-	////fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
-	//if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
-	//	panic(err)
-	//}
+	if cache != nil {
+		targetCache, _ := (*cache)[3].(*lru.Cache[string, *mht.MerkleTree])
+		targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index, mt)
+	} else {
+		seMHT := mht.SerializeMHT(mt)
+		//fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
+		if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
+			panic(err)
+		}
+	}
 }
 
 // SetBucketKey sets the bucket key of the Bucket

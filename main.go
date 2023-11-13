@@ -11,28 +11,43 @@ import (
 )
 
 func main() {
+	// TODO 后续并发的逻辑应该是：
+	// 节点粒度锁，然后阻塞但无人等候就加入等候区
+	// 等候区已经有线程在等候且空闲位置大于等候区插入数量，则委托等候线程代为插入
+	// 否则满了就重做，这样一定会让那个工作数量最大或者会把节点插满的线程先做
+	// 后续分裂出新节点了，那么重做也能找到新插入的位置
+	// 因此需要在叶子节点上添加一个等候位置，以及对应的一个待插入数据集互斥锁0
+	// 线程发现仍有空余位置可以插入时，获取待插入数据集写锁，然后检查是否有空余位置
+	// 有则加入进去，然后修改空余位置数量，然后将后续工作委托给悲观等待的线程
+	// 没有则重新寻找待插入为位置
+	// 如果发现待插入数据为0，那么自己就是个需要悲观等待的线程，那么更新待插入数据以后开始盲等当前节点锁释放
+
 	//测试SEDB
 
 	//参数设置
 	filePath := "data/levelDB/config.txt" //存储seHash和dbPath的文件路径
 	//// siMode := "meht" //辅助索引类型，meht或mpt
-	//siMode := "mpt"
-	siMode := "meht"
+	siMode := "mpt"
+	//siMode := "meht"
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 	bc := 128 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-	mgtNodeCacheCapicity := 100
-	bucketCacheCapacity := 20
-	segmentCacheCapacity := bs * bucketCacheCapacity
-	merkleTreeCacheCapicity := bs * bucketCacheCapacity
+	//cacheEnable := false
+	cacheEnable := true
 	var cacheArgs []interface{}
-	cacheArgs = append(cacheArgs, sedb.MgtNodeCacheCapacity(mgtNodeCacheCapicity),
-		sedb.BucketCacheCapacity(bucketCacheCapacity), sedb.SegmentCacheCapacity(segmentCacheCapacity),
-		sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapicity))
+	if cacheEnable {
+		mgtNodeCacheCapacity := 100
+		bucketCacheCapacity := 128
+		segmentCacheCapacity := bs * bucketCacheCapacity
+		merkleTreeCacheCapacity := bs * bucketCacheCapacity
+		cacheArgs = append(cacheArgs, sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity),
+			sedb.BucketCacheCapacity(bucketCacheCapacity), sedb.SegmentCacheCapacity(segmentCacheCapacity),
+			sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
+	}
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 
 	//创建一个SEDB
-	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheArgs)
+	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable, cacheArgs)
 
 	//读json文件创建KVPair数组
 	kvdataPath := "data/OK"

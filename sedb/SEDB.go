@@ -39,43 +39,40 @@ type SEDB struct {
 	db     *leveldb.DB    //底层存储的指针
 	dbPath string         //底层存储的文件路径
 
-	siMode                  string //se的参数，辅助索引类型，meht或mpt
-	mehtName                string //se的参数，meht的名字
-	rdx                     int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc                      int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs                      int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-	mgtNodeCacheCapacity    MgtNodeCacheCapacity
-	bucketCacheCapacity     BucketCacheCapacity
-	segmentCacheCapacity    SegmentCacheCapacity
-	merkleTreeCacheCapacity MerkleTreeCacheCapacity
+	siMode        string //se的参数，辅助索引类型，meht或mpt
+	mehtName      string //se的参数，meht的名字
+	rdx           int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc            int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs            int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	cacheEnable   bool
+	cacheCapacity []interface{}
 }
 
 // NewSEDB() *SEDB: 返回一个新的SEDB
-func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int, bc int, bs int, cacheCapacity ...interface{}) *SEDB {
+func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int, bc int, bs int, cacheEnabled bool, cacheCapacity ...interface{}) *SEDB {
 	//打开或创建数据库
 	db, err := leveldb.OpenFile(dbPath, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	mgtNodeCacheCapacity := DefaultNodeCacheCapacity
-	bucketNodeCacheCapacity := DefaultBucketCacheCapacity
-	segmentCacheCapacity := DefaultSegmentCacheCapacity
-	merkleTreeCacheCapacity := DefaultMerkleTreeCapacity
-	for _, capacity := range cacheCapacity {
-		switch capacity.(type) {
-		case MgtNodeCacheCapacity:
-			mgtNodeCacheCapacity = capacity.(MgtNodeCacheCapacity)
-		case BucketCacheCapacity:
-			bucketNodeCacheCapacity = capacity.(BucketCacheCapacity)
-		case SegmentCacheCapacity:
-			segmentCacheCapacity = capacity.(SegmentCacheCapacity)
-		case MerkleTreeCacheCapacity:
-			merkleTreeCacheCapacity = capacity.(MerkleTreeCacheCapacity)
-		}
-	}
+	//mgtNodeCacheCapacity := DefaultNodeCacheCapacity
+	//bucketNodeCacheCapacity := DefaultBucketCacheCapacity
+	//segmentCacheCapacity := DefaultSegmentCacheCapacity
+	//merkleTreeCacheCapacity := DefaultMerkleTreeCapacity
+	//for _, capacity := range cacheCapacity {
+	//	switch capacity.(type) {
+	//	case MgtNodeCacheCapacity:
+	//		mgtNodeCacheCapacity = capacity.(MgtNodeCacheCapacity)
+	//	case BucketCacheCapacity:
+	//		bucketNodeCacheCapacity = capacity.(BucketCacheCapacity)
+	//	case SegmentCacheCapacity:
+	//		segmentCacheCapacity = capacity.(SegmentCacheCapacity)
+	//	case MerkleTreeCacheCapacity:
+	//		merkleTreeCacheCapacity = capacity.(MerkleTreeCacheCapacity)
+	//	}
+	//}
 	return &SEDB{nil, seh, db, dbPath, siMode, mehtName, rdx, bc, bs,
-		mgtNodeCacheCapacity, bucketNodeCacheCapacity,
-		segmentCacheCapacity, merkleTreeCacheCapacity}
+		cacheEnabled, cacheCapacity}
 }
 
 // 获取SEDB中的StorageEngine，如果为空，从db中读取se
@@ -84,7 +81,7 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	if sedb.se == nil && sedb.seHash != nil {
 		seString, error_ := sedb.db.Get(sedb.seHash, nil)
 		if error_ == nil {
-			se, _ := DeserializeStorageEngine(seString)
+			se, _ := DeserializeStorageEngine(seString, sedb.cacheEnable, sedb.cacheCapacity)
 			sedb.se = se
 		}
 	}
@@ -96,8 +93,8 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//如果是第一次插入
 	if sedb.GetStorageEngine() == nil {
 		//创建一个新的StorageEngine
-		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs,
-			sedb.mgtNodeCacheCapacity, sedb.bucketCacheCapacity, sedb.segmentCacheCapacity, sedb.merkleTreeCacheCapacity)
+		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs, sedb.cacheEnable,
+			sedb.cacheCapacity)
 	}
 	//向StorageEngine中插入一条记录
 	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
@@ -248,8 +245,13 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 
 // 写seHash和dbPath到文件
 func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
-	if sedb.siMode == "meht" {
+	se := sedb.GetStorageEngine()
+	if err := sedb.db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
+		fmt.Println("Insert StorageEngine to DB error:", err)
+	}
+	if sedb.siMode == "meht" && sedb.cacheEnable {
 		sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).PurgeCache()
+		//sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).UpdateMEHTToDB(sedb.db)
 	}
 	data := hex.EncodeToString(sedb.seHash) + "," + sedb.dbPath + "\n"
 	util.WriteStringToFile(filePath, data)

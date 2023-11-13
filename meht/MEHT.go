@@ -33,35 +33,36 @@ type MEHT struct {
 	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
 
 	//mgtNodeCache         *lru.Cache[string, *MGTNode] // lruCache of mgtNode, the key of mgtNode is its nodeHash in the form of string type
-	mgtNodeCacheCapacity int // capacity of mgtNode lruCache
 	//bucketCache          *lru.Cache[string, *Bucket]  // lruCache of bucket, the key of
-	bucketCacheCapacity int // capacity of bucket lruCache
 	//segmentCache         *lru.Cache[string, *[]util.KVPair]
-	segmentCacheCapacity int // capacity of segment lruCache
 	// merkleTreeCache	   *lru.Cache[string, *mht.MerkleTree]
-	merkleTreeCacheCapacity int            // capacity of merkleTree lruCache
-	cache                   *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
+	cache       *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
+	cacheEnable bool
 }
 
 // NewMEHT returns a new MEHT
-func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) *MEHT {
-	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCC, func(k string, v *MGTNode) {
-		callBackFoo[string, *MGTNode](k, v, db)
-	})
-	lBucket, _ := lru.NewWithEvict[string, *Bucket](bucketCC, func(k string, v *Bucket) {
-		callBackFoo[string, *Bucket](k, v, db)
-	})
-	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCC, func(k string, v *[]util.KVPair) {
-		callBackFoo[string, *[]util.KVPair](k, v, db)
-	})
-	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
-		callBackFoo[string, *mht.MerkleTree](k, v, db)
-	})
-	var c []interface{}
-	c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
-	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-		mgtNodeCC, bucketCC,
-		segmentCC, merkleTreeCC, &c}
+func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int, cacheEnable bool) *MEHT {
+	if cacheEnable {
+		lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCC, func(k string, v *MGTNode) {
+			callBackFoo[string, *MGTNode](k, v, db)
+		})
+		lBucket, _ := lru.NewWithEvict[string, *Bucket](bucketCC, func(k string, v *Bucket) {
+			callBackFoo[string, *Bucket](k, v, db)
+		})
+		lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCC, func(k string, v *[]util.KVPair) {
+			callBackFoo[string, *[]util.KVPair](k, v, db)
+		})
+		lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
+			callBackFoo[string, *mht.MerkleTree](k, v, db)
+		})
+		var c []interface{}
+		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
+		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
+			&c, cacheEnable}
+	} else {
+		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
+			nil, cacheEnable}
+	}
 }
 
 // 更新MEHT到db
@@ -282,18 +283,11 @@ type SeMEHT struct {
 	Bs  int // bucket segment number, initial given，key中区分segment的位数
 
 	MgtHash []byte // hash of the mgt
-
-	MgtNodeCacheCapacity    int // capacity of lruCache containing mgtNodes
-	BucketCacheCapacity     int // capacity of lruCache containing  buckets
-	SegmentCacheCapacity    int // capacity of lruCache containing segments
-	MerkleTreeCacheCapacity int // capacity of lruCache containing merkleTrees
 }
 
 // 序列化MEHT
 func SerializeMEHT(meht *MEHT) []byte {
-	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash,
-		meht.mgtNodeCacheCapacity, meht.bucketCacheCapacity,
-		meht.segmentCacheCapacity, meht.merkleTreeCacheCapacity}
+	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash}
 	jsonSSN, err := json.Marshal(seMEHT)
 	if err != nil {
 		fmt.Printf("SerializeMEHT error: %v\n", err)
@@ -303,31 +297,36 @@ func SerializeMEHT(meht *MEHT) []byte {
 }
 
 // 反序列化MEHT
-func DeserializeMEHT(data []byte, db *leveldb.DB) (*MEHT, error) {
+func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
+	mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) (meht *MEHT, err error) {
 	var seMEHT SeMEHT
-	err := json.Unmarshal(data, &seMEHT)
+	err = json.Unmarshal(data, &seMEHT)
 	if err != nil {
 		fmt.Printf("DeserializeMEHT error: %v\n", err)
-		return nil, err
+		return
 	}
-	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](int(seMEHT.MgtNodeCacheCapacity), func(k string, v *MGTNode) {
-		callBackFoo[string, *MGTNode](k, v, db)
-	})
-	lBucket, _ := lru.NewWithEvict[string, *Bucket](int(seMEHT.BucketCacheCapacity), func(k string, v *Bucket) {
-		callBackFoo[string, *Bucket](k, v, db)
-	})
-	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](int(seMEHT.SegmentCacheCapacity), func(k string, v *[]util.KVPair) {
-		callBackFoo[string, *[]util.KVPair](k, v, db)
-	})
-	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](int(seMEHT.MerkleTreeCacheCapacity), func(k string, v *mht.MerkleTree) {
-		callBackFoo[string, *mht.MerkleTree](k, v, db)
-	})
-	var c []interface{}
-	c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
-	meht := &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
-		seMEHT.MgtNodeCacheCapacity, seMEHT.BucketCacheCapacity,
-		seMEHT.SegmentCacheCapacity, seMEHT.MerkleTreeCacheCapacity, &c}
-	return meht, nil
+	if cacheEnable {
+		lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCC, func(k string, v *MGTNode) {
+			callBackFoo[string, *MGTNode](k, v, db)
+		})
+		lBucket, _ := lru.NewWithEvict[string, *Bucket](bucketCC, func(k string, v *Bucket) {
+			callBackFoo[string, *Bucket](k, v, db)
+		})
+		lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCC, func(k string, v *[]util.KVPair) {
+			callBackFoo[string, *[]util.KVPair](k, v, db)
+		})
+		lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
+			callBackFoo[string, *mht.MerkleTree](k, v, db)
+		})
+		var c []interface{}
+		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
+		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
+			&c, cacheEnable}
+	} else {
+		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
+			nil, cacheEnable}
+	}
+	return
 }
 
 func (meht *MEHT) SetSEH(seh *SEH) {

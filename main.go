@@ -21,6 +21,10 @@ func main() {
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 	bc := 128 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	mgtNodeCacheCapicity := 100
+	bucketCacheCapacity := 20
+	segmentCacheCapacity := bs * bucketCacheCapacity
+	merkleTreeCacheCapicity := bs * bucketCacheCapacity
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 
 	//创建一个SEDB
@@ -50,12 +54,12 @@ func main() {
 		}
 		duration += time.Since(start)
 		start = time.Now()
-		if j == 4 {
-			break
-		}
+		//if j == 2 {
+		//	break
+		//}
 	}
+	seDB.PurgeCache()
 	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
-
 	qrKey := "https://raw.seadn.io/files/e2205125604cfca54281e88783b4cd2b.gif,Human T1 [HATCHING],xs,human"
 	qrValue, qrKVPair, qrProof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qrKey))
 	seDB.PrintKVPairsQueryResult(qrKey, qrValue, qrKVPair, qrProof)

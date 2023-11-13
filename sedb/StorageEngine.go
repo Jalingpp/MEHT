@@ -34,15 +34,22 @@ type StorageEngine struct {
 
 	secondaryIndex_meht *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
 
-	mehtName string //meht的参数，meht的名字，用于区分不同的meht
-	rdx      int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc       int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs       int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	mehtName                string //meht的参数，meht的名字，用于区分不同的meht
+	rdx                     int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc                      int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs                      int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	mgtNodeCacheCapacity    MgtNodeCacheCapacity
+	bucketCacheCapacity     BucketCacheCapacity
+	segmentCacheCapacity    SegmentCacheCapacity
+	merkleTreeCacheCapacity MerkleTreeCacheCapacity
 }
 
 // NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
-func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int) *StorageEngine {
-	return &StorageEngine{nil, nil, nil, siMode, nil, nil, nil, mehtName, rdx, bc, bs}
+func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
+	mgtNodeC MgtNodeCacheCapacity, bucketC BucketCacheCapacity, segmentC SegmentCacheCapacity, merkleTreeC MerkleTreeCacheCapacity) *StorageEngine {
+	return &StorageEngine{nil, nil, nil, siMode, nil,
+		nil, nil, mehtName, rdx, bc, bs,
+		mgtNodeC, bucketC, segmentC, merkleTreeC}
 }
 
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
@@ -239,10 +246,14 @@ type SeStorageEngine struct {
 	SecondaryIndexMode         string // 标识当前采用的非主键索引的类型，mpt或meht
 	SecondaryIndexRootHash_mpt []byte //mpt类型的非主键索引根哈希
 
-	MEHTName string //meht的参数，meht的名字，用于区分不同的meht
-	Rdx      int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	Bc       int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	Bs       int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	MEHTName     string                  //meht的参数，meht的名字，用于区分不同的meht
+	Rdx          int                     //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	Bc           int                     //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	Bs           int                     //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	MgtNodeCC    MgtNodeCacheCapacity    // meht的参数，meht中mgtNodeCache的容量
+	BucketCC     BucketCacheCapacity     // meht的参数，meht中bucketCache的容量
+	SegmentCC    SegmentCacheCapacity    // meht的参数，meht中segmentCache的容量
+	MerkleTreeCC MerkleTreeCacheCapacity // meht的参数，meht中merkleTreeCache的容量
 }
 
 // 序列化存储引擎

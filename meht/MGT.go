@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -155,7 +156,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 }
 
 // 更新nodeHash,并将node存入leveldb
-func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB) {
+func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) {
 	//delete the old node in leveldb
 	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
 		panic(err)
@@ -164,9 +165,11 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB) {
 	UpdateNodeHash(mgtNode)
 	//insert node in leveldb
 	// fmt.Printf("When write MGTNode to DB, mgtNode.nodeHash: %x\n", mgtNode.nodeHash)
-	if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
-		panic(err)
-	}
+	targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
+	targetCache.Add(string(mgtNode.nodeHash), mgtNode)
+	//if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
+	//	panic(err)
+	//}
 }
 
 // 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点
@@ -208,7 +211,7 @@ func GetOldBucketKey(bucket *Bucket) []int {
 }
 
 // MGT生长,给定新的buckets,返回更新后的MGT
-func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
+func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB, cache *[]interface{}) *MGT {
 	if len(newBucketss) == 0 {
 		//fmt.Printf("newBuckets is empty\n")
 		return mgt
@@ -216,7 +219,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 	//如果root为空,则直接为newBuckets创建叶节点(newBuckets中只有一个bucket)
 	if mgt.GetRoot(db) == nil {
 		mgt.Root = NewMGTNode(nil, true, newBucketss[0][0], db, newBucketss[0][0].rdx)
-		mgt.Root.UpdateMGTNodeToDB(db)
+		mgt.Root.UpdateMGTNodeToDB(db, cache)
 		return mgt
 	}
 
@@ -241,11 +244,11 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 			nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTrees[key].GetRootHash())
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
-		nodePath[0].UpdateMGTNodeToDB(db)
+		nodePath[0].UpdateMGTNodeToDB(db, cache)
 		//更新所有父节点的nodeHashs,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
 			nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
-			nodePath[i].UpdateMGTNodeToDB(db)
+			nodePath[i].UpdateMGTNodeToDB(db, cache)
 		}
 	} else {
 		//如果newBuckets中有多个bucket，则说明发生了分裂，MGT需要生长
@@ -261,7 +264,7 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 			//fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, newBuckets[0].rdx))
 			//根据旧bucketKey,找到旧bucket所在的叶子节点
 			nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db)
-			mgt.MGTGrow(oldBucketKey, nodePath, newBuckets, db)
+			mgt.MGTGrow(oldBucketKey, nodePath, newBuckets, db, cache)
 		}
 		//oldBucketKey := GetOldBucketKey(newBuckets[0])
 		////fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, newBuckets[0].rdx))
@@ -273,32 +276,32 @@ func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB) *MGT {
 }
 
 // MGT生长,给定旧bucketKey和新的buckets,返回更新后的MGT
-func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*Bucket, db *leveldb.DB) *MGT {
+func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*Bucket, db *leveldb.DB, cache *[]interface{}) *MGT {
 	//为每个新的bucket创建叶子节点,并插入到leafNode的subNodes中
 	subNodes := make([]*MGTNode, 0)
 
 	for i := 0; i < len(newBuckets); i++ {
 		newNode := NewMGTNode(nil, true, newBuckets[i], db, newBuckets[0].rdx)
 		subNodes = append(subNodes, newNode)
-		newNode.UpdateMGTNodeToDB(db)
+		newNode.UpdateMGTNodeToDB(db, cache)
 	}
 	//创建新的父节点
 	newFatherNode := NewMGTNode(subNodes, false, nil, db, newBuckets[0].rdx)
-	newFatherNode.UpdateMGTNodeToDB(db)
+	newFatherNode.UpdateMGTNodeToDB(db, cache)
 
 	//更新父节点的chid为新的父节点
 	if len(nodePath) == 1 {
 		mgt.Root = newFatherNode
-		mgt.Root.UpdateMGTNodeToDB(db)
+		mgt.Root.UpdateMGTNodeToDB(db, cache)
 		return mgt
 	}
 	nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
-	nodePath[1].UpdateMGTNodeToDB(db)
+	nodePath[1].UpdateMGTNodeToDB(db, cache)
 
 	//更新所有父节点的nodeHash
 	for i := 2; i < len(nodePath); i++ {
 		nodePath[i].dataHashes[oldBucketKey[i-1]] = nodePath[i-1].nodeHash
-		nodePath[i].UpdateMGTNodeToDB(db)
+		nodePath[i].UpdateMGTNodeToDB(db, cache)
 	}
 	return mgt
 }

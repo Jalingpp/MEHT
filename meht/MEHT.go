@@ -2,15 +2,15 @@ package meht
 
 import (
 	"MEHT/mht"
+	"MEHT/sedb"
 	"MEHT/util"
 	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
-	"sync"
-
 	"github.com/syndtr/goleveldb/leveldb"
+	"reflect"
 )
 
 //NewMEHT(rdx int, bc int, bs int) *MEHT {}: NewMEHT returns a new MEHT
@@ -32,36 +32,33 @@ type MEHT struct {
 	mgt     *MGT
 	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
 
-	mgtNodeCache         *lru.Cache[string, *MGTNode] // lruCache of mgtNode, the key of mgtNode is its nodeHash in the form of string type
-	mgtNodeCacheCapacity int                          // capacity of mgtNode lruCache
-	bucketCache          *lru.Cache[string, *Bucket]  // lruCache of bucket, the key of
-	bucketCacheCapacity  int
-	segmentCache         *lru.Cache[string, *[]util.KVPair]
-	segmentCacheCapacity int
-	lruLock              sync.RWMutex
+	//mgtNodeCache         *lru.Cache[string, *MGTNode] // lruCache of mgtNode, the key of mgtNode is its nodeHash in the form of string type
+	mgtNodeCacheCapacity int // capacity of mgtNode lruCache
+	//bucketCache          *lru.Cache[string, *Bucket]  // lruCache of bucket, the key of
+	bucketCacheCapacity int // capacity of bucket lruCache
+	//segmentCache         *lru.Cache[string, *[]util.KVPair]
+	segmentCacheCapacity int // capacity of segment lruCache
+	// merkleTreeCache	   *lru.Cache[string, *mht.MerkleTree]
+	merkleTreeCacheCapacity int            // capacity of merkleTree lruCache
+	cache                   *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
 }
-
-type MgtNodeCacheCapacity int
-type BucketCacheCapacity int
-type SegmentCacheCapacity int
-
-var DefaultNodeCacheCapacity = 10
-var DefaultBucketCacheCapacity = 10
-var DefaultSegmentCacheCapacity = 10
 
 // NewMEHT returns a new MEHT
 func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, cacheCapacity ...interface{}) *MEHT {
-	mgtNodeCacheCapacity := DefaultNodeCacheCapacity
-	bucketNodeCacheCapacity := DefaultBucketCacheCapacity
-	segmentCacheCapacity := DefaultSegmentCacheCapacity
+	mgtNodeCacheCapacity := sedb.DefaultNodeCacheCapacity
+	bucketNodeCacheCapacity := sedb.DefaultBucketCacheCapacity
+	segmentCacheCapacity := sedb.DefaultSegmentCacheCapacity
+	merkleTreeCacheCapacity := sedb.DefaultMerkleTreeCapacity
 	for _, capacity := range cacheCapacity {
 		switch capacity.(type) {
-		case MgtNodeCacheCapacity:
+		case sedb.MgtNodeCacheCapacity:
 			mgtNodeCacheCapacity = capacity.(int)
-		case BucketCacheCapacity:
+		case sedb.BucketCacheCapacity:
 			bucketNodeCacheCapacity = capacity.(int)
-		case SegmentCacheCapacity:
+		case sedb.SegmentCacheCapacity:
 			segmentCacheCapacity = capacity.(int)
+		case sedb.MerkleTreeCacheCapacity:
+			merkleTreeCacheCapacity = capacity.(int)
 		}
 	}
 	lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCacheCapacity, func(k string, v *MGTNode) {
@@ -73,24 +70,14 @@ func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, cacheCapacity
 	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](segmentCacheCapacity, func(k string, v *[]util.KVPair) {
 		callBackFoo[string, *[]util.KVPair](k, v, db)
 	})
+	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCacheCapacity, func(k string, v *mht.MerkleTree) {
+		callBackFoo[string, *mht.MerkleTree](k, v, db)
+	})
+	var c []interface{}
+	c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 	return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-		lMgtNode, mgtNodeCacheCapacity, lBucket, bucketNodeCacheCapacity,
-		lSegment, segmentCacheCapacity, sync.RWMutex{}}
-}
-
-func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
-	k_, err := util.ToStringE(k)
-	if err != nil {
-		panic(err)
-	}
-	v_, err := util.ToStringE(v)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("onEvicted: \n", k_, v_)
-	if err = db.Put([]byte(k_), []byte(v_), nil); err != nil {
-		panic(err)
-	}
+		mgtNodeCacheCapacity, bucketNodeCacheCapacity,
+		segmentCacheCapacity, merkleTreeCacheCapacity, &c}
 }
 
 // 更新MEHT到db
@@ -125,12 +112,17 @@ func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
 	return meht.mgt
 }
 
+// GetCache returns the cache of MEHT
+func (meht *MEHT) GetCache() *[]interface{} {
+	return meht.cache
+}
+
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
 func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
 	if meht.GetSEH(db).bucketsNumber == 0 {
 		//插入KV到SEH
-		bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+		bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db, meht.cache)
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
@@ -141,11 +133,11 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+	bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db, meht.cache)
 	//更新seh到db
 	//meht.seh.UpdateSEHToDB(db)
 	//无论是否分裂，都需要更新mgt
-	meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db)
+	meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
 	//更新mgt的根节点哈希并更新到db
 	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	//获取当前KV插入的bucket
@@ -285,15 +277,17 @@ type SeMEHT struct {
 
 	MgtHash []byte // hash of the mgt
 
-	MgtNodeCacheCapacity int // capacity of lruCache containing mgtNodes
-	BucketCacheCapacity  int // capacity of lruCache containing  buckets
-	SegmentCacheCapacity int
+	MgtNodeCacheCapacity    int // capacity of lruCache containing mgtNodes
+	BucketCacheCapacity     int // capacity of lruCache containing  buckets
+	SegmentCacheCapacity    int // capacity of lruCache containing segments
+	MerkleTreeCacheCapacity int // capacity of lruCache containing merkleTrees
 }
 
 // 序列化MEHT
 func SerializeMEHT(meht *MEHT) []byte {
 	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash,
-		meht.mgtNodeCacheCapacity, meht.bucketCacheCapacity, meht.segmentCacheCapacity}
+		meht.mgtNodeCacheCapacity, meht.bucketCacheCapacity,
+		meht.segmentCacheCapacity, meht.merkleTreeCacheCapacity}
 	jsonSSN, err := json.Marshal(seMEHT)
 	if err != nil {
 		fmt.Printf("SerializeMEHT error: %v\n", err)
@@ -319,9 +313,14 @@ func DeserializeMEHT(data []byte, db *leveldb.DB) (*MEHT, error) {
 	lSegment, _ := lru.NewWithEvict[string, *[]util.KVPair](seMEHT.SegmentCacheCapacity, func(k string, v *[]util.KVPair) {
 		callBackFoo[string, *[]util.KVPair](k, v, db)
 	})
+	lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](seMEHT.MerkleTreeCacheCapacity, func(k string, v *mht.MerkleTree) {
+		callBackFoo[string, *mht.MerkleTree](k, v, db)
+	})
+	var c []interface{}
+	c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 	meht := &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
-		lMgtNode, seMEHT.MgtNodeCacheCapacity, lBucket, seMEHT.BucketCacheCapacity,
-		lSegment, seMEHT.SegmentCacheCapacity, sync.RWMutex{}}
+		seMEHT.MgtNodeCacheCapacity, seMEHT.BucketCacheCapacity,
+		seMEHT.SegmentCacheCapacity, seMEHT.MerkleTreeCacheCapacity, &c}
 	return meht, nil
 }
 
@@ -331,6 +330,34 @@ func (meht *MEHT) SetSEH(seh *SEH) {
 
 func (meht *MEHT) SetMGT(mgt *MGT) {
 	meht.mgt = mgt
+}
+
+func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
+	k_, err := util.ToStringE(k)
+	if err != nil {
+		panic(err)
+	}
+	var v_ []byte
+	switch any(v).(type) {
+	case *MGTNode:
+		v_ = SerializeMGTNode(any(v).(*MGTNode))
+	case *Bucket:
+		v_ = SerializeBucket(any(v).(*Bucket))
+	case *[]util.KVPair:
+		v_ = SerializeSegment(*any(v).(*[]util.KVPair))
+	case *mht.MerkleTree:
+		v_ = mht.SerializeMHT(any(v).(*mht.MerkleTree))
+	default:
+		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBackFoo.")
+	}
+	//v_, err := util.ToStringE(v)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//fmt.Println("onEvicted: \n", k_, "\n", string(v_))
+	if err = db.Put([]byte(k_), v_, nil); err != nil {
+		panic(err)
+	}
 }
 
 // func main() {

@@ -2,13 +2,16 @@ package sedb
 
 import (
 	"MEHT/meht"
+	"MEHT/mht"
 	"MEHT/mpt"
 	"MEHT/util"
 	"encoding/hex"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -23,27 +26,59 @@ import (
 //func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {}： 从文件中读取seHash和dbPath
 //func (sedb *SEDB) PrintSEDB() {}： 打印SEDB
 
+type MgtNodeCacheCapacity int
+type BucketCacheCapacity int
+type SegmentCacheCapacity int
+type MerkleTreeCacheCapacity int
+
+var DefaultNodeCacheCapacity = MgtNodeCacheCapacity(10)
+var DefaultBucketCacheCapacity = BucketCacheCapacity(10)
+var DefaultSegmentCacheCapacity = SegmentCacheCapacity(10)
+var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(10)
+
 type SEDB struct {
 	se     *StorageEngine //搜索引擎的指针
 	seHash []byte         //搜索引擎序列化后的哈希值
 	db     *leveldb.DB    //底层存储的指针
 	dbPath string         //底层存储的文件路径
 
-	siMode   string //se的参数，辅助索引类型，meht或mpt
-	mehtName string //se的参数，meht的名字
-	rdx      int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc       int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs       int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	siMode                  string //se的参数，辅助索引类型，meht或mpt
+	mehtName                string //se的参数，meht的名字
+	rdx                     int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc                      int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs                      int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	mgtNodeCacheCapacity    MgtNodeCacheCapacity
+	bucketCacheCapacity     BucketCacheCapacity
+	segmentCacheCapacity    SegmentCacheCapacity
+	merkleTreeCacheCapacity MerkleTreeCacheCapacity
 }
 
 // NewSEDB() *SEDB: 返回一个新的SEDB
-func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int, bc int, bs int) *SEDB {
+func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int, bc int, bs int, cacheCapacity ...interface{}) *SEDB {
 	//打开或创建数据库
 	db, err := leveldb.OpenFile(dbPath, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	return &SEDB{nil, seh, db, dbPath, siMode, mehtName, rdx, bc, bs}
+	mgtNodeCacheCapacity := DefaultNodeCacheCapacity
+	bucketNodeCacheCapacity := DefaultBucketCacheCapacity
+	segmentCacheCapacity := DefaultSegmentCacheCapacity
+	merkleTreeCacheCapacity := DefaultMerkleTreeCapacity
+	for _, capacity := range cacheCapacity {
+		switch capacity.(type) {
+		case MgtNodeCacheCapacity:
+			mgtNodeCacheCapacity = capacity.(MgtNodeCacheCapacity)
+		case BucketCacheCapacity:
+			bucketNodeCacheCapacity = capacity.(BucketCacheCapacity)
+		case SegmentCacheCapacity:
+			segmentCacheCapacity = capacity.(SegmentCacheCapacity)
+		case MerkleTreeCacheCapacity:
+			merkleTreeCacheCapacity = capacity.(MerkleTreeCacheCapacity)
+		}
+	}
+	return &SEDB{nil, seh, db, dbPath, siMode, mehtName, rdx, bc, bs,
+		mgtNodeCacheCapacity, bucketNodeCacheCapacity,
+		segmentCacheCapacity, merkleTreeCacheCapacity}
 }
 
 // 获取SEDB中的StorageEngine，如果为空，从db中读取se
@@ -75,6 +110,31 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)
 	//返回插入结果
 	return sedbProof
+}
+
+// 将Cache中所有数据都更新到磁盘上
+func (sedb *SEDB) PurgeCache() {
+	if sedb.siMode != "meht" {
+		return
+	}
+	for idx, cache_ := range *(sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).GetCache()) {
+		switch idx {
+		case 0:
+			targetCache, _ := cache_.(*lru.Cache[string, *meht.MGTNode])
+			targetCache.Purge()
+		case 1:
+			targetCache, _ := cache_.(*lru.Cache[string, *meht.Bucket])
+			targetCache.Purge()
+		case 2:
+			targetCache, _ := cache_.(*lru.Cache[string, *[]util.KVPair])
+			targetCache.Purge()
+		case 3:
+			targetCache, _ := cache_.(*lru.Cache[string, *mht.MerkleTree])
+			targetCache.Purge()
+		default:
+			panic("Unknown cache type with idx " + strconv.Itoa(idx) + " in function PurgeCache.")
+		}
+	}
 }
 
 // 根据十六进制的非主键Hexkeyword查询完整的kvpair

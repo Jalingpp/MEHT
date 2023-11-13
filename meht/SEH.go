@@ -170,15 +170,15 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB) (string, []byte, *mht.MHTPr
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string, []byte, *mht.MHTProof) {
+func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}) ([][]*Bucket, string, []byte, *mht.MHTProof) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
 		bucket := NewBucket(seh.name, 0, seh.rdx, seh.bucketCapacity, seh.bucketSegNum)
-		bucket.Insert(kvpair, db)
+		bucket.Insert(kvpair, db, cache)
 		seh.ht[""] = bucket
 		//更新bucket到db
-		bucket.UpdateBucketToDB(db)
+		bucket.UpdateBucketToDB(db, cache)
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
@@ -188,7 +188,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string
 	bucket := seh.GetBucketByKey(kvpair.GetKey(), db)
 	if bucket != nil {
 		//插入(更新)到已存在的bucket中
-		bucketss := bucket.Insert(kvpair, db)
+		bucketss := bucket.Insert(kvpair, db, cache)
 		newBucketsNumber := 0
 		for _, b := range bucketss {
 			newBucketsNumber += len(b)
@@ -198,7 +198,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string
 			//未发生分裂
 			//只将bucket[0][0]更新至db
 			bk := bucketss[0][0]
-			bk.UpdateBucketToDB(db)
+			bk.UpdateBucketToDB(db, cache)
 			return bucketss, kvpair.GetValue(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetRootHash(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetProof(0)
 		}
 		//发生分裂,更新ht
@@ -213,7 +213,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([][]*Bucket, string
 				}
 				bkey := util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
 				seh.ht[bkey] = buckets[j]
-				buckets[j].UpdateBucketToDB(db)
+				buckets[j].UpdateBucketToDB(db, cache)
 			}
 
 		}

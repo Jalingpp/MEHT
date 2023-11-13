@@ -6,9 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"strings"
-
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
+	"strings"
 )
 
 //NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {}: creates a new Bucket object
@@ -43,12 +43,14 @@ func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 }
 
 // 更新bucket至db中
-func (b *Bucket) UpdateBucketToDB(db *leveldb.DB) {
-	seBucket := SerializeBucket(b)
+func (b *Bucket) UpdateBucketToDB(db *leveldb.DB, cache *[]interface{}) {
+	//seBucket := SerializeBucket(b)
+	targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
+	targetCache.Add(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx), b)
 	//fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.bucketKey))
-	if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
-		panic(err)
-	}
+	//if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
+	//	panic(err)
+	//}
 }
 
 // 新建一个segment
@@ -59,27 +61,39 @@ func NewSegment() []util.KVPair {
 
 // 获取segment,若不存在,则从db中获取
 func (b *Bucket) GetSegment(segkey string, db *leveldb.DB) []util.KVPair {
+	//func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
 	if len(b.segments[segkey]) == 0 {
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
-		kvString, error_ := db.Get([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), nil)
+		key_ := []byte(b.name + util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segkey)
+		kvString, error_ := db.Get(key_, nil)
 		if error_ == nil {
 			kvs, _ := DeserializeSegment(kvString)
 			b.segments[segkey] = kvs
+			// 内存中没有则cache中一定没有,cache的目的仅是减少刷新到磁盘的次数而非从磁盘读取的次数
+			// 从磁盘读入的数据不需要更新到lru,仅当数据被更新时Deserialize的过程中自会将更新的数据加入到lru中
+			// 因此这里针对lru的Add操作被注释掉了
+			// 如果完全模拟cache的操作,此处Add操作会让lru中更新的数据被更大几率率先更新到磁盘中
+			// 因此增加了IO次数,与设计添加一个lru的初衷相违背了
+			//targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
+			//targetCache.Add(string(key_), &kvs)
 		}
 	}
 	return b.segments[segkey]
 }
 
 // 更新segment至db中
-func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB) {
+func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB, cache *[]interface{}) {
 	if b.GetSegments()[segkey] == nil {
 		return
 	}
-	seSeg := SerializeSegment(b.segments[segkey])
-	//fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
-	if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
-		panic(err)
-	}
+	targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
+	v := b.segments[segkey]
+	targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey, &v)
+	//seSeg := SerializeSegment(b.segments[segkey])
+	////fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
+	//if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
+	//	panic(err)
+	//}
 }
 
 // GetName returns the name of the meht
@@ -141,16 +155,18 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB) *mht.MerkleTree {
 }
 
 // 将merkle tree更新至db中
-func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB) {
+func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB, cache *[]interface{}) {
 	if b.GetMerkleTrees()[index] == nil {
 		return
 	}
 	mt := b.GetMerkleTrees()[index]
-	seMHT := mht.SerializeMHT(mt)
-	//fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
-	if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
-		panic(err)
-	}
+	targetCache, _ := (*cache)[3].(*lru.Cache[string, *mht.MerkleTree])
+	targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index, mt)
+	//seMHT := mht.SerializeMHT(mt)
+	////fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
+	//if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
+	//	panic(err)
+	//}
 }
 
 // SetBucketKey sets the bucket key of the Bucket
@@ -230,7 +246,7 @@ func (b *Bucket) GetIndex(key string, db *leveldb.DB) (string, bool, int) {
 }
 
 // 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
-func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
+func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}) [][]*Bucket {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
 	segkey, _, index := b.GetIndex(kvpair.GetKey(), db)
@@ -238,11 +254,11 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 		//在bucket中,修改value
 		b.GetSegment(segkey, db)[index].SetValue(kvpair.GetValue())
 		//将修改后的segment更新至db中
-		b.UpdateSegmentToDB(segkey, db)
+		b.UpdateSegmentToDB(segkey, db, cache)
 		//更新bucket中对应segment的merkle tree
 		b.GetMerkleTree(segkey, db).UpdateRoot(index, []byte(kvpair.GetValue()))
 		//将更新后的merkle tree更新至db中
-		b.UpdateMerkleTreeToDB(segkey, db)
+		b.UpdateMerkleTreeToDB(segkey, db, cache)
 		//返回更新后的bucket
 		buckets = append(buckets, b)
 		return [][]*Bucket{buckets}
@@ -262,7 +278,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 			//未满,插入到对应的segment中
 			b.segments[segkey] = append(b.segments[segkey], *kvpair)
 			//将更新后的segment更新至db中
-			b.UpdateSegmentToDB(segkey, db)
+			b.UpdateSegmentToDB(segkey, db, cache)
 			b.number++
 			//若该segment对应的merkle tree不存在,则创建,否则插入value到merkle tree中
 			if b.GetMerkleTree(segkey, db) == nil {
@@ -271,14 +287,14 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 			//插入value到merkle tree中,返回新的根哈希
 			b.merkleTrees[segkey].InsertData([]byte(kvpair.GetValue()))
 			//将更新后的merkle tree更新至db中
-			b.UpdateMerkleTreeToDB(segkey, db)
+			b.UpdateMerkleTreeToDB(segkey, db, cache)
 			buckets = append(buckets, b)
 			return [][]*Bucket{buckets}
 		} else {
 			//已满,分裂成rdx个bucket
 			//fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey()), b.rdx)
 			ret := make([][]*Bucket, 0)
-			buckets = append(buckets, b.SplitBucket(db)...)
+			buckets = append(buckets, b.SplitBucket(db, cache)...)
 			//为所有bucket构建merkle tree
 			for _, bucket := range buckets {
 				segments := bucket.GetSegments()
@@ -290,13 +306,13 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 					}
 					bucket.merkleTrees[segkey] = mht.NewMerkleTree(datas)
 					//将merkleTrees[segkey]更新至db中
-					bucket.UpdateMerkleTreeToDB(segkey, db)
+					bucket.UpdateMerkleTreeToDB(segkey, db, cache)
 				}
 			}
 			//判断key应该插入到哪个bucket中
 			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			ret = append(ret, buckets)
-			ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db)
+			ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db, cache)
 			if len(ret_[0]) != b.rdx { //说明这一次的插入没有引起桶分裂
 				return ret
 			} else { //此次插入引发桶分裂,分裂的rdx个桶作为新的一层桶加入到ret末尾
@@ -307,7 +323,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) [][]*Bucket {
 }
 
 // SplitBucket 分裂bucket为rdx个bucket,并将原bucket中的数据重新分配到rdx个bucket中,返回rdx个bucket的指针
-func (b *Bucket) SplitBucket(db *leveldb.DB) []*Bucket {
+func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	buckets := make([]*Bucket, 0)
 	b.SetLD(b.GetLD() + 1)
 	originBkey := b.GetBucketKey()
@@ -322,7 +338,7 @@ func (b *Bucket) SplitBucket(db *leveldb.DB) []*Bucket {
 		newBucket := NewBucket(b.name, b.ld, b.rdx, b.capacity, b.segNum)
 		newBucket.SetBucketKey(append([]int{i + 1}, originBkey...))
 		//将新bucket插入到db中
-		newBucket.UpdateBucketToDB(db)
+		newBucket.UpdateBucketToDB(db, cache)
 		buckets = append(buckets, newBucket)
 	}
 	//获取原bucket中所有数据对象
@@ -331,7 +347,7 @@ func (b *Bucket) SplitBucket(db *leveldb.DB) []*Bucket {
 		for _, kvpair := range kvpairs {
 			//获取key的倒数第ld位
 			//将数据对象插入到对应的bucket中
-			buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(&kvpair, db)
+			buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(&kvpair, db, cache)
 		}
 	}
 	return buckets

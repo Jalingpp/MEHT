@@ -82,7 +82,8 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 {
 		primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil)
 		if error_ == nil {
-			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString)
+			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.primaryIndex = primaryIndex
 		} else {
 			fmt.Printf("GetPrimaryIndex error:%v\n", error_)
@@ -97,7 +98,8 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 	if se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 {
 		secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mpt, nil)
 		if len(secondaryIndexString) != 0 {
-			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString)
+			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.secondaryIndex_mpt = secondaryIndex
 		}
 	}
@@ -110,7 +112,7 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 	if se.secondaryIndex_meht == nil {
 		secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil)
 		if len(secondaryIndexString) != 0 {
-			mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
+			_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndex_meht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
 				bucketCC, segmentCC, merkleTreeCC)
 		}
@@ -124,7 +126,8 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 	//如果是第一次插入
 	if se.GetPrimaryIndex(db) == nil {
 		//创建一个新的主键索引
-		se.primaryIndex = mpt.NewMPT()
+		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+		se.primaryIndex = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
 	}
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
 	oldvalue, oldprimaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
@@ -171,7 +174,8 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 	//如果是第一次插入
 	if se.GetSecondaryIndex_mpt(db) == nil {
 		//创建一个新的非主键索引
-		se.secondaryIndex_mpt = mpt.NewMPT()
+		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+		se.secondaryIndex_mpt = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
 	}
 	//先查询得到原有value与待插入value合并
 	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvpair.GetKey(), db)
@@ -195,27 +199,8 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil {
 		//创建一个新的非主键索引
-		mgtNodeCC := DefaultNodeCacheCapacity
-		bucketCC := DefaultBucketCacheCapacity
-		segmentCC := DefaultSegmentCacheCapacity
-		merkleTreeCC := DefaultMerkleTreeCapacity
-		if se.cacheEnable {
-			for _, cacheArg := range se.cacheCapacity {
-				switch cacheArg.(type) {
-				case MgtNodeCacheCapacity:
-					mgtNodeCC = cacheArg.(MgtNodeCacheCapacity)
-				case BucketCacheCapacity:
-					bucketCC = cacheArg.(BucketCacheCapacity)
-				case SegmentCacheCapacity:
-					segmentCC = cacheArg.(SegmentCacheCapacity)
-				case MerkleTreeCacheCapacity:
-					merkleTreeCC = cacheArg.(MerkleTreeCacheCapacity)
-				default:
-					panic("Unknown type " + reflect.TypeOf(cacheArg).String() + " in function InsertIntoMEHT.")
-				}
-			}
-		}
-		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, int(mgtNodeCC), int(bucketCC), int(segmentCC), int(merkleTreeCC), se.cacheEnable)
+		_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
+		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
 	}
 	//先查询得到原有value与待插入value合并
 	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvpair.GetKey(), db)
@@ -236,13 +221,19 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 	return values, se.secondaryIndex_meht.GetQueryProof(bucket, segkey, isSegExist, index, db)
 }
 
-func GetCapacity(cacheCapacity *[]interface{}) (mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
+func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
+	shortNodeCC = int(DefaultShortNodeCacheCapacity)
+	fullNodeCC = int(DefaultFullNodeCacheCapacity)
 	mgtNodeCC = int(DefaultNodeCacheCapacity)
 	bucketCC = int(DefaultBucketCacheCapacity)
 	segmentCC = int(DefaultSegmentCacheCapacity)
 	merkleTreeCC = int(DefaultMerkleTreeCapacity)
 	for _, capacity := range *cacheCapacity {
 		switch capacity.(type) {
+		case ShortNodeCacheCapacity:
+			shortNodeCC = int(capacity.(ShortNodeCacheCapacity))
+		case FullNodeCacheCapacity:
+			fullNodeCC = int(capacity.(FullNodeCacheCapacity))
 		case MgtNodeCacheCapacity:
 			mgtNodeCC = int(capacity.(MgtNodeCacheCapacity))
 		case BucketCacheCapacity:

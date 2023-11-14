@@ -23,15 +23,23 @@ import (
 //func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {}： 从文件中读取seHash和dbPath
 //func (sedb *SEDB) PrintSEDB() {}： 打印SEDB
 
+// MPT Cache
+type FullNodeCacheCapacity int
+type ShortNodeCacheCapacity int
+
+var DefaultFullNodeCacheCapacity = FullNodeCacheCapacity(128)
+var DefaultShortNodeCacheCapacity = ShortNodeCacheCapacity(128)
+
+// MEHT Cache
 type MgtNodeCacheCapacity int
 type BucketCacheCapacity int
 type SegmentCacheCapacity int
 type MerkleTreeCacheCapacity int
 
-var DefaultNodeCacheCapacity = MgtNodeCacheCapacity(10)
-var DefaultBucketCacheCapacity = BucketCacheCapacity(10)
-var DefaultSegmentCacheCapacity = SegmentCacheCapacity(10)
-var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(10)
+var DefaultNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)
+var DefaultBucketCacheCapacity = BucketCacheCapacity(128)
+var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)
+var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128)
 
 type SEDB struct {
 	se     *StorageEngine //搜索引擎的指针

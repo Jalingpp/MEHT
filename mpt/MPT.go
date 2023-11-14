@@ -6,6 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
+	"reflect"
 	"strings"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -25,8 +27,11 @@ import (
 //func DeserializeMPT(data []byte) (*MPT, error) {}： 反序列化MPT
 
 type MPT struct {
-	rootHash []byte     //MPT的哈希值，对根节点哈希值哈希得到
-	root     *ShortNode //根节点
+	rootHash []byte         //MPT的哈希值，对根节点哈希值哈希得到
+	root     *ShortNode     //根节点
+	cache    *[]interface{} // cache[0], cache[1] represent cache of shortNode and fullNode respectively.
+	// the key of any node type is its nodeHash in the form of string
+	cacheEnable bool
 }
 
 // 获取MPT的根节点，如果为nil，则从数据库中查询
@@ -42,8 +47,20 @@ func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 }
 
 // NewMPT creates a empty MPT
-func NewMPT() *MPT {
-	return &MPT{nil, nil}
+func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *MPT {
+	if cacheEnable {
+		lShortNode, _ := lru.NewWithEvict[string, *ShortNode](shortNodeCC, func(k string, v *ShortNode) {
+			callBackFoo[string, *ShortNode](k, v, db)
+		})
+		lFullNode, _ := lru.NewWithEvict[string, *FullNode](fullNodeCC, func(k string, v *FullNode) {
+			callBackFoo[string, *FullNode](k, v, db)
+		})
+		var c []interface{}
+		c = append(c, lShortNode, lFullNode)
+		return &MPT{nil, nil, &c, cacheEnable}
+	} else {
+		return &MPT{nil, nil, nil, cacheEnable}
+	}
 }
 
 // 插入一个KVPair到MPT中，返回新的根节点的哈希值
@@ -239,6 +256,25 @@ func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	//将更新后的mpt写入db中
 	if err := db.Put(mptHash, SerializeMPT(mpt), nil); err != nil {
 		fmt.Println("Insert MPT to DB error:", err)
+	}
+}
+
+func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
+	k_, err := util.ToStringE(k)
+	if err != nil {
+		panic(err)
+	}
+	var v_ []byte
+	switch any(v).(type) {
+	case *ShortNode:
+		v_ = SerializeShortNode(any(v).(*ShortNode))
+	case *FullNode:
+		v_ = SerializeFullNode(any(v).(*FullNode))
+	default:
+		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBackFoo of MPT.")
+	}
+	if err = db.Put([]byte(k_), v_, nil); err != nil {
+		panic(err)
 	}
 }
 
@@ -449,14 +485,26 @@ func SerializeMPT(mpt *MPT) []byte {
 }
 
 // 反序列化MPT
-func DeserializeMPT(data []byte) (*MPT, error) {
+func DeserializeMPT(data []byte, db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) (*MPT, error) {
 	var smpt SeMPT
 	err := json.Unmarshal(data, &smpt)
 	if err != nil {
 		fmt.Printf("DeserializeMPT error: %v\n", err)
 		return nil, err
 	}
-	return &MPT{smpt.RootHash, nil}, nil
+	if cacheEnable {
+		lShortNode, _ := lru.NewWithEvict(shortNodeCC, func(k string, v *ShortNode) {
+			callBackFoo[string, *ShortNode](k, v, db)
+		})
+		lFullNode, _ := lru.NewWithEvict(fullNodeCC, func(k string, v *FullNode) {
+			callBackFoo[string, *FullNode](k, v, db)
+		})
+		var c []interface{}
+		c = append(c, lShortNode, lFullNode)
+		return &MPT{smpt.RootHash, nil, &c, cacheEnable}, nil
+	} else {
+		return &MPT{smpt.RootHash, nil, nil, cacheEnable}, nil
+	}
 }
 
 func (mpt *MPT) GetRootHash() []byte {

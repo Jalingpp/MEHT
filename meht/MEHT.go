@@ -356,7 +356,7 @@ func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
 	case *mht.MerkleTree:
 		v_ = mht.SerializeMHT(any(v).(*mht.MerkleTree))
 	default:
-		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBackFoo.")
+		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBackFoo of MEHT.")
 	}
 	//v_, err := util.ToStringE(v)
 	//if err != nil {

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"strings"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"sort"
@@ -42,11 +43,12 @@ type MGT struct {
 	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
+	Latch       *sync.Mutex
 }
 
 // NewMGT creates a empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil}
+	return &MGT{rdx, nil, nil, &sync.Mutex{}}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
@@ -56,7 +58,6 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 		if error_ == nil {
 			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
-			// ZYFCHANGE
 			mgt.Root.GetBucket(mgt.rdx, util.IntArrayToString(mgt.Root.bucketKey, mgt.rdx), db)
 		}
 	}
@@ -450,7 +451,7 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
-	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, &sync.Mutex{}}
 	return mgt, nil
 }
 

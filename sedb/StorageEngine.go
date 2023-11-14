@@ -225,7 +225,10 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 	isChange := insertedKV.AddValue(kvpair.GetValue())
 	//如果原有values中没有此value，则插入到meht中
 	if isChange {
+		// 这里逻辑也需要转变，因为并发插入的时候可能很多键都相同但被阻塞了一直没写进去，那更新就会有非常多初始值的重复
+		// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
 		_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
+		//_, newValues, newProof := se.secondaryIndex_meht.Insert(kvpair, db)
 		//更新meht到db
 		se.secondaryIndex_meht.UpdateMEHTToDB(db)
 		return newValues, newProof

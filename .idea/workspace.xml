@@ -5,26 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7f433577-8bdf-41a6-86c1-5fa5db227945" name="更改" comment="">
-      <change afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/000656.ldb" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/000659.ldb" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/000662.ldb" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/config.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000003.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000005.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000007.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000008.log" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000009.ldb" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT.bak" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000006" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MEHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MEHT.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sedb/SEDB.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDB.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/sedb/StorageEngine.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/StorageEngine.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/util/KVPair.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/KVPair.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -43,23 +30,23 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.go.formatter.settings.were.checked": "true",
-    "RunOnceActivity.go.migrated.go.modules.settings": "true",
-    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
-    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "zyfChange",
-    "go.import.settings.migrated": "true",
-    "go.sdk.automatically.set": "true",
-    "last_opened_file_path": "D:/For Work/p10/nft_crawl/MEHT",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;zyfChange&quot;,
+    &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
+    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/For Work/p10/nft_crawl/MEHT&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
     <configuration name="go build MEHT" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
       <module name="MEHT" />

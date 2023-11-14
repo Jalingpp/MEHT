@@ -105,7 +105,8 @@ func (meht *MEHT) GetCache() *[]interface{} {
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
 func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
-	if meht.GetSEH(db).bucketsNumber == 0 {
+	if meht.GetSEH(db).bucketsNumber == 0 && meht.mgt.Latch.TryLock() {
+		defer meht.mgt.Latch.Unlock()
 		//插入KV到SEH
 		bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db, meht.cache)
 		//更新seh到db
@@ -116,6 +117,8 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db)
 		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+	}
+	for meht.GetSEH(db).bucketsNumber == 0 { // 等待最初的桶建成
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db, meht.cache)

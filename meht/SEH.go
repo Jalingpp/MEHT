@@ -67,7 +67,7 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 }
 
 // GetBucket returns the bucket with the given key
-func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB) *Bucket {
+func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	if seh.gd == 0 {
 		return seh.ht[""]
 	}
@@ -77,7 +77,7 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB) *Bucket {
 	} else {
 		bkey = strings.Repeat("0", seh.gd*util.ComputerStrideByBase(seh.rdx)-len(key)) + key
 	}
-	return seh.GetBucket(bkey, db)
+	return seh.GetBucket(bkey, db, cache)
 	//不在ht中保存跳转桶
 	//if seh.GetBucket(bkey, db) == nil {
 	//	return nil
@@ -101,19 +101,19 @@ func (seh *SEH) GetBucketsNumber() int {
 }
 
 // GetValue returns the value of the key-value pair with the given key
-func (seh *SEH) GetValueByKey(key string, db *leveldb.DB) string {
-	bucket := seh.GetBucketByKey(key, db)
+func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) string {
+	bucket := seh.GetBucketByKey(key, db, cache)
 	if bucket == nil {
 		return ""
 	}
-	return bucket.GetValue(key, db)
+	return bucket.GetValue(key, db, cache)
 }
 
 // GetProof returns the proof of the key-value pair with the given key
-func (seh *SEH) GetProof(key string, db *leveldb.DB) (string, []byte, *mht.MHTProof) {
-	bucket := seh.GetBucketByKey(key, db)
-	value, segkey, isSegExist, index := bucket.GetValueByKey(key, db)
-	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db)
+func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
+	bucket := seh.GetBucketByKey(key, db, cache)
+	value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, cache)
+	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, cache)
 	return value, segRootHash, mhtProof
 }
 
@@ -133,7 +133,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		return [][]*Bucket{buckets}, kvpair.GetValue(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetRootHash(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetProof(0)
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	bucket := seh.GetBucketByKey(kvpair.GetKey(), db)
+	bucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
 	if bucket != nil {
 		//插入(更新)到已存在的bucket中
 		bucketss := bucket.Insert(kvpair, db, cache)
@@ -169,16 +169,16 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
 		seh.UpdateSEHToDB(db)
 		//
-		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db)
-		insertedV, segkey, issegExist, index := kvbucket.GetValueByKey(kvpair.GetKey(), db)
-		segRootHash, proof := kvbucket.GetProof(segkey, issegExist, index, db)
+		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
+		insertedV, segkey, issegExist, index := kvbucket.GetValueByKey(kvpair.GetKey(), db, cache)
+		segRootHash, proof := kvbucket.GetProof(segkey, issegExist, index, db, cache)
 		return bucketss, insertedV, segRootHash, proof
 	}
 	return nil, "", nil, nil
 }
 
 // 打印SEH
-func (seh *SEH) PrintSEH(db *leveldb.DB) {
+func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 	fmt.Printf("打印SEH-------------------------------------------------------------------------------------------\n")
 	if seh == nil {
 		return
@@ -186,7 +186,7 @@ func (seh *SEH) PrintSEH(db *leveldb.DB) {
 	fmt.Printf("SEH: gd=%d, rdx=%d, bucketCapacity=%d, bucketSegNum=%d, bucketsNumber=%d\n", seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, seh.bucketsNumber)
 	for k := range seh.ht {
 		fmt.Printf("bucketKey=%s\n", k)
-		seh.GetBucket(k, db).PrintBucket(db)
+		seh.GetBucket(k, db, cache).PrintBucket(db, cache)
 	}
 }
 

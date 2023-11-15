@@ -129,7 +129,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//更新mgt的根节点哈希并更新到db
 	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	//获取当前KV插入的bucket
-	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db)
+	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache)
 	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache)
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
@@ -138,7 +138,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
-	meht.GetSEH(db).PrintSEH(db)
+	meht.GetSEH(db).PrintSEH(db, meht.cache)
 	meht.GetMGT(db).PrintMGT(meht.name, db, meht.cache)
 }
 
@@ -152,10 +152,10 @@ type MEHTProof struct {
 // 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
 func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
-	bucket := meht.GetSEH(db).GetBucketByKey(key, db)
+	bucket := meht.GetSEH(db).GetBucketByKey(key, db, meht.cache)
 	if bucket != nil {
 		//根据key找到value
-		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db)
+		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache)
 		return value, bucket, segkey, isSegExist, index
 	}
 	return "", nil, "", false, -1
@@ -164,7 +164,7 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 // 根据查询结果构建MEHTProof, mgtNode.bucket.rdx
 func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, index int, db *leveldb.DB) *MEHTProof {
 	//找到segRootHash和segProof
-	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db)
+	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, meht.cache)
 	//根据key找到mgtRootHash和mgtProof
 	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db, meht.cache)
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}

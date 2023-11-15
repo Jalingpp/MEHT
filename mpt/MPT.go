@@ -88,7 +88,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		if strings.Compare(cnode.suffix, suffix) == 0 {
 			if !bytes.Equal(cnode.value, value) {
 				cnode.value = value
-				UpdateShortNodeHash(cnode, db)
+				UpdateShortNodeHash(cnode, db, mpt.cache)
 			}
 			return cnode
 		} else {
@@ -110,7 +110,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				//更新当前节点的prefix和suffix，nodeHash
 				cnode.prefix = cnode.prefix + cnode.suffix[0:len(comprefix)+1]
 				cnode.suffix = cnode.suffix[len(comprefix)+1:]
-				UpdateShortNodeHash(cnode, db)
+				UpdateShortNodeHash(cnode, db, mpt.cache)
 				//新建一个FullNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
@@ -134,7 +134,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				} else {
 					cnode.suffix = ""
 				}
-				UpdateShortNodeHash(cnode, db)
+				UpdateShortNodeHash(cnode, db, mpt.cache)
 				//创建一个BranchNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
@@ -160,17 +160,17 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			} else {
 				newsuffix = suffix[len(commPrefix):]
 			}
-			fullnode := mpt.RecursiveInsertFullNode(prefix+commPrefix, newsuffix, value, cnode.GetNextNode(db), db)
+			fullnode := mpt.RecursiveInsertFullNode(prefix+commPrefix, newsuffix, value, cnode.GetNextNode(db, mpt.cache), db)
 			cnode.nextNode = fullnode
 			cnode.nextNodeHash = fullnode.nodeHash
-			UpdateShortNodeHash(cnode, db)
+			UpdateShortNodeHash(cnode, db, mpt.cache)
 			return cnode
 		} else if len(commPrefix) == len(suffix) {
 			//如果当前节点的suffix完全包含suffix
 			//更新当前节点的prefix和suffix，nodeHash
 			cnode.prefix = cnode.prefix + cnode.suffix[0:len(commPrefix)+1]
 			cnode.suffix = cnode.suffix[len(commPrefix)+1:] //当前节点在除去comfix后一定还有字节
-			UpdateShortNodeHash(cnode, db)
+			UpdateShortNodeHash(cnode, db, mpt.cache)
 			//新建一个FullNode，包含当前节点和value
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
@@ -186,7 +186,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			} else {
 				cnode.suffix = ""
 			}
-			UpdateShortNodeHash(cnode, db)
+			UpdateShortNodeHash(cnode, db, mpt.cache)
 			//新建一个LeafNode
 			var newsuffix string
 			if len(suffix) > len(commPrefix)+1 {
@@ -213,12 +213,12 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 	if len(suffix) == 0 {
 		if !bytes.Equal(cnode.value, value) {
 			cnode.value = value
-			UpdateFullNodeHash(cnode, db)
+			UpdateFullNodeHash(cnode, db, mpt.cache)
 		}
 		return cnode
 	} else {
-		var childnode *ShortNode                                                  //新创建的childNode或递归查询返回的childNode
-		childNode := cnode.GetChildInFullNode(util.ByteToHexIndex(suffix[0]), db) //当前fullnode中已有的childNode
+		var childnode *ShortNode                                                             //新创建的childNode或递归查询返回的childNode
+		childNode := cnode.GetChildInFullNode(util.ByteToHexIndex(suffix[0]), db, mpt.cache) //当前fullnode中已有的childNode
 		var newsuffix string
 		if len(suffix) > 1 {
 			newsuffix = suffix[1:]
@@ -232,7 +232,7 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 		}
 		cnode.children[util.ByteToHexIndex(suffix[0])] = childnode
 		cnode.childrenHash[util.ByteToHexIndex(suffix[0])] = childnode.nodeHash
-		UpdateFullNodeHash(cnode, db)
+		UpdateFullNodeHash(cnode, db, mpt.cache)
 		return cnode
 	}
 }
@@ -256,6 +256,21 @@ func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	//将更新后的mpt写入db中
 	if err := db.Put(mptHash, SerializeMPT(mpt), nil); err != nil {
 		fmt.Println("Insert MPT to DB error:", err)
+	}
+}
+
+func (mpt *MPT) PurgeCache() {
+	for idx, cache_ := range *(mpt.cache) {
+		switch idx {
+		case 0:
+			targetCache, _ := cache_.(*lru.Cache[string, *ShortNode])
+			targetCache.Purge()
+		case 1:
+			targetCache, _ := cache_.(*lru.Cache[string, *FullNode])
+			targetCache.Purge()
+		default:
+			panic("Unknown idx of mptCache with type " + reflect.TypeOf(cache_).String() + ".")
+		}
 	}
 }
 
@@ -299,7 +314,7 @@ func (mpt *MPT) RecursivePrintShortNode(cnode *ShortNode, level int, db *leveldb
 		fmt.Printf("level: %d, extensionNode:%x\n", level, cnode.nodeHash)
 		fmt.Printf("prefix:%s, suffix:%s, next node:%x\n", cnode.prefix, cnode.suffix, cnode.nextNodeHash)
 		//递归打印nextNode
-		mpt.RecursivePrintFullNode(cnode.GetNextNode(db), level+1, db)
+		mpt.RecursivePrintFullNode(cnode.GetNextNode(db, mpt.cache), level+1, db)
 	}
 }
 
@@ -315,7 +330,7 @@ func (mpt *MPT) RecursivePrintFullNode(cnode *FullNode, level int, db *leveldb.D
 	}
 	//递归打印所有孩子节点
 	for i := 0; i < 16; i++ {
-		childNode := cnode.GetChildInFullNode(i, db)
+		childNode := cnode.GetChildInFullNode(i, db, mpt.cache)
 		if childNode != nil {
 			// fmt.Printf("已获取childNode[%d]:%x\n", i, childNode.nodeHash)
 			mpt.RecursivePrintShortNode(childNode, level+1, db)
@@ -357,7 +372,7 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *Sho
 		proofElement := NewProofElement(level, 1, cnode.prefix, cnode.suffix, nil, cnode.nextNodeHash, [16][]byte{})
 		//当前节点的suffix被key的suffix完全包含，则继续递归查询nextNode，将子查询结果与当前结果合并返回
 		if cnode.suffix == "" || p < len(key) && len(util.CommPrefix(cnode.suffix, key[p:])) == len(cnode.suffix) {
-			nextNode := cnode.GetNextNode(db)
+			nextNode := cnode.GetNextNode(db, mpt.cache)
 			valuestr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cnode.suffix), level+1, nextNode, db)
 			proofElements := append(mptProof.GetProofs(), proofElement)
 			return valuestr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
@@ -378,7 +393,7 @@ func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cnode *Full
 		}
 	}
 	//如果当前FullNode的children中没有对应的key[p]，则构造不存在证明返回
-	childNodeP := cnode.GetChildInFullNode(util.ByteToHexIndex(key[p]), db)
+	childNodeP := cnode.GetChildInFullNode(util.ByteToHexIndex(key[p]), db, mpt.cache)
 	if childNodeP == nil {
 		return "", &MPTProof{false, level, []*ProofElement{proofElement}}
 	}

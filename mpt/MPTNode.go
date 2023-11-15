@@ -1,12 +1,11 @@
 package mpt
 
 import (
-	"MEHT/util"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
-	"strings"
 )
 
 //MPT节点相关的结构体和方法
@@ -29,13 +28,23 @@ type FullNode struct {
 }
 
 // 获取FullNode的第index个child，如果为nil，则从数据库中查询
-func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB) *ShortNode {
+func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]interface{}) *ShortNode {
 	//如果当前节点的children[index]为nil，则从数据库中查询
 	if fn.GetChildren()[index] == nil {
-		childstring, _ := db.Get(fn.GetChildrenHash()[index], nil)
-		if len(childstring) != 0 {
-			child, _ := DeserializeShortNode(childstring)
-			fn.SetChild(index, child)
+		var ok bool
+		var child *ShortNode
+		if cache != nil {
+			targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
+			if child, ok = targetCache.Get(string(fn.GetChildrenHash()[index])); ok {
+				fn.SetChild(index, child)
+			}
+		}
+		if !ok {
+			childString, _ := db.Get(fn.GetChildrenHash()[index], nil)
+			if len(childString) != 0 {
+				child, _ = DeserializeShortNode(childString)
+				fn.SetChild(index, child)
+			}
 		}
 	}
 	return fn.GetChildren()[index]
@@ -54,15 +63,22 @@ type ShortNode struct {
 }
 
 // 获取ShortNode的nextNode，如果为nil，则从数据库中查询
-func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {
+func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
 	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
-		nextNodeString, error_ := db.Get(sn.nextNodeHash, nil)
-		if error_ == nil {
-			nextNode, _ := DeserializeFullNode(nextNodeString)
-			sn.nextNode = nextNode
-			if strings.Compare(sn.prefix, util.StringToHex("0x142e03367ede17cd851477a4287d1f35676e6dc2\\527")) == 0 && nextNode == nil {
-				fmt.Println("FullNode from db is null ")
+		var ok bool
+		var nextNode *FullNode
+		if cache != nil {
+			targetCache, _ := (*cache)[1].(*lru.Cache[string, *FullNode])
+			if nextNode, ok = targetCache.Get(string(sn.nextNodeHash)); ok {
+				sn.nextNode = nextNode
+			}
+		}
+		if !ok {
+			nextNodeString, error_ := db.Get(sn.nextNodeHash, nil)
+			if error_ == nil {
+				nextNode, _ = DeserializeFullNode(nextNodeString)
+				sn.nextNode = nextNode
 			}
 		}
 	}
@@ -92,7 +108,7 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 }
 
 // UpdateShortNodeHash 更新ShortNode的nodeHash
-func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {
+func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
 	//先删除db中原有节点(考虑到新增的其他ShortNode可能与旧ShortNode的nodeHash相同，删除可能会丢失数据，所以注释掉)
 	// err := db.Delete(sn.nodeHash, nil)
 	// if err != nil {
@@ -106,10 +122,15 @@ func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {
 	}
 	hash := sha256.Sum256(nodeHash)
 	sn.nodeHash = hash[:]
-	ssn := SerializeShortNode(sn)
-	//将更新后的sn写入db中
-	if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
-		fmt.Println("Insert ShortNode to DB error:", err)
+	if cache != nil {
+		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
+		targetCache.Add(string(sn.nodeHash), sn)
+	} else {
+		ssn := SerializeShortNode(sn)
+		//将更新后的sn写入db中
+		if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
+			fmt.Println("Insert ShortNode to DB error:", err)
+		}
 	}
 }
 
@@ -140,7 +161,7 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNod
 }
 
 // UpdateFullNodeHash updates the nodeHash of a FullNode
-func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {
+func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
 	//先删除db中原有节点
 	if err := db.Delete(fn.nodeHash, nil); err != nil {
 		fmt.Println("Delete FullNode from DB error:", err)
@@ -153,9 +174,14 @@ func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {
 	hash := sha256.Sum256(nodeHash)
 	fn.nodeHash = hash[:]
 	//将更新后的fn写入db中
-	sfn := SerializeFullNode(fn)
-	if err := db.Put(fn.nodeHash, sfn, nil); err != nil {
-		fmt.Println("Insert FullNode to DB error:", err)
+	if cache != nil {
+		targetCache, _ := (*cache)[1].(*lru.Cache[string, *FullNode])
+		targetCache.Add(string(fn.nodeHash), fn)
+	} else {
+		sfn := SerializeFullNode(fn)
+		if err := db.Put(fn.nodeHash, sfn, nil); err != nil {
+			fmt.Println("Insert FullNode to DB error:", err)
+		}
 	}
 }
 

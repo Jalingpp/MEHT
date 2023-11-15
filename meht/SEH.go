@@ -5,6 +5,7 @@ import (
 	"MEHT/util"
 	"encoding/json"
 	"fmt"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"strings"
 )
@@ -43,78 +44,25 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 }
 
 // 获取bucket，如果内存中没有，从db中读取
-func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB) *Bucket {
+func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	ret := seh.ht[bucketKey]
-	if ret == nil { //bucketKey长度一定是 gd*stride(hex时是1)
-		//done := make(chan struct{})
-		//defer close(done)
-		//generateBucketKeyPossibilities := func(bucketKey string, gd int, rdx int) <-chan string {
-		//	stride := util.ComputerStrideByBase(rdx)
-		//	out := make(chan string)
-		//	go func() {
-		//		for i := 0; i <= len(bucketKey); i += stride {
-		//			out <- bucketKey[i:]
-		//		}
-		//		close(out)
-		//	}()
-		//	return out
-		//}(bucketKey, seh.gd, seh.rdx)
-		//DoSearch := func(in <-chan string) <-chan *Bucket {
-		//	out := make(chan *Bucket)
-		//	go func() {
-		//		for bk := range in {
-		//			bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bk), nil)
-		//			if error_ == nil {
-		//				bucket, _ := DeserializeBucket(bucketString)
-		//				out <- bucket
-		//			}
-		//		}
-		//		close(out)
-		//	}()
-		//	return out
-		//}
-		//Merge := func(done <-chan struct{}, ins ...<-chan *Bucket) <-chan *Bucket {
-		//	var wg sync.WaitGroup
-		//	out := make(chan *Bucket)
-		//	output := func(c <-chan *Bucket) {
-		//		for bucket := range c {
-		//			select {
-		//			case out <- bucket:
-		//			case <-done:
-		//			}
-		//		}
-		//		wg.Done()
-		//	}
-		//	wg.Add(len(ins))
-		//	for _, in := range ins {
-		//		go output(in)
-		//	}
-		//	go func() {
-		//		wg.Wait()
-		//		close(out)
-		//	}()
-		//	return out
-		//}
-		//workerList := make([]<-chan *Bucket, 0)
-		//for i := 0; i < 2; i++ {
-		//	worker := DoSearch(generateBucketKeyPossibilities)
-		//	workerList = append(workerList, worker)
-		//}
-		//ret_ := Merge(done, workerList...)
-		//ret = <-ret_
-		//if ret == nil {
-		//	fmt.Println("Ops")
-		//}
-		bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bucketKey), nil)
-		if error_ == nil {
-			bucket, _ := DeserializeBucket(bucketString)
-			ret = bucket
+	if ret == nil {
+		var ok bool
+		if cache != nil {
+			targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
+			ret, ok = targetCache.Get(seh.name + "bucket" + bucketKey)
 		}
-		if ret == nil {
-			ret = seh.GetBucket(bucketKey[util.ComputerStrideByBase(seh.rdx):], db)
+		if !ok {
+			bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bucketKey), nil)
+			if error_ == nil {
+				bucket, _ := DeserializeBucket(bucketString)
+				ret = bucket
+			}
+			if ret == nil {
+				ret = seh.GetBucket(bucketKey[util.ComputerStrideByBase(seh.rdx):], db, cache)
+			}
 		}
 	}
-
 	return ret
 }
 

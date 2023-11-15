@@ -257,9 +257,16 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	if err := sedb.db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 		fmt.Println("Insert StorageEngine to DB error:", err)
 	}
-	if sedb.siMode == "meht" && sedb.cacheEnable {
-		sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).PurgeCache()
-		//sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).UpdateMEHTToDB(sedb.db)
+	if sedb.cacheEnable {
+		sedb.GetStorageEngine().GetPrimaryIndex(sedb.db).PurgeCache()
+		switch sedb.siMode {
+		case "meht":
+			sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.db).PurgeCache()
+		case "mpt":
+			sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.db).PurgeCache()
+		default:
+			panic("Unknown siMode when purge cache.")
+		}
 	}
 	data := hex.EncodeToString(sedb.seHash) + "," + sedb.dbPath + "\n"
 	util.WriteStringToFile(filePath, data)

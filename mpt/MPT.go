@@ -355,13 +355,13 @@ func (mpt *MPT) QueryByKey(key string, db *leveldb.DB) (string, *MPTProof) {
 		return "", &MPTProof{false, 0, nil}
 	} else {
 		//递归查询
-		root.latch.RLock()
-		defer root.latch.RUnlock()
 		return mpt.RecursiveQueryShortNode(key, 0, 0, root, db)
 	}
 }
 
 func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *ShortNode, db *leveldb.DB) (string, *MPTProof) {
+	cnode.latch.RLock()
+	defer cnode.latch.RUnlock()
 	if cnode == nil {
 		return "", &MPTProof{false, 0, nil}
 	}
@@ -392,6 +392,8 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *Sho
 }
 
 func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cnode *FullNode, db *leveldb.DB) (string, *MPTProof) {
+	cnode.latch.RLock()
+	defer cnode.latch.RUnlock()
 	proofElement := NewProofElement(level, 2, "", "", cnode.value, nil, cnode.childrenHash)
 	if p >= len(key) {
 		//判断当前FullNode是否有value，如果有，构造存在证明返回

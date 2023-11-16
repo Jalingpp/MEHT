@@ -26,6 +26,8 @@ type FullNode struct {
 	children     [16]*ShortNode // children的指针，0-15表示0-9,a-f
 	childrenHash [16][]byte     // children的哈希值
 	value        []byte         // 以前面ExtensionNode的prefix+suffix为key的value
+	latch        sync.RWMutex
+	updateLatch  sync.Mutex
 }
 
 // 获取FullNode的第index个child，如果为nil，则从数据库中查询
@@ -34,6 +36,7 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 	if fn.GetChildren()[index] == nil {
 		var ok bool
 		var child *ShortNode
+		fn.updateLatch.Lock() // 由于不一定一定有child，因此每一次获取都是串行的
 		if cache != nil {
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
 			if child, ok = targetCache.Get(string(fn.GetChildrenHash()[index])); ok {
@@ -46,6 +49,7 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 				fn.SetChild(index, child)
 			}
 		}
+		fn.updateLatch.Unlock()
 	}
 	return fn.GetChildren()[index]
 }
@@ -61,12 +65,13 @@ type ShortNode struct {
 	nextNodeHash []byte    //下一个FullNode节点的哈希值
 	value        []byte    //value（当前节点是leaf node时）
 	latch        sync.RWMutex
+	updateLatch  sync.Mutex
 }
 
 // 获取ShortNode的nextNode，如果为nil，则从数据库中查询
 func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
-	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 && sn.latch. {
+	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 && sn.updateLatch.TryLock() { // 只允许一个线程重构nextNode
 		var ok bool
 		var nextNode *FullNode
 		if cache != nil {
@@ -81,7 +86,10 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 				sn.nextNode = nextNode
 			}
 		}
+		sn.updateLatch.Unlock()
 	}
+	for sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
+	} // 其余线程等待nextNode重构
 	return sn.nextNode
 }
 
@@ -98,7 +106,7 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 	}
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
-	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value, sync.RWMutex{}}
+	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value, sync.RWMutex{}, sync.Mutex{}}
 	//将sn写入db中
 	ssn := SerializeShortNode(sn)
 	if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
@@ -212,7 +220,7 @@ func DeserializeShortNode(ssnstring []byte) (*ShortNode, error) {
 		fmt.Printf("DeserializeShortNode error: %v\n", err)
 		return nil, err
 	}
-	sn := &ShortNode{nil, ssn.Prefix, ssn.IsLeaf, ssn.Suffix, nil, nil, ssn.Value, sync.RWMutex{}}
+	sn := &ShortNode{nil, ssn.Prefix, ssn.IsLeaf, ssn.Suffix, nil, nil, ssn.Value, sync.RWMutex{}, sync.Mutex{}}
 	sn.nodeHash = ssn.NodeHash
 	sn.SetNextNodeHash(ssn.NextNodeHash)
 	return sn, nil

@@ -141,9 +141,11 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		return oldprimaryProof, nil, nil
 	}
 	//将KV插入到主键索引中
+	se.latch.Lock()
 	piRootHash := se.GetPrimaryIndex(db).Insert(kvpair, db)
 	piHash := sha256.Sum256(piRootHash)
 	se.primaryIndexHash = piHash[:]
+	se.latch.Unlock()
 	_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
 	//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 	//构造倒排KV
@@ -177,10 +179,13 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 // 插入非主键索引
 func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_mpt(db) == nil {
+	if se.GetSecondaryIndex_mpt(db) == nil && se.latch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
 		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		se.secondaryIndex_mpt = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
+		se.latch.Unlock()
+	}
+	for se.secondaryIndex_mpt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
 	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvpair.GetKey(), db)

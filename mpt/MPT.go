@@ -90,6 +90,8 @@ func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {
 // 递归插入当前MPT Node
 func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cnode *ShortNode, db *leveldb.DB) *ShortNode {
 	//如果当前节点是叶子节点
+	cnode.latch.Lock()
+	defer cnode.latch.Unlock()
 	if cnode.isLeaf {
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if strings.Compare(cnode.suffix, suffix) == 0 {
@@ -216,6 +218,8 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 
 func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []byte, cnode *FullNode, db *leveldb.DB) *FullNode {
 	//如果当前节点是FullNode
+	cnode.latch.Lock()
+	defer cnode.latch.Unlock()
 	//如果len(suffix)==0，则value插入到当前FullNode的value中；否则，递归插入到children中
 	if len(suffix) == 0 {
 		if !bytes.Equal(cnode.value, value) {
@@ -247,6 +251,8 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 // 用newRootHash更新mpt的哈希，并更新至DB中
 func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	//DB 中索引MPT的是其根哈希的哈希
+	mpt.latch.Lock()
+	defer mpt.latch.Unlock()
 	hashs := sha256.Sum256(mpt.rootHash)
 	mptHash := hashs[:]
 	if len(mptHash) > 0 {

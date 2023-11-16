@@ -62,7 +62,6 @@ func main() {
 	insertNum := 0
 	var start time.Time
 	var duration time.Duration = 0
-	//for _, file := range kvPairsJsonFiles {
 	for j, file := range kvPairsJsonFiles {
 		fmt.Println(file)
 		kvPairs := util.ReadKVPairFromJsonFile(file)

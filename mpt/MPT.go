@@ -9,6 +9,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -32,6 +33,7 @@ type MPT struct {
 	cache    *[]interface{} // cache[0], cache[1] represent cache of shortNode and fullNode respectively.
 	// the key of any node type is its nodeHash in the form of string
 	cacheEnable bool
+	latch       *sync.Mutex
 }
 
 // 获取MPT的根节点，如果为nil，则从数据库中查询
@@ -56,9 +58,9 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 		})
 		var c []interface{}
 		c = append(c, lShortNode, lFullNode)
-		return &MPT{nil, nil, &c, cacheEnable}
+		return &MPT{nil, nil, &c, cacheEnable, &sync.Mutex{}}
 	} else {
-		return &MPT{nil, nil, nil, cacheEnable}
+		return &MPT{nil, nil, nil, cacheEnable, &sync.Mutex{}}
 	}
 }
 

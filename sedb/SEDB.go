@@ -54,6 +54,7 @@ type SEDB struct {
 	bs            int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	cacheEnable   bool
 	cacheCapacity []interface{}
+	latch         *sync.Mutex
 }
 
 // NewSEDB() *SEDB: 返回一个新的SEDB
@@ -80,7 +81,7 @@ func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int,
 	//	}
 	//}
 	return &SEDB{nil, seh, db, dbPath, siMode, mehtName, rdx, bc, bs,
-		cacheEnabled, cacheCapacity}
+		cacheEnabled, cacheCapacity, &sync.Mutex{}}
 }
 
 // 获取SEDB中的StorageEngine，如果为空，从db中读取se
@@ -98,10 +99,13 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 // 向SEDB中插入一条记录,返回插入证明
 func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//如果是第一次插入
-	if sedb.GetStorageEngine() == nil {
+	if sedb.GetStorageEngine() == nil && sedb.latch.TryLock() {
+		defer sedb.latch.Unlock()
 		//创建一个新的StorageEngine
 		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs, sedb.cacheEnable,
 			sedb.cacheCapacity)
+	}
+	for sedb.GetStorageEngine() == nil { // 等待其他获得了sedb锁的线程创建
 	}
 	//向StorageEngine中插入一条记录
 	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)

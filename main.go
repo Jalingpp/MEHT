@@ -38,7 +38,6 @@ func main() {
 	var seDB *sedb.SEDB
 	//cacheEnable := false
 	cacheEnable := true
-	var cacheArgs []interface{}
 	if cacheEnable {
 		shortNodeCacheCapacity := 128
 		fullNodeCacheCapacity := 128
@@ -51,7 +50,7 @@ func main() {
 			sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 			sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
 	} else {
-		seDB = sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable, cacheArgs)
+		seDB = sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable)
 	}
 	//创建一个SEDB
 	//读json文件创建KVPair数组

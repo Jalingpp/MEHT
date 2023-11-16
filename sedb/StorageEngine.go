@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -41,6 +42,7 @@ type StorageEngine struct {
 	bs            int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	cacheEnable   bool
 	cacheCapacity []interface{}
+	latch         *sync.Mutex
 }
 
 // NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
@@ -48,7 +50,7 @@ func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
 	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
 		nil, nil, mehtName, rdx, bc, bs,
-		cacheEnable, cacheCapacity}
+		cacheEnable, cacheCapacity, &sync.Mutex{}}
 }
 
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
@@ -314,7 +316,7 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 	}
 	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
 		nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName,
-		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity}
+		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, &sync.Mutex{}}
 	return se, nil
 }
 

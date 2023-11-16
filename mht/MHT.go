@@ -195,19 +195,18 @@ func SerializeMHT(mht *MerkleTree) []byte {
 		}
 	}
 	seMHT := &SeMHT{dataListstring}
-	jsonMHT, err := json.Marshal(seMHT)
-	if err != nil {
+	if jsonMHT, err := json.Marshal(seMHT); err != nil {
 		fmt.Printf("SerializeMHT error: %v\n", err)
 		return nil
+	} else {
+		return jsonMHT
 	}
-	return jsonMHT
 }
 
 // 反序列化默克尔树
 func DeserializeMHT(data []byte) (*MerkleTree, error) {
 	var seMHT SeMHT
-	err := json.Unmarshal(data, &seMHT)
-	if err != nil {
+	if err := json.Unmarshal(data, &seMHT); err != nil {
 		fmt.Printf("DeserializeMHT error: %v\n", err)
 		return nil, err
 	}

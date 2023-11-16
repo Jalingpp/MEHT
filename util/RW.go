@@ -43,8 +43,7 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 		panic(err)
 	}
 	defer func(file *os.File) {
-		err := file.Close()
-		if err != nil {
+		if err := file.Close(); err != nil {
 			panic(err)
 		}
 	}(file)

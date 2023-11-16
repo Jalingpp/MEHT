@@ -87,8 +87,7 @@ func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int,
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
 	if sedb.se == nil && sedb.seHash != nil {
-		seString, error_ := sedb.db.Get(sedb.seHash, nil)
-		if error_ == nil {
+		if seString, error_ := sedb.db.Get(sedb.seHash, nil); error_ == nil {
 			se, _ := DeserializeStorageEngine(seString, sedb.cacheEnable, sedb.cacheCapacity)
 			sedb.se = se
 		}
@@ -283,8 +282,7 @@ func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {
 	seh, _ := hex.DecodeString(seh_dbPath[0])
 	dbPath := util.Strip(seh_dbPath[1], "\n\t\r")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
-		err = os.MkdirAll(dbPath, 0750)
-		if err != nil {
+		if err = os.MkdirAll(dbPath, 0750); err != nil {
 			panic(err)
 		}
 	}

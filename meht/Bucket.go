@@ -74,22 +74,20 @@ func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{})
 	if len(b.segments[segkey]) == 0 {
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 		var ok bool
-		var kvs []util.KVPair
 		var kvs_ *[]util.KVPair
 		key_ := b.name + util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segkey
 		if cache != nil {
 			targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
-			kvs_, ok = targetCache.Get(key_)
-			kvs = *kvs_
+			if kvs_, ok = targetCache.Get(key_); ok {
+				b.segments[segkey] = *kvs_
+			}
 		}
 		if !ok {
-			kvString, error_ := db.Get([]byte(key_), nil)
-			if error_ != nil {
-				panic(error_)
+			if kvString, error_ := db.Get([]byte(key_), nil); error_ == nil {
+				kvs, _ := DeserializeSegment(kvString)
+				b.segments[segkey] = kvs
 			}
-			kvs, _ = DeserializeSegment(kvString)
 		}
-		b.segments[segkey] = kvs
 	}
 	return b.segments[segkey]
 }
@@ -166,16 +164,16 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{
 		key_ := b.name + util.IntArrayToString(b.BucketKey, b.rdx) + "mht" + index
 		if cache != nil {
 			targetCache, _ := (*cache)[3].(*lru.Cache[string, *mht.MerkleTree])
-			mt, ok = targetCache.Get(key_)
+			if mt, ok = targetCache.Get(key_); ok {
+				b.merkleTrees[index] = mt
+			}
 		}
 		if !ok {
-			mtString, error_ := db.Get([]byte(key_), nil)
-			if error_ != nil {
-				panic(error_)
+			if mtString, error_ := db.Get([]byte(key_), nil); error_ == nil {
+				mt, _ = mht.DeserializeMHT(mtString)
+				b.merkleTrees[index] = mt
 			}
-			mt, _ = mht.DeserializeMHT(mtString)
 		}
-		b.merkleTrees[index] = mt
 	}
 	return b.merkleTrees[index]
 }
@@ -341,8 +339,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{
 			//判断key应该插入到哪个bucket中
 			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			ret = append(ret, buckets)
-			ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db, cache)
-			if len(ret_[0]) != b.rdx { //说明这一次的插入没有引起桶分裂
+			if ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db, cache); len(ret_[0]) != b.rdx { //说明这一次的插入没有引起桶分裂
 				return ret
 			} else { //此次插入引发桶分裂,分裂的rdx个桶作为新的一层桶加入到ret末尾
 				return append(ret, ret_...)

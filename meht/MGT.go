@@ -54,8 +54,7 @@ func NewMGT(rdx int) *MGT {
 // 获取root,如果root为空,则从leveldb中读取
 func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {
-		mgtString, error_ := db.Get(mgt.mgtRootHash, nil)
-		if error_ == nil {
+		if mgtString, error_ := db.Get(mgt.mgtRootHash, nil); error_ == nil {
 			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
 			mgt.Root.GetBucket(mgt.rdx, util.IntArrayToString(mgt.Root.bucketKey, mgt.rdx), db, nil)
@@ -71,17 +70,17 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *[]
 		var ok bool
 		if cache != nil {
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
-			node, ok = targetCache.Get(string(mgtNode.dataHashes[index]))
+			if node, ok = targetCache.Get(string(mgtNode.dataHashes[index])); ok {
+				mgtNode.subNodes[index] = node
+			}
 		}
 		if !ok {
-			nodeString, error_ := db.Get(mgtNode.dataHashes[index], nil)
-			if error_ != nil {
-				panic(error_)
+			if nodeString, error_ := db.Get(mgtNode.dataHashes[index], nil); error_ == nil {
+				node, _ = DeserializeMGTNode(nodeString, rdx)
+				mgtNode.subNodes[index] = node
 			}
-			node, _ = DeserializeMGTNode(nodeString, rdx)
 		}
-		mgtNode.subNodes[index] = node
-		if node.isLeaf {
+		if node != nil && node.isLeaf {
 			node.GetBucket(rdx, util.IntArrayToString(node.bucketKey, rdx), db, cache)
 		}
 	}
@@ -93,16 +92,14 @@ func (mgtNode *MGTNode) GetBucket(rdx int, name string, db *leveldb.DB, cache *[
 	if mgtNode.bucket == nil {
 		var ok bool
 		var bucket *Bucket
+		key_ := name + "bucket" + util.IntArrayToString(mgtNode.bucketKey, rdx)
 		if cache != nil {
 			targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
-			bucket, ok = targetCache.Get(name + "bucket" + util.IntArrayToString(mgtNode.bucketKey, rdx))
+			bucket, ok = targetCache.Get(key_)
 		}
 		if !ok {
-			bucketString, error_ := db.Get([]byte(name+"bucket"+util.IntArrayToString(mgtNode.bucketKey, rdx)), nil)
-			if error_ == nil {
+			if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
 				bucket, _ = DeserializeBucket(bucketString)
-			} else {
-				panic(error_)
 			}
 		}
 		mgtNode.bucket = bucket
@@ -454,18 +451,17 @@ type SeMGT struct {
 
 func SerializeMGT(mgt *MGT) []byte {
 	seMGT := &SeMGT{mgt.rdx, mgt.mgtRootHash}
-	jsonMGT, err := json.Marshal(seMGT)
-	if err != nil {
+	if jsonMGT, err := json.Marshal(seMGT); err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
 		return nil
+	} else {
+		return jsonMGT
 	}
-	return jsonMGT
 }
 
 func DeserializeMGT(data []byte) (*MGT, error) {
 	var seMGT SeMGT
-	err := json.Unmarshal(data, &seMGT)
-	if err != nil {
+	if err := json.Unmarshal(data, &seMGT); err != nil {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
@@ -491,18 +487,17 @@ func SerializeMGTNode(node *MGTNode) []byte {
 	}
 	// fmt.Printf("dataHashString is %s\n", dataHashString)
 	seMGTNode := &SeMGTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucketKey}
-	jsonMGTNode, err := json.Marshal(seMGTNode)
-	if err != nil {
+	if jsonMGTNode, err := json.Marshal(seMGTNode); err != nil {
 		fmt.Printf("SerializeMGTNode error: %v\n", err)
 		return nil
+	} else {
+		return jsonMGTNode
 	}
-	return jsonMGTNode
 }
 
 func DeserializeMGTNode(data []byte, rdx int) (*MGTNode, error) {
 	var seMGTNode SeMGTNode
-	err := json.Unmarshal(data, &seMGTNode)
-	if err != nil {
+	if err := json.Unmarshal(data, &seMGTNode); err != nil {
 		fmt.Printf("DeserializeMGTNode error: %v\n", err)
 		return nil, err
 	}

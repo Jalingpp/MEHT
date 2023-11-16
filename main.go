@@ -34,23 +34,26 @@ func main() {
 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 	bc := 128 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
+	var seDB *sedb.SEDB
 	//cacheEnable := false
 	cacheEnable := true
 	var cacheArgs []interface{}
 	if cacheEnable {
+		shortNodeCacheCapacity := 128
+		fullNodeCacheCapacity := 128
 		mgtNodeCacheCapacity := 100
 		bucketCacheCapacity := 128
 		segmentCacheCapacity := bs * bucketCacheCapacity
 		merkleTreeCacheCapacity := bs * bucketCacheCapacity
-		cacheArgs = append(cacheArgs, sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity),
-			sedb.BucketCacheCapacity(bucketCacheCapacity), sedb.SegmentCacheCapacity(segmentCacheCapacity),
-			sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
+		seDB = sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable,
+			sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
+			sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
+			sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
+	} else {
+		seDB = sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable, cacheArgs)
 	}
-	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
-
 	//创建一个SEDB
-	seDB := sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable, cacheArgs)
-
 	//读json文件创建KVPair数组
 	kvdataPath := "data/OK"
 	kvPairsJsonFiles, err := util.GetDirAllFilePathsFollowSymlink(kvdataPath)

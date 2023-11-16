@@ -38,8 +38,7 @@ type MPT struct {
 func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 	//如果当前MPT的root为nil，则从数据库中查询
 	if mpt.root == nil && mpt.rootHash != nil {
-		mptRoot, _ := db.Get(mpt.rootHash, nil)
-		if len(mptRoot) != 0 {
+		if mptRoot, _ := db.Get(mpt.rootHash, nil); len(mptRoot) != 0 {
 			mpt.root, _ = DeserializeShortNode(mptRoot)
 		}
 	}
@@ -502,8 +501,7 @@ func SerializeMPT(mpt *MPT) []byte {
 // 反序列化MPT
 func DeserializeMPT(data []byte, db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) (*MPT, error) {
 	var smpt SeMPT
-	err := json.Unmarshal(data, &smpt)
-	if err != nil {
+	if err := json.Unmarshal(data, &smpt); err != nil {
 		fmt.Printf("DeserializeMPT error: %v\n", err)
 		return nil, err
 	}

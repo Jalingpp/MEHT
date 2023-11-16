@@ -80,8 +80,7 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
 	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 {
-		primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil)
-		if error_ == nil {
+		if primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil); error_ == nil {
 			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.primaryIndex = primaryIndex
@@ -96,8 +95,7 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 	//如果当前secondaryIndex_mpt为空，则从数据库中查询
 	if se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 {
-		secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mpt, nil)
-		if len(secondaryIndexString) != 0 {
+		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mpt, nil); len(secondaryIndexString) != 0 {
 			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.secondaryIndex_mpt = secondaryIndex
@@ -110,8 +108,7 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 	//如果当前secondaryIndex_meht为空，则从数据库中查询
 	if se.secondaryIndex_meht == nil {
-		secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil)
-		if len(secondaryIndexString) != 0 {
+		if secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil); len(secondaryIndexString) != 0 {
 			_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndex_meht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
 				bucketCC, segmentCC, merkleTreeCC)
@@ -228,7 +225,8 @@ func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int,
 	bucketCC = int(DefaultBucketCacheCapacity)
 	segmentCC = int(DefaultSegmentCacheCapacity)
 	merkleTreeCC = int(DefaultMerkleTreeCapacity)
-	for _, capacity := range *cacheCapacity {
+	cacheCapacity_ := *cacheCapacity
+	for _, capacity := range cacheCapacity_ {
 		switch capacity.(type) {
 		case ShortNodeCacheCapacity:
 			shortNodeCC = int(capacity.(ShortNodeCacheCapacity))

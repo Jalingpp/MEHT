@@ -152,8 +152,7 @@ type MEHTProof struct {
 // 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
 func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
-	bucket := meht.GetSEH(db).GetBucketByKey(key, db, meht.cache)
-	if bucket != nil {
+	if bucket := meht.GetSEH(db).GetBucketByKey(key, db, meht.cache); bucket != nil {
 		//根据key找到value
 		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache)
 		return value, bucket, segkey, isSegExist, index
@@ -291,20 +290,19 @@ type SeMEHT struct {
 // 序列化MEHT
 func SerializeMEHT(meht *MEHT) []byte {
 	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash}
-	jsonSSN, err := json.Marshal(seMEHT)
-	if err != nil {
+	if jsonSSN, err := json.Marshal(seMEHT); err != nil {
 		fmt.Printf("SerializeMEHT error: %v\n", err)
 		return nil
+	} else {
+		return jsonSSN
 	}
-	return jsonSSN
 }
 
 // 反序列化MEHT
 func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 	mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) (meht *MEHT, err error) {
 	var seMEHT SeMEHT
-	err = json.Unmarshal(data, &seMEHT)
-	if err != nil {
+	if err = json.Unmarshal(data, &seMEHT); err != nil {
 		fmt.Printf("DeserializeMEHT error: %v\n", err)
 		return
 	}
@@ -358,11 +356,6 @@ func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
 	default:
 		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBackFoo of MEHT.")
 	}
-	//v_, err := util.ToStringE(v)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//fmt.Println("onEvicted: \n", k_, "\n", string(v_))
 	if err = db.Put([]byte(k_), v_, nil); err != nil {
 		panic(err)
 	}

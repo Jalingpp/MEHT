@@ -48,17 +48,16 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	ret := seh.ht[bucketKey]
 	if ret == nil {
 		var ok bool
+		key_ := seh.name + "bucket" + bucketKey
 		if cache != nil {
 			targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
-			ret, ok = targetCache.Get(seh.name + "bucket" + bucketKey)
+			ret, ok = targetCache.Get(key_)
 		}
 		if !ok {
-			bucketString, error_ := db.Get([]byte(seh.name+"bucket"+bucketKey), nil)
-			if error_ == nil {
+			if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
 				bucket, _ := DeserializeBucket(bucketString)
 				ret = bucket
-			}
-			if ret == nil {
+			} else {
 				ret = seh.GetBucket(bucketKey[util.ComputerStrideByBase(seh.rdx):], db, cache)
 			}
 		}
@@ -208,18 +207,17 @@ func SerializeSEH(seh *SEH) []byte {
 		hashTableKeys += k + ","
 	}
 	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, hashTableKeys, seh.bucketsNumber}
-	jsonSEH, err := json.Marshal(seSEH)
-	if err != nil {
+	if jsonSEH, err := json.Marshal(seSEH); err != nil {
 		fmt.Printf("SerializeSEH error: %v\n", err)
 		return nil
+	} else {
+		return jsonSEH
 	}
-	return jsonSEH
 }
 
 func DeserializeSEH(data []byte) (*SEH, error) {
 	var seSEH SeSEH
-	err := json.Unmarshal(data, &seSEH)
-	if err != nil {
+	if err := json.Unmarshal(data, &seSEH); err != nil {
 		fmt.Printf("DeserializeSEH error: %v\n", err)
 		return nil, err
 	}

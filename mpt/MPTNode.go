@@ -40,8 +40,7 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 			}
 		}
 		if !ok {
-			childString, _ := db.Get(fn.GetChildrenHash()[index], nil)
-			if len(childString) != 0 {
+			if childString, _ := db.Get(fn.GetChildrenHash()[index], nil); len(childString) != 0 {
 				child, _ = DeserializeShortNode(childString)
 				fn.SetChild(index, child)
 			}
@@ -75,8 +74,7 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 			}
 		}
 		if !ok {
-			nextNodeString, error_ := db.Get(sn.nextNodeHash, nil)
-			if error_ == nil {
+			if nextNodeString, error_ := db.Get(sn.nextNodeHash, nil); error_ == nil {
 				nextNode, _ = DeserializeFullNode(nextNodeString)
 				sn.nextNode = nextNode
 			}
@@ -197,19 +195,18 @@ type SeShortNode struct {
 // 序列化ShortNode
 func SerializeShortNode(sn *ShortNode) []byte {
 	ssn := &SeShortNode{sn.GetNodeHash(), sn.GetPrefix(), sn.GetIsLeaf(), sn.GetSuffix(), sn.GetNextNodeHash(), sn.GetValue()}
-	jsonSSN, err := json.Marshal(ssn)
-	if err != nil {
+	if jsonSSN, err := json.Marshal(ssn); err != nil {
 		fmt.Printf("SerializeShortNode error: %v\n", err)
 		return nil
+	} else {
+		return jsonSSN
 	}
-	return jsonSSN
 }
 
 // 反序列化ShortNode
 func DeserializeShortNode(ssnstring []byte) (*ShortNode, error) {
 	var ssn SeShortNode
-	err := json.Unmarshal(ssnstring, &ssn)
-	if err != nil {
+	if err := json.Unmarshal(ssnstring, &ssn); err != nil {
 		fmt.Printf("DeserializeShortNode error: %v\n", err)
 		return nil, err
 	}
@@ -228,19 +225,18 @@ type SeFullNode struct {
 // 序列化FullNode
 func SerializeFullNode(fn *FullNode) []byte {
 	sfn := &SeFullNode{fn.GetNodeHash(), fn.GetChildrenHash(), fn.GetValue()}
-	jsonSFN, err := json.Marshal(sfn)
-	if err != nil {
+	if jsonSFN, err := json.Marshal(sfn); err != nil {
 		fmt.Printf("SerializeFullNode error: %v\n", err)
 		return nil
+	} else {
+		return jsonSFN
 	}
-	return jsonSFN
 }
 
 // 反序列化FullNode
 func DeserializeFullNode(sfnstring []byte) (*FullNode, error) {
 	var sfn SeFullNode
-	err := json.Unmarshal(sfnstring, &sfn)
-	if err != nil {
+	if err := json.Unmarshal(sfnstring, &sfn); err != nil {
 		fmt.Printf("DeserializeFullNode error: %v\n", err)
 		return nil, err
 	}

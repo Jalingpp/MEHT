@@ -42,7 +42,7 @@ type StorageEngine struct {
 	bs            int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	cacheEnable   bool
 	cacheCapacity []interface{}
-	latch         *sync.Mutex
+	latch         sync.Mutex
 }
 
 // NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
@@ -50,7 +50,7 @@ func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
 	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
 		nil, nil, mehtName, rdx, bc, bs,
-		cacheEnable, cacheCapacity, &sync.Mutex{}}
+		cacheEnable, cacheCapacity, sync.Mutex{}}
 }
 
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
@@ -81,7 +81,7 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 // 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
-	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 {
+	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 && se.latch.TryLock() { // 只允许一个线程重构主索引
 		if primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil); error_ == nil {
 			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
@@ -89,7 +89,10 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 		} else {
 			fmt.Printf("GetPrimaryIndex error:%v\n", error_)
 		}
+		se.latch.Unlock()
 	}
+	for se.primaryIndex == nil && len(se.primaryIndexHash) != 0 {
+	} // 其余线程等待主索引重构
 	return se.primaryIndex
 }
 
@@ -123,11 +126,14 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
 	//插入主键索引
 	//如果是第一次插入
-	if se.GetPrimaryIndex(db) == nil {
+	if se.GetPrimaryIndex(db) == nil && se.latch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
 		//创建一个新的主键索引
 		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		se.primaryIndex = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
+		se.latch.Unlock()
 	}
+	for se.primaryIndex == nil {
+	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
 	oldvalue, oldprimaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
 	if oldvalue == kvpair.GetValue() {
@@ -316,7 +322,7 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 	}
 	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
 		nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName,
-		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, &sync.Mutex{}}
+		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, sync.Mutex{}}
 	return se, nil
 }
 

@@ -43,12 +43,12 @@ type MGT struct {
 	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
-	Latch       *sync.Mutex
+	Latch       sync.RWMutex
 }
 
 // NewMGT creates a empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil, &sync.Mutex{}}
+	return &MGT{rdx, nil, nil, sync.RWMutex{}}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
@@ -465,7 +465,7 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
-	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, &sync.Mutex{}}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, sync.RWMutex{}}
 	return mgt, nil
 }
 

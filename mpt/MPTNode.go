@@ -6,6 +6,7 @@ import (
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
+	"sync"
 )
 
 //MPT节点相关的结构体和方法
@@ -59,12 +60,13 @@ type ShortNode struct {
 	nextNode     *FullNode //下一个FullNode节点(当前节点是extension node时)
 	nextNodeHash []byte    //下一个FullNode节点的哈希值
 	value        []byte    //value（当前节点是leaf node时）
+	latch        sync.RWMutex
 }
 
 // 获取ShortNode的nextNode，如果为nil，则从数据库中查询
 func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
-	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 {
+	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 && sn.latch. {
 		var ok bool
 		var nextNode *FullNode
 		if cache != nil {
@@ -96,7 +98,7 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 	}
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
-	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value}
+	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value, sync.RWMutex{}}
 	//将sn写入db中
 	ssn := SerializeShortNode(sn)
 	if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
@@ -210,7 +212,7 @@ func DeserializeShortNode(ssnstring []byte) (*ShortNode, error) {
 		fmt.Printf("DeserializeShortNode error: %v\n", err)
 		return nil, err
 	}
-	sn := &ShortNode{nil, ssn.Prefix, ssn.IsLeaf, ssn.Suffix, nil, nil, ssn.Value}
+	sn := &ShortNode{nil, ssn.Prefix, ssn.IsLeaf, ssn.Suffix, nil, nil, ssn.Value, sync.RWMutex{}}
 	sn.nodeHash = ssn.NodeHash
 	sn.SetNextNodeHash(ssn.NextNodeHash)
 	return sn, nil

@@ -33,17 +33,20 @@ type MPT struct {
 	cache    *[]interface{} // cache[0], cache[1] represent cache of shortNode and fullNode respectively.
 	// the key of any node type is its nodeHash in the form of string
 	cacheEnable bool
-	latch       *sync.Mutex
+	latch       sync.Mutex
 }
 
 // 获取MPT的根节点，如果为nil，则从数据库中查询
 func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 	//如果当前MPT的root为nil，则从数据库中查询
-	if mpt.root == nil && mpt.rootHash != nil {
+	if mpt.root == nil && mpt.rootHash != nil && mpt.latch.TryLock() { // 只允许一个线程重构mpt树根
 		if mptRoot, _ := db.Get(mpt.rootHash, nil); len(mptRoot) != 0 {
 			mpt.root, _ = DeserializeShortNode(mptRoot)
 		}
+		mpt.latch.Unlock()
 	}
+	for mpt.root == nil && mpt.rootHash != nil {
+	} // 其余线程等待mpt树根重构
 	return mpt.root
 }
 
@@ -58,22 +61,25 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 		})
 		var c []interface{}
 		c = append(c, lShortNode, lFullNode)
-		return &MPT{nil, nil, &c, cacheEnable, &sync.Mutex{}}
+		return &MPT{nil, nil, &c, cacheEnable, sync.Mutex{}}
 	} else {
-		return &MPT{nil, nil, nil, cacheEnable, &sync.Mutex{}}
+		return &MPT{nil, nil, nil, cacheEnable, sync.Mutex{}}
 	}
 }
 
 // 插入一个KVPair到MPT中，返回新的根节点的哈希值
 func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {
 	//判断是否为第一次插入
-	if mpt.GetRoot(db) == nil {
+	if mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
+		defer mpt.latch.Unlock()
 		//创建一个ShortNode
 		mpt.root = NewShortNode("", true, kvpair.GetKey(), nil, []byte(kvpair.GetValue()), db)
 		//更新mpt根哈希并更新到数据库
 		mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
 		return mpt.rootHash
 	}
+	for mpt.root == nil {
+	} // 等待最先拿到mpt锁的线程新建一个树根
 	//如果不是第一次插入，递归插入
 	mpt.root = mpt.RecursiveInsertShortNode("", kvpair.GetKey(), []byte(kvpair.GetValue()), mpt.GetRoot(db), db)
 	//更新mpt根哈希并更新到数据库
@@ -345,12 +351,14 @@ func (mpt *MPT) RecursivePrintFullNode(cnode *FullNode, level int, db *leveldb.D
 // 根据key查询value，返回value和证明
 func (mpt *MPT) QueryByKey(key string, db *leveldb.DB) (string, *MPTProof) {
 	//如果MPT为空，返回空
-	root := mpt.GetRoot(db)
-	if root == nil {
+	if root := mpt.GetRoot(db); root == nil {
 		return "", &MPTProof{false, 0, nil}
+	} else {
+		//递归查询
+		root.latch.RLock()
+		defer root.latch.RUnlock()
+		return mpt.RecursiveQueryShortNode(key, 0, 0, root, db)
 	}
-	//递归查询
-	return mpt.RecursiveQueryShortNode(key, 0, 0, root, db)
 }
 
 func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *ShortNode, db *leveldb.DB) (string, *MPTProof) {
@@ -516,9 +524,9 @@ func DeserializeMPT(data []byte, db *leveldb.DB, cacheEnable bool, shortNodeCC i
 		})
 		var c []interface{}
 		c = append(c, lShortNode, lFullNode)
-		return &MPT{smpt.RootHash, nil, &c, cacheEnable}, nil
+		return &MPT{smpt.RootHash, nil, &c, cacheEnable, sync.Mutex{}}, nil
 	} else {
-		return &MPT{smpt.RootHash, nil, nil, cacheEnable}, nil
+		return &MPT{smpt.RootHash, nil, nil, cacheEnable, sync.Mutex{}}, nil
 	}
 }
 

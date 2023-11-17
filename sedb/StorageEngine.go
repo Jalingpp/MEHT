@@ -42,7 +42,8 @@ type StorageEngine struct {
 	bs            int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	cacheEnable   bool
 	cacheCapacity []interface{}
-	latch         sync.Mutex
+	latch         sync.RWMutex
+	updateLatch   sync.Mutex
 }
 
 // NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
@@ -50,17 +51,18 @@ func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
 	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
 		nil, nil, mehtName, rdx, bc, bs,
-		cacheEnable, cacheCapacity, sync.Mutex{}}
+		cacheEnable, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
-func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
+func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 	//删除db中原有的se
 	//if err := db.Delete(se.seHash, nil); err != nil {
 	//	fmt.Println("Delete StorageEngine from DB error:", err)
 	//}
 	//更新seHash的哈希值
 	var seHashs []byte
+	se.updateLatch.Lock() // 保证se的哈希与辅助索引根哈希是相关联的
 	seHashs = append(seHashs, se.primaryIndexHash...)
 	if se.secondaryIndexMode == "mpt" {
 		seHashs = append(seHashs, se.secondaryIndexHash_mpt...)
@@ -71,11 +73,11 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {
 	}
 	hash := sha256.Sum256(seHashs)
 	se.seHash = hash[:]
+	se.updateLatch.Unlock()
 	//将更新后的se写入db中
 	//if err := db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 	//	fmt.Println("Insert StorageEngine to DB error:", err)
 	//}
-	return se.seHash
 }
 
 // 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
@@ -141,11 +143,13 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		return oldprimaryProof, nil, nil
 	}
 	//将KV插入到主键索引中
-	se.latch.Lock()
-	piRootHash := se.GetPrimaryIndex(db).Insert(kvpair, db)
-	piHash := sha256.Sum256(piRootHash)
+	se.primaryIndex.Insert(kvpair, db)
+	se.updateLatch.Lock()
+	se.primaryIndex.GetUpdateLatch().Lock()
+	piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
 	se.primaryIndexHash = piHash[:]
-	se.latch.Unlock()
+	se.primaryIndex.GetUpdateLatch().Unlock()
+	se.updateLatch.Unlock()
 	_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
 	//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 	//构造倒排KV
@@ -195,9 +199,13 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 	isChange := insertedKV.AddValue(kvpair.GetValue())
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
-		seRootHash := se.secondaryIndex_mpt.Insert(insertedKV, db)
-		seHash := sha256.Sum256(seRootHash)
+		se.secondaryIndex_mpt.Insert(insertedKV, db)
+		se.updateLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
+		se.secondaryIndex_mpt.GetUpdateLatch().Lock()
+		seHash := sha256.Sum256(se.secondaryIndex_mpt.GetRootHash())
 		se.secondaryIndexHash_mpt = seHash[:]
+		se.secondaryIndex_mpt.GetUpdateLatch().Unlock()
+		se.updateLatch.Unlock()
 		newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
 		return newValues, newProof
 	}
@@ -327,7 +335,7 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 	}
 	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
 		nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName,
-		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, sync.Mutex{}}
+		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
 	return se, nil
 }
 

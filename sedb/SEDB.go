@@ -54,7 +54,8 @@ type SEDB struct {
 	bs            int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	cacheEnable   bool
 	cacheCapacity []interface{}
-	latch         sync.Mutex
+	latch         sync.RWMutex
+	updateLatch   sync.Mutex
 }
 
 // NewSEDB() *SEDB: 返回一个新的SEDB
@@ -81,20 +82,20 @@ func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int,
 	//	}
 	//}
 	return &SEDB{nil, seh, db, dbPath, siMode, mehtName, rdx, bc, bs,
-		cacheEnabled, cacheCapacity, sync.Mutex{}}
+		cacheEnabled, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // 获取SEDB中的StorageEngine，如果为空，从db中读取se
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
-	if sedb.se == nil && sedb.seHash != nil && sedb.latch.TryLock() { // 只允许一个线程重构se
+	if sedb.se == nil && sedb.seHash != nil && len(sedb.seHash) != 0 && sedb.latch.TryLock() { // 只允许一个线程重构se
 		if seString, error_ := sedb.db.Get(sedb.seHash, nil); error_ == nil {
 			se, _ := DeserializeStorageEngine(seString, sedb.cacheEnable, sedb.cacheCapacity)
 			sedb.se = se
 		}
 		sedb.latch.Unlock()
 	}
-	for sedb.se == nil && sedb.seHash != nil {
+	for sedb.se == nil && sedb.seHash != nil && len(sedb.seHash) != 0 {
 	} // 其余线程等待se重构
 	return sedb.se
 }
@@ -109,11 +110,16 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 		sedb.latch.Unlock()
 	}
 	for sedb.se == nil {
-	} // 等待其他获得了sedb锁的线程创建
+	} // 其余线程等待se创建
 	//向StorageEngine中插入一条记录
 	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
 	//更新seHash，并将se更新至db
-	sedb.seHash = sedb.GetStorageEngine().UpdateStorageEngineToDB(sedb.db)
+	sedb.se.UpdateStorageEngineToDB(sedb.db)
+	sedb.updateLatch.Lock()
+	sedb.se.updateLatch.Lock()
+	sedb.seHash = sedb.se.seHash
+	sedb.se.updateLatch.Unlock()
+	sedb.updateLatch.Unlock()
 	var pProof []*mpt.MPTProof
 	pProof = append(pProof, primaryProof)
 	sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)

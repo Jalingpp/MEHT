@@ -33,7 +33,8 @@ type MPT struct {
 	cache    *[]interface{} // cache[0], cache[1] represent cache of shortNode and fullNode respectively.
 	// the key of any node type is its nodeHash in the form of string
 	cacheEnable bool
-	latch       sync.Mutex
+	latch       sync.RWMutex
+	updateLatch sync.Mutex
 }
 
 // 获取MPT的根节点，如果为nil，则从数据库中查询
@@ -49,6 +50,9 @@ func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 	} // 其余线程等待mpt树根重构
 	return mpt.root
 }
+func (mpt *MPT) GetUpdateLatch() *sync.Mutex {
+	return &mpt.updateLatch
+}
 
 // NewMPT creates a empty MPT
 func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *MPT {
@@ -61,14 +65,14 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 		})
 		var c []interface{}
 		c = append(c, lShortNode, lFullNode)
-		return &MPT{nil, nil, &c, cacheEnable, sync.Mutex{}}
+		return &MPT{nil, nil, &c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		return &MPT{nil, nil, nil, cacheEnable, sync.Mutex{}}
+		return &MPT{nil, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 }
 
 // 插入一个KVPair到MPT中，返回新的根节点的哈希值
-func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {
+func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) {
 	//判断是否为第一次插入
 	if mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
 		defer mpt.latch.Unlock()
@@ -76,7 +80,6 @@ func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {
 		mpt.root = NewShortNode("", true, kvpair.GetKey(), nil, []byte(kvpair.GetValue()), db)
 		//更新mpt根哈希并更新到数据库
 		mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
-		return mpt.rootHash
 	}
 	for mpt.root == nil {
 	} // 等待最先拿到mpt锁的线程新建一个树根
@@ -84,7 +87,6 @@ func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) []byte {
 	mpt.root = mpt.RecursiveInsertShortNode("", kvpair.GetKey(), []byte(kvpair.GetValue()), mpt.GetRoot(db), db)
 	//更新mpt根哈希并更新到数据库
 	mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
-	return mpt.rootHash
 }
 
 // 递归插入当前MPT Node
@@ -251,8 +253,8 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 // 用newRootHash更新mpt的哈希，并更新至DB中
 func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	//DB 中索引MPT的是其根哈希的哈希
-	mpt.latch.Lock()
-	defer mpt.latch.Unlock()
+	mpt.updateLatch.Lock()
+	defer mpt.updateLatch.Unlock()
 	hashs := sha256.Sum256(mpt.rootHash)
 	mptHash := hashs[:]
 	if len(mptHash) > 0 {
@@ -532,9 +534,9 @@ func DeserializeMPT(data []byte, db *leveldb.DB, cacheEnable bool, shortNodeCC i
 		})
 		var c []interface{}
 		c = append(c, lShortNode, lFullNode)
-		return &MPT{smpt.RootHash, nil, &c, cacheEnable, sync.Mutex{}}, nil
+		return &MPT{smpt.RootHash, nil, &c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MPT{smpt.RootHash, nil, nil, cacheEnable, sync.Mutex{}}, nil
+		return &MPT{smpt.RootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }
 

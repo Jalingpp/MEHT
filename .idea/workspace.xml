@@ -5,7 +5,20 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="7f433577-8bdf-41a6-86c1-5fa5db227945" name="更改" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/config.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000002.ldb" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/000003.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/CURRENT.bak" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOCK" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/LOG" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/testSEDB/MANIFEST-000004" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mpt/MPT.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPT.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/mpt/MPTNode.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTNode.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/SEDB.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDB.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/StorageEngine.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/StorageEngine.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

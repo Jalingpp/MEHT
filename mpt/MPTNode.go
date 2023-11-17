@@ -157,7 +157,7 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNod
 	nodeHash = append(nodeHash, value...)
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
-	fn := &FullNode{nodeHash, children, childrenHash, value}
+	fn := &FullNode{nodeHash, children, childrenHash, value, sync.RWMutex{}, sync.Mutex{}}
 	//将fn写入db中
 	if db != nil {
 		sfn := SerializeFullNode(fn)
@@ -254,7 +254,7 @@ func DeserializeFullNode(sfnstring []byte) (*FullNode, error) {
 	for i := 0; i < 16; i++ {
 		children[i] = nil
 	}
-	fn := &FullNode{sfn.NodeHash, children, sfn.ChildrenHash, sfn.Value}
+	fn := &FullNode{sfn.NodeHash, children, sfn.ChildrenHash, sfn.Value, sync.RWMutex{}, sync.Mutex{}}
 	return fn, nil
 }
 

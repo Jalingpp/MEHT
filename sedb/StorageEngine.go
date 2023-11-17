@@ -144,7 +144,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 	}
 	//将KV插入到主键索引中
 	se.primaryIndex.Insert(kvpair, db)
-	se.updateLatch.Lock()
+	se.updateLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
 	se.primaryIndex.GetUpdateLatch().Lock()
 	piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
 	se.primaryIndexHash = piHash[:]
@@ -167,7 +167,11 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		//se.UpdateStorageEngineToDB(db)
 		return primaryProof, mptProof, nil
 	} else if se.secondaryIndexMode == "meht" {
-		_, mehtProof := se.InsertIntoMEHT(reversedKV, db)
+		var ok bool
+		var mehtProof *meht.MEHTProof
+		for !ok { // 添加ok标识符用于应对委托线程等候区数据已满的情况，进行重做
+			_, mehtProof, ok = se.InsertIntoMEHT(reversedKV, db)
+		}
 		//打印插入结果
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//meht.PrintMEHTProof(mehtProof)
@@ -213,7 +217,7 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 }
 
 // 插入非主键索引
-func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
+func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof, bool) {
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil {
 		//创建一个新的非主键索引
@@ -234,9 +238,9 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 		//_, newValues, newProof := se.secondaryIndex_meht.Insert(kvpair, db)
 		//更新meht到db
 		se.secondaryIndex_meht.UpdateMEHTToDB(db)
-		return newValues, newProof
+		return newValues, newProof, true
 	}
-	return values, se.secondaryIndex_meht.GetQueryProof(bucket, segkey, isSegExist, index, db)
+	return values, se.secondaryIndex_meht.GetQueryProof(bucket, segkey, isSegExist, index, db), true
 }
 
 func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {

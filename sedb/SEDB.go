@@ -114,7 +114,7 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//向StorageEngine中插入一条记录
 	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
 	//更新seHash，并将se更新至db
-	sedb.se.UpdateStorageEngineToDB(sedb.db)
+	sedb.se.UpdateStorageEngineToDB(sedb.db) // 保证sedb留存的seHash与se实际的Hash一致
 	sedb.updateLatch.Lock()
 	sedb.se.updateLatch.Lock()
 	sedb.seHash = sedb.se.seHash

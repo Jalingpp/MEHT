@@ -37,6 +37,10 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 		var ok bool
 		var child *ShortNode
 		fn.updateLatch.Lock() // 由于不一定一定有child，因此每一次获取都是串行的
+		defer fn.updateLatch.Unlock()
+		if fn.GetChildren()[index] != nil { // 可能刚好在进到if但是lock之前别的线程更新了孩子
+			return fn.GetChildren()[index]
+		}
 		if cache != nil {
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
 			if child, ok = targetCache.Get(string(fn.GetChildrenHash()[index])); ok {
@@ -49,7 +53,7 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 				fn.SetChild(index, child)
 			}
 		}
-		fn.updateLatch.Unlock()
+
 	}
 	return fn.GetChildren()[index]
 }

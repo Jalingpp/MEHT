@@ -11,6 +11,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"reflect"
 	"strconv"
+	"sync"
 )
 
 //NewMEHT(rdx int, bc int, bs int) *MEHT {}: NewMEHT returns a new MEHT
@@ -38,6 +39,8 @@ type MEHT struct {
 	// merkleTreeCache	   *lru.Cache[string, *mht.MerkleTree]
 	cache       *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
 	cacheEnable bool
+	latch       sync.RWMutex
+	updateLatch sync.Mutex
 }
 
 // NewMEHT returns a new MEHT
@@ -58,10 +61,10 @@ func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int
 		var c []interface{}
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-			&c, cacheEnable}
+			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
 		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-			nil, cacheEnable}
+			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 }
 
@@ -105,32 +108,40 @@ func (meht *MEHT) GetCache() *[]interface{} {
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
 func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
-	if meht.GetSEH(db).bucketsNumber == 0 && meht.mgt.Latch.TryLock() {
-		defer meht.mgt.Latch.Unlock()
+	if meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
+		defer meht.seh.latch.Unlock()
 		//插入KV到SEH
-		bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db, meht.cache)
+		bucketss, _ := meht.seh.Insert(kvpair, db, meht.cache)
+		merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
+		meht.mgt.latch.Lock()
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
-		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		meht.mgt.latch.Unlock()
+		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
 	}
 	for meht.GetSEH(db).bucketsNumber == 0 { // 等待最初的桶建成
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	bucketss, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db, meht.cache)
+	bucketss, _ := meht.seh.Insert(kvpair, db, meht.cache)
 	//更新seh到db
 	//meht.seh.UpdateSEHToDB(db)
-	//无论是否分裂，都需要更新mgt
+	//无论是否分裂，都需要更新mgt,TODO
+	//如果委托了，接下来两个都应该给委托线程去做，否则应该整一个重做，即重新meht.seh.Insert(kvpair, db, meht.cache)
 	meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
 	//更新mgt的根节点哈希并更新到db
 	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	//获取当前KV插入的bucket
-	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache)
-	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache)
+	meht.mgt.Root.latch.RLock()                                          // 读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
+	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
+	merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
+	segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
+	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
+	meht.mgt.Root.latch.RUnlock()
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
@@ -322,10 +333,10 @@ func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 		var c []interface{}
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
-			&c, cacheEnable}
+			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
 		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
-			nil, cacheEnable}
+			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 	return
 }

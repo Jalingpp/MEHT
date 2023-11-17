@@ -219,10 +219,13 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 // 插入非主键索引
 func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof, bool) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_meht(db) == nil {
+	if se.GetSecondaryIndex_meht(db) == nil && se.latch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
+		se.latch.Unlock()
+	}
+	for se.GetSecondaryIndex_meht(db) == nil { // 其余线程等待meht创建成功
 	}
 	//先查询得到原有value与待插入value合并
 	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvpair.GetKey(), db)

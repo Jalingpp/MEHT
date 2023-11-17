@@ -8,6 +8,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"strings"
+	"sync"
 )
 
 // NewSEH(rdx int, bc int, bs int) *SEH {}:returns a new SEH
@@ -28,11 +29,13 @@ type SEH struct {
 
 	ht            map[string]*Bucket // hash table of buckets
 	bucketsNumber int                // number of buckets, initial zero
+	latch         sync.RWMutex
+	updateLatch   sync.Mutex
 }
 
 // newSEH returns a new SEH
 func NewSEH(name string, rdx int, bc int, bs int) *SEH {
-	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket), 0}
+	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket), 0, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // 更新SEH到db
@@ -45,6 +48,8 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 
 // 获取bucket，如果内存中没有，从db中读取
 func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+	seh.latch.RLock()
+	defer seh.latch.RUnlock()
 	ret := seh.ht[bucketKey]
 	if ret == nil {
 		var ok bool
@@ -67,6 +72,8 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 
 // GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+	seh.latch.RLock()
+	defer seh.latch.RUnlock()
 	if seh.gd == 0 {
 		return seh.ht[""]
 	}
@@ -117,7 +124,7 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}) ([][]*Bucket, string, []byte, *mht.MHTProof) {
+func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}) ([][]*Bucket, string) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -129,7 +136,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
-		return [][]*Bucket{buckets}, kvpair.GetValue(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetRootHash(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetProof(0)
+		return [][]*Bucket{buckets}, kvpair.GetValue()
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	bucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
@@ -206,7 +213,8 @@ func SerializeSEH(seh *SEH) []byte {
 	for k := range seh.ht {
 		hashTableKeys += k + ","
 	}
-	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, hashTableKeys, seh.bucketsNumber}
+	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
+		hashTableKeys, seh.bucketsNumber}
 	if jsonSEH, err := json.Marshal(seSEH); err != nil {
 		fmt.Printf("SerializeSEH error: %v\n", err)
 		return nil
@@ -221,7 +229,8 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		fmt.Printf("DeserializeSEH error: %v\n", err)
 		return nil, err
 	}
-	seh := &SEH{seSEH.Name, seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum, make(map[string]*Bucket), seSEH.BucketsNumber}
+	seh := &SEH{seSEH.Name, seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
+		make(map[string]*Bucket), seSEH.BucketsNumber, sync.RWMutex{}, sync.Mutex{}}
 	htKeys := strings.Split(seSEH.HashTableKeys, ",")
 	for i := 0; i < len(htKeys); i++ {
 		if htKeys[i] == "" && seSEH.Gd > 0 {

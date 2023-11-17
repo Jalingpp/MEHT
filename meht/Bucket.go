@@ -37,6 +37,8 @@ type Bucket struct {
 	segments    map[string][]util.KVPair   // segments: data objects in each segment
 	merkleTrees map[string]*mht.MerkleTree // merkle trees: one for each segment
 
+	latch             sync.RWMutex
+	updateLatch       sync.Mutex
 	DelegationLatch   sync.Mutex              // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
 	DelegationList    map[string]*util.KVPair // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
 	RootLatchGainFlag bool                    // 用于判断被委托线程是否已经获取到树根，如果获取到了，那么置为True，其余线程停止对DelegationLatch进行获取尝试，保证被委托线程在获取到树根以后可以尽快获取到DelegationLatch并开始不接受委托
@@ -44,7 +46,8 @@ type Bucket struct {
 
 // 新建一个Bucket
 func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
-	return &Bucket{name, nil, ld, rdx, capacity, 0, segNum, make(map[string][]util.KVPair), make(map[string]*mht.MerkleTree),
+	return &Bucket{name, nil, ld, rdx, capacity, 0, segNum,
+		make(map[string][]util.KVPair), make(map[string]*mht.MerkleTree), sync.RWMutex{}, sync.Mutex{},
 		sync.Mutex{}, make(map[string]*util.KVPair), false}
 }
 
@@ -71,6 +74,8 @@ func NewSegment() []util.KVPair {
 // 获取segment,若不存在,则从db中获取
 func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
 	//func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
+	b.updateLatch.Lock()
+	defer b.updateLatch.Unlock()
 	if len(b.segments[segkey]) == 0 {
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 		var ok bool
@@ -565,7 +570,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		mhts[seBucket.SegKeys[i]] = nil
 	}
 	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
-		seBucket.SegNum, segments, mhts, sync.Mutex{}, make(map[string]*util.KVPair), false}
+		seBucket.SegNum, segments, mhts, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}, make(map[string]*util.KVPair), false}
 	return bucket, nil
 }
 

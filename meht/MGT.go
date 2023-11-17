@@ -37,23 +37,32 @@ type MGTNode struct {
 	isLeaf    bool    // whether this node is a leaf node
 	bucket    *Bucket // bucket related to this leaf node
 	bucketKey []int   // bucket key
+
+	latch       sync.RWMutex
+	updateLatch sync.Mutex
 }
 
 type MGT struct {
 	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
-	Latch       sync.RWMutex
+	latch       sync.RWMutex
+	updateLatch sync.Mutex
 }
 
 // NewMGT creates a empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil, sync.RWMutex{}}
+	return &MGT{rdx, nil, nil, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
 func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {
+		mgt.updateLatch.Lock() // 由于不一定有root，所以是串行的
+		defer mgt.updateLatch.Unlock()
+		if mgt.Root != nil { // 可能刚好进到if之后但lock之前root被别的线程更新了
+			return mgt.Root
+		}
 		if mgtString, error_ := db.Get(mgt.mgtRootHash, nil); error_ == nil {
 			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
@@ -65,7 +74,7 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 
 // 获取subnode,如果subnode为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *[]interface{}) *MGTNode {
-	if mgtNode.subNodes[index] == nil {
+	if mgtNode.subNodes[index] == nil && mgtNode.updateLatch.TryLock() { // 既然进入这个函数那么是一定能找到节点的
 		var node *MGTNode
 		var ok bool
 		if cache != nil {
@@ -83,6 +92,9 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *[]
 		if node != nil && node.isLeaf {
 			node.GetBucket(rdx, util.IntArrayToString(node.bucketKey, rdx), db, cache)
 		}
+		mgtNode.updateLatch.Unlock()
+	}
+	for mgtNode.subNodes[index] == nil { // 其余线程等待subNode重构
 	}
 	return mgtNode.subNodes[index]
 }
@@ -158,9 +170,9 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, nil, nil}
+		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, nil, nil, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, bucket, bucket.BucketKey}
+		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, bucket, bucket.BucketKey, sync.RWMutex{}, sync.Mutex{}}
 	}
 	//将mgtNode存入leveldb
 	nodeString := SerializeMGTNode(mgtNode)
@@ -465,7 +477,7 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
-	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, sync.RWMutex{}}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, sync.RWMutex{}, sync.Mutex{}}
 	return mgt, nil
 }
 
@@ -509,7 +521,7 @@ func DeserializeMGTNode(data []byte, rdx int) (*MGTNode, error) {
 	}
 	//subnodes := make([]*MGTNode, len(dataHashes))
 	subnodes := make([]*MGTNode, rdx)
-	mgtNode := &MGTNode{seMGTNode.NodeHash, subnodes, dataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey}
+	mgtNode := &MGTNode{seMGTNode.NodeHash, subnodes, dataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}
 	return mgtNode, nil
 }
 

@@ -124,7 +124,7 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}) ([][]*Bucket, string) {
+func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -136,51 +136,85 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
-		return [][]*Bucket{buckets}, kvpair.GetValue()
+		return [][]*Bucket{buckets}, DELEGATE
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	bucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
-	if bucket != nil {
-		//插入(更新)到已存在的bucket中
-		bucketss := bucket.Insert(kvpair, db, cache)
-		newBucketsNumber := 0
-		for _, b := range bucketss {
-			newBucketsNumber += len(b)
+	if bucket.latch.TryLock() {
+		var bucketss [][]*Bucket
+		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
+		bucket.DelegationLatch.Lock()
+		if bucket.DelegationList[kvpair.GetKey()] != nil {
+			bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
+		} else {
+			bucket.DelegationList[kvpair.GetKey()] = kvpair
 		}
-		seh.bucketsNumber += newBucketsNumber - len(bucketss)
-		if newBucketsNumber == 1 {
-			//未发生分裂
-			//只将bucket[0][0]更新至db
-			bk := bucketss[0][0]
-			bk.UpdateBucketToDB(db, cache)
-			return bucketss, kvpair.GetValue(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetRootHash(), bk.merkleTrees[bk.GetSegmentKey(kvpair.GetKey())].GetProof(0)
-		}
-		//发生分裂,更新ht
-		//新的ld是第一层大多数bucket的ld+(层数-1),(层数-1)是连环分裂的次数
-		newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
-		seh.gd = max(seh.gd, newld)
-		//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
-		for i, buckets := range bucketss {
-			for j := range buckets {
-				if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
-					continue
-				}
-				bkey := util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
-				seh.ht[bkey] = buckets[j]
-				buckets[j].UpdateBucketToDB(db, cache)
+		bucket.DelegationLatch.Unlock()      // 允许其他线程委托自己插入
+		mgtLatch.Lock()                      // 阻塞一直等到获得mgt锁，用以一次性更新并更改mgt树
+		bucket.RootLatchGainFlag = true      // 告知其他线程准备开始整体更新，让其他线程不要再尝试委托自己
+		bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
+		if bucket.number < bucket.capacity { // 由于插入数目一定不引起桶分裂，顶多插满，因此最后插完的桶就是当前桶
+			for _, kvp := range bucket.DelegationList {
+				bucket.Insert(kvp, db, cache)
 			}
-
+			bucket.UpdateBucketToDB(db, cache) // 更新桶
+			bucketss = [][]*Bucket{{bucket}}
+		} else { // 否则一定只插入了一个
+			bucketss = bucket.Insert(kvpair, db, cache)
+			newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
+			seh.gd = max(seh.gd, newld)
+			//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
+			for i, buckets := range bucketss {
+				for j := range buckets {
+					if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
+						continue
+					}
+					bkey := util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+					seh.ht[bkey] = buckets[j]
+					buckets[j].UpdateBucketToDB(db, cache)
+				}
+			}
+			// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
+			seh.UpdateSEHToDB(db)
 		}
-		// ZYFCHANGE
-		// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
-		seh.UpdateSEHToDB(db)
-		//
-		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
-		insertedV, segkey, issegExist, index := kvbucket.GetValueByKey(kvpair.GetKey(), db, cache)
-		segRootHash, proof := kvbucket.GetProof(segkey, issegExist, index, db, cache)
-		return bucketss, insertedV, segRootHash, proof
+		bucket.RootLatchGainFlag = false // 重置状态
+		bucket.DelegationList = nil
+		bucket.DelegationList = make(map[string]*util.KVPair)
+		bucket.DelegationLatch.Unlock()
+		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
+		return bucketss, DELEGATE
+	} else {
+		// 成为委托者
+		for len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
+			return nil, FAILED
+		}
+		for !bucket.latch.TryLock() { // 重复查看是否存在可以委托的对象
+			if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag {
+				// 发现一定无法再委托则退出函数并重做，直到这个桶因一个线程的插入而分裂，产生新的空间
+				// 说不定重做以后这就是新的被委托者，毕竟桶已满就说明一定有一个获得了桶锁的线程在工作中
+				// 而这个工作线程在不久的将来就会更新完桶并释放锁，说不定你就在上一个if代码块里工作了
+				return nil, FAILED
+			}
+			if bucket.DelegationLatch.TryLock() {
+				defer bucket.DelegationLatch.Unlock()
+				if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag {
+					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
+					return nil, FAILED
+				}
+				if bucket.DelegationList[kvpair.GetKey()] != nil {
+					bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
+				} else {
+					bucket.DelegationList[kvpair.GetKey()] = kvpair
+				}
+				// 成功委托
+				return nil, CLIENT
+			}
+		}
+		// 发现没有可委托的人，重做，尝试成为被委托者
+		bucket.latch.Unlock()
+		return nil, FAILED
 	}
-	return nil, "", nil, nil
+	return nil, FAILED
 }
 
 // 打印SEH

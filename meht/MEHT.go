@@ -111,7 +111,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	if meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
 		defer meht.seh.latch.Unlock()
 		//插入KV到SEH
-		bucketss, _ := meht.seh.Insert(kvpair, db, meht.cache)
+		bucketss, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
 		merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
@@ -127,14 +127,18 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	for meht.GetSEH(db).bucketsNumber == 0 { // 等待最初的桶建成
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	bucketss, _ := meht.seh.Insert(kvpair, db, meht.cache)
-	//更新seh到db
-	//meht.seh.UpdateSEHToDB(db)
-	//无论是否分裂，都需要更新mgt,TODO
-	//如果委托了，接下来两个都应该给委托线程去做，否则应该整一个重做，即重新meht.seh.Insert(kvpair, db, meht.cache)
-	meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
-	//更新mgt的根节点哈希并更新到db
-	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+	var bucketDelegationCode_ bucketDelegationCode = FAILED
+	var bucketss [][]*Bucket
+	for bucketDelegationCode_ == FAILED {
+		bucketss, bucketDelegationCode_ = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch)
+	}
+	if bucketDelegationCode_ == DELEGATE {
+		//只有被委托线程需要更新mgt
+		meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
+		//更新mgt的根节点哈希并更新到db
+		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+		meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
+	}
 	//获取当前KV插入的bucket
 	meht.mgt.Root.latch.RLock()                                          // 读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
 	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket

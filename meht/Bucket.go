@@ -574,6 +574,14 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	return bucket, nil
 }
 
+type bucketDelegationCode int
+
+const (
+	CLIENT = iota
+	DELEGATE
+	FAILED
+)
+
 // //测试Bucket
 // 	//创建一个bucket
 // 	bucket := meht.NewBucket(mehtName, 0, 2, 2, 1) //ld,rdx,capacity,segNum

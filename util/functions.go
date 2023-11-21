@@ -29,7 +29,7 @@ func IntToHEXString(num int) string {
 
 func IntArrayToString(intArray []int, rdx int) string {
 	ret := ""
-	power := ComputerStrideByBase(rdx)
+	power := ComputeStrideByBase(rdx)
 	for _, val := range intArray {
 		cur := IntToHEXString(val)
 		ret += strings.Repeat("0", power-len(cur)) + cur
@@ -47,7 +47,7 @@ func ByteToHexIndex(b byte) int {
 	return -1
 }
 
-func ComputerStrideByBase(rdx int) (power int) {
+func ComputeStrideByBase(rdx int) (power int) {
 	BASE_ := 16
 	if rdx < BASE_ {
 		panic("Rdx is smaller than base 16.")
@@ -64,7 +64,7 @@ func ComputerStrideByBase(rdx int) (power int) {
 func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
 	BASE_ := 16
 	ret := 0
-	power := ComputerStrideByBase(rdx)
+	power := ComputeStrideByBase(rdx)
 	keyPoint := len(str) - power*offset - (power - 1)
 	startPos := max(0, keyPoint)
 	doNum := power

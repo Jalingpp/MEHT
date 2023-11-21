@@ -38,6 +38,7 @@ type Bucket struct {
 	merkleTrees map[string]*mht.MerkleTree // merkle trees: one for each segment
 
 	latch             sync.RWMutex
+	latchTimestamp    int64
 	updateLatch       sync.Mutex
 	DelegationLatch   sync.Mutex              // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
 	DelegationList    map[string]*util.KVPair // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
@@ -47,7 +48,7 @@ type Bucket struct {
 // 新建一个Bucket
 func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{name, nil, ld, rdx, capacity, 0, segNum,
-		make(map[string][]util.KVPair), make(map[string]*mht.MerkleTree), sync.RWMutex{}, sync.Mutex{},
+		make(map[string][]util.KVPair), make(map[string]*mht.MerkleTree), sync.RWMutex{}, 0, sync.Mutex{},
 		sync.Mutex{}, make(map[string]*util.KVPair), false}
 }
 
@@ -570,7 +571,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		mhts[seBucket.SegKeys[i]] = nil
 	}
 	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
-		seBucket.SegNum, segments, mhts, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}, make(map[string]*util.KVPair), false}
+		seBucket.SegNum, segments, mhts, sync.RWMutex{}, 0, sync.Mutex{}, sync.Mutex{}, make(map[string]*util.KVPair), false}
 	return bucket, nil
 }
 

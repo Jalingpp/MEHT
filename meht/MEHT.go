@@ -111,7 +111,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	if meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
 		defer meht.seh.latch.Unlock()
 		//插入KV到SEH
-		bucketss, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
+		bucketss, _, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
 		merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
@@ -129,24 +129,38 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	var bucketDelegationCode_ bucketDelegationCode = FAILED
 	var bucketss [][]*Bucket
+	var timestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketss, bucketDelegationCode_ = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch)
+		bucketss, bucketDelegationCode_, timestamp = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch)
 	}
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
 		meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+		fmt.Println("Try to unlock mgt latch in meht insert.")
 		meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
+		fmt.Println("Unlock successfully in meht insert.")
 	}
 	//获取当前KV插入的bucket
-	meht.mgt.Root.latch.RLock()                                          // 读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
-	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
-	merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
-	segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
-	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
-	meht.mgt.Root.latch.RUnlock()
-	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+	for {
+		meht.seh.latch.RLock()
+		kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
+		if bucketDelegationCode_ == CLIENT && kvbucket.latchTimestamp == timestamp {
+			meht.seh.latch.RUnlock()
+			continue
+		}
+		meht.seh.latch.RUnlock() // 此处只是通过检查timestamp是否改变了来知道merkle树是否已经更新
+		meht.mgt.latch.RLock()   // 读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
+		meht.seh.latch.RLock()
+		kvbucket = meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
+		merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
+		segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
+		meht.seh.latch.RUnlock()
+		mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
+		meht.mgt.latch.RUnlock()
+		return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+	}
 }
 
 // 打印整个MEHT
@@ -167,7 +181,12 @@ type MEHTProof struct {
 // 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
 func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
-	if bucket := meht.GetSEH(db).GetBucketByKey(key, db, meht.cache); bucket != nil {
+	meht.latch.RLock()
+	defer meht.latch.RUnlock()
+	seh := meht.GetSEH(db)
+	seh.latch.RLock()
+	defer seh.latch.RUnlock()
+	if bucket := seh.GetBucketByKey(key, db, meht.cache); bucket != nil {
 		//根据key找到value
 		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache)
 		return value, bucket, segkey, isSegExist, index

@@ -84,7 +84,7 @@ func main() {
 		}
 		wg.Wait()
 	}
-	numOfWorker := 2
+	numOfWorker := 5
 	go allocate(kvPairsJsonFiles)
 	start = time.Now()
 	createWorkerPool(numOfWorker)

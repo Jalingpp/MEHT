@@ -1,11 +1,11 @@
 =============== Nov 21, 2023 (CST) ===============
-14:16:54.387141 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-14:16:54.461420 db@open opening
-14:16:54.464310 version@stat F·[] S·0B[] Sc·[]
-14:16:54.494171 db@janitor F·2 G·0
-14:16:54.494730 db@open done T·33.265ms
-14:16:54.779347 memdb@flush N·18716 S·3MiB
-14:16:54.881802 memdb@flush created L0@3 N·18716 S·2MiB "\x00\t\xab..\x8f\x9d\xad,d2434":"\xff\xfdY..\xb5ٷ,d13761"
-14:16:54.881802 version@stat F·[1] S·2MiB[2MiB] Sc·[0.25]
-14:16:54.909803 memdb@flush committed F·1 T·130.4559ms
-14:16:54.909803 journal@remove removed @1
+19:17:38.657434 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+19:17:38.743413 db@open opening
+19:17:38.746348 version@stat F·[] S·0B[] Sc·[]
+19:17:38.776212 db@janitor F·2 G·0
+19:17:38.776212 db@open done T·32.7415ms
+19:17:38.961278 memdb@flush N·18021 S·3MiB
+19:17:39.049409 memdb@flush created L0@3 N·18021 S·2MiB "\x00\x05G..@J\x93,v8975":"\xff\xfc\xee..r\xf6[,v1117"
+19:17:39.049409 version@stat F·[1] S·2MiB[2MiB] Sc·[0.25]
+19:17:51.590912 memdb@flush committed F·1 T·12.629634s
+19:17:51.591954 journal@remove removed @1

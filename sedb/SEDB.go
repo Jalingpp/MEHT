@@ -280,7 +280,8 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 			panic("Unknown siMode when purge cache.")
 		}
 	}
-	data := hex.EncodeToString(sedb.seHash) + "," + sedb.dbPath + "\n"
+	//data := hex.EncodeToString(sedb.seHash) + "," + sedb.dbPath + "\n"
+	data := "," + sedb.dbPath + "\n"
 	util.WriteStringToFile(filePath, data)
 }
 

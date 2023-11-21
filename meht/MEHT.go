@@ -82,7 +82,9 @@ func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 		sehString, error_ := db.Get([]byte(meht.name+"seh"), nil)
 		if error_ == nil {
 			seh, _ := DeserializeSEH(sehString)
+			meht.updateLatch.Lock()
 			meht.seh = seh
+			meht.updateLatch.Unlock()
 		}
 	}
 	return meht.seh
@@ -131,16 +133,16 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	var bucketss [][]*Bucket
 	var timestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketss, bucketDelegationCode_, timestamp = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch)
+		bucketss, bucketDelegationCode_, timestamp = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch) // 这里应该传一个参数，是当前
 	}
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
 		meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		fmt.Println("Try to unlock mgt latch in meht insert.")
+		//fmt.Println("Try to unlock mgt latch in meht insert.")
 		meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
-		fmt.Println("Unlock successfully in meht insert.")
+		//fmt.Println("Unlock successfully in meht insert.")
 	}
 	//获取当前KV插入的bucket
 	for {
@@ -148,6 +150,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
 		if bucketDelegationCode_ == CLIENT && kvbucket.latchTimestamp == timestamp {
 			meht.seh.latch.RUnlock()
+			//time.Sleep(time.Millisecond * 500)
 			continue
 		}
 		meht.seh.latch.RUnlock() // 此处只是通过检查timestamp是否改变了来知道merkle树是否已经更新

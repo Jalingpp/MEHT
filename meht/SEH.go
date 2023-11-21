@@ -7,7 +7,6 @@ import (
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,12 +31,12 @@ type SEH struct {
 	ht            map[string]*Bucket // hash table of buckets
 	bucketsNumber int                // number of buckets, initial zero
 	latch         sync.RWMutex
-	//updateLatch   sync.Mutex
+	updateLatch   sync.Mutex
 }
 
 // newSEH returns a new SEH
 func NewSEH(name string, rdx int, bc int, bs int) *SEH {
-	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket), 0, sync.RWMutex{}}
+	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket), 0, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // 更新SEH到db
@@ -50,6 +49,7 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 
 // 获取bucket，如果内存中没有，从db中读取
 func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret := seh.ht[bucketKey]
 	if ret == nil {
 		var ok bool
@@ -106,7 +106,9 @@ func (seh *SEH) GetBucketsNumber() int {
 
 // GetValue returns the value of the key-value pair with the given key
 func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) string {
+	//seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
+	//seh.latch.RUnlock()
 	if bucket == nil {
 		return ""
 	}
@@ -115,7 +117,9 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 
 // GetProof returns the proof of the key-value pair with the given key
 func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
+	//seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
+	//seh.latch.RUnlock()
 	value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, cache)
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, cache)
 	return value, segRootHash, mhtProof
@@ -137,9 +141,11 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		return [][]*Bucket{buckets}, DELEGATE, 0
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
+	seh.latch.RLock()
 	bucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
+	seh.latch.RUnlock()
 	if bucket.latch.TryLock() {
-		fmt.Println("Lock the bucket " + util.IntArrayToString(bucket.BucketKey, bucket.rdx))
+		//fmt.Println("Lock the bucket " + util.IntArrayToString(bucket.BucketKey, bucket.rdx))
 		var bucketss [][]*Bucket
 		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
 		bucket.DelegationLatch.Lock()
@@ -188,7 +194,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		bucket.latchTimestamp = 0
 		bucket.DelegationLatch.Unlock()
 		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
-		fmt.Println("Unlock the bucket " + util.IntArrayToString(bucket.BucketKey, bucket.rdx))
+		//fmt.Println("Unlock the bucket " + util.IntArrayToString(bucket.BucketKey, bucket.rdx))
 		return bucketss, DELEGATE, 0
 	} else {
 		// 成为委托者
@@ -207,7 +213,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 			}
 			if bucket.DelegationLatch.TryLock() {
 				defer bucket.DelegationLatch.Unlock()
-				if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag {
+				if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					return nil, FAILED, 0
 				}
@@ -217,7 +223,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 					bucket.DelegationList[kvpair.GetKey()] = kvpair
 				}
 				// 成功委托
-				fmt.Println("Client with timestamp " + strconv.Itoa(int(bucket.latchTimestamp)))
+				//fmt.Println("Client with timestamp " + strconv.Itoa(int(bucket.latchTimestamp)))
 				return nil, CLIENT, bucket.latchTimestamp
 			}
 		}
@@ -256,9 +262,11 @@ type SeSEH struct {
 
 func SerializeSEH(seh *SEH) []byte {
 	hashTableKeys := ""
+	seh.updateLatch.Lock()
 	for k := range seh.ht {
 		hashTableKeys += k + ","
 	}
+	seh.updateLatch.Unlock()
 	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
 		hashTableKeys, seh.bucketsNumber}
 	if jsonSEH, err := json.Marshal(seSEH); err != nil {
@@ -276,7 +284,7 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		return nil, err
 	}
 	seh := &SEH{seSEH.Name, seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
-		make(map[string]*Bucket), seSEH.BucketsNumber, sync.RWMutex{}}
+		make(map[string]*Bucket), seSEH.BucketsNumber, sync.RWMutex{}, sync.Mutex{}}
 	htKeys := strings.Split(seSEH.HashTableKeys, ",")
 	for i := 0; i < len(htKeys); i++ {
 		if htKeys[i] == "" && seSEH.Gd > 0 {

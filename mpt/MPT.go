@@ -257,12 +257,12 @@ func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	defer mpt.updateLatch.Unlock()
 	hashs := sha256.Sum256(mpt.rootHash)
 	mptHash := hashs[:]
-	if len(mptHash) > 0 {
-		//删除db中原有的MPT
-		if err := db.Delete(mptHash, nil); err != nil {
-			fmt.Println("Delete MPT from DB error:", err)
-		}
-	}
+	//if len(mptHash) > 0 {
+	//	//删除db中原有的MPT
+	//	if err := db.Delete(mptHash, nil); err != nil {
+	//		fmt.Println("Delete MPT from DB error:", err)
+	//	}
+	//}
 	//更新mpt的rootHash
 	mpt.rootHash = newRootHash
 	//计算新的mptHash

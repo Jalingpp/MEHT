@@ -15,21 +15,21 @@ func main() {
 	//测试SEDB
 	//参数设置
 	filePath := "data/levelDB/config.txt" //存储seHash和dbPath的文件路径
-	//// siMode := "meht" //辅助索引类型，meht或mpt
+	//siMode := "meht" //辅助索引类型，meht或mpt
 	//siMode := "mpt"
 	siMode := "meht"
-	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc := 128 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	seHash, dbPath := sedb.ReadSEDBInfoFromFile(filePath)
 	var seDB *sedb.SEDB
 	//cacheEnable := false
 	cacheEnable := true
 	if cacheEnable {
-		shortNodeCacheCapacity := 128
-		fullNodeCacheCapacity := 128
-		mgtNodeCacheCapacity := 100
-		bucketCacheCapacity := 128
+		shortNodeCacheCapacity := 128000
+		fullNodeCacheCapacity := 128000
+		mgtNodeCacheCapacity := 100000
+		bucketCacheCapacity := 128000
 		segmentCacheCapacity := bs * bucketCacheCapacity
 		merkleTreeCacheCapacity := bs * bucketCacheCapacity
 		seDB = sedb.NewSEDB(seHash, dbPath, siMode, "test", rdx, bc, bs, cacheEnable,
@@ -64,7 +64,7 @@ func main() {
 				kvPairCh <- kvPairs[i]
 				//seDB.InsertKVPair(kvPairs[i])
 			}
-			if j == 2 {
+			if j == 5 {
 				break
 			}
 		}
@@ -84,13 +84,11 @@ func main() {
 		}
 		wg.Wait()
 	}
-	numOfWorker := 5
+	numOfWorker := 2
 	go allocate(kvPairsJsonFiles)
 	start = time.Now()
 	createWorkerPool(numOfWorker)
-	duration = time.Since(start)
 
-	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
 	//qrKey := "https://raw.seadn.io/files/e2205125604cfca54281e88783b4cd2b.gif,Human T1 [HATCHING],xs,human"
 	//qrValue, qrKVPair, qrProof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qrKey))
 	//seDB.PrintKVPairsQueryResult(qrKey, qrValue, qrKVPair, qrProof)
@@ -133,5 +131,7 @@ func main() {
 	// meht.VerifyQueryResult(qv2, qpf2)
 
 	seDB.WriteSEDBInfoToFile(filePath)
+	duration = time.Since(start)
 
+	fmt.Println("Insert ", insertNum, " records in ", duration, ", throughput = ", float64(insertNum)/duration.Seconds(), " tps.")
 }

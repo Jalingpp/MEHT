@@ -33,8 +33,8 @@ type MEHT struct {
 	mgt     *MGT
 	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
 
-	//mgtNodeCache         *lru.Cache[string, *MGTNode] // lruCache of mgtNode, the key of mgtNode is its nodeHash in the form of string type
-	//bucketCache          *lru.Cache[string, *Bucket]  // lruCache of bucket, the key of
+	//mgtNodeCache         *lru.Cache[string, *MGTNode]
+	//bucketCache          *lru.Cache[string, *Bucket]
 	//segmentCache         *lru.Cache[string, *[]util.KVPair]
 	// merkleTreeCache	   *lru.Cache[string, *mht.MerkleTree]
 	cache       *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
@@ -96,6 +96,8 @@ func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 
 // GetMGT returns the MGT of the MEHT
 func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
+	meht.latch.RLock()
+	defer meht.latch.RUnlock()
 	if meht.mgt == nil {
 		mgtString, error_ := db.Get(meht.mgtHash, nil)
 		if error_ == nil {
@@ -193,16 +195,18 @@ type MEHTProof struct {
 // 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
 func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
+	//此处在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，因此死锁
 	meht.latch.RLock()
 	defer meht.latch.RUnlock()
 	seh := meht.GetSEH(db)
 	seh.latch.RLock()
-	defer seh.latch.RUnlock()
 	if bucket := seh.GetBucketByKey(key, db, meht.cache); bucket != nil {
 		//根据key找到value
+		seh.latch.RUnlock() //防止在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，导致死锁
 		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache)
 		return value, bucket, segkey, isSegExist, index
 	}
+	seh.latch.RUnlock()
 	return "", nil, "", false, -1
 }
 

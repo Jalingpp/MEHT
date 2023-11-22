@@ -165,28 +165,33 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 			}
 			bucket.UpdateBucketToDB(db, cache) // 更新桶
 			bucketss = [][]*Bucket{{bucket}}
-		} else { // 否则一定只插入了一个，且引发桶的分裂
+		} else { // 否则一定只插入了一个，如果不是更新则引发桶的分裂
 			bucketss = bucket.Insert(kvpair, db, cache)
-			newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
-			seh.latch.Lock()
-			seh.gd = max(seh.gd, newld)
-			//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
-			for i, buckets := range bucketss {
-				var bkey string
-				for j := range buckets {
-					if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
-						continue
+			if len(bucketss[0]) == 1 {
+				bucketss[0][0].UpdateBucketToDB(db, cache) // 更新桶
+				bucketss = [][]*Bucket{{bucket}}
+			} else {
+				newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
+				seh.latch.Lock()
+				seh.gd = max(seh.gd, newld)
+				//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
+				for i, buckets := range bucketss {
+					var bkey string
+					for j := range buckets {
+						if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
+							continue
+						}
+						bkey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+						seh.ht[bkey] = buckets[j]
+						buckets[j].UpdateBucketToDB(db, cache)
 					}
-					bkey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
-					seh.ht[bkey] = buckets[j]
-					buckets[j].UpdateBucketToDB(db, cache)
+					toDelKey := bkey[util.ComputeStrideByBase(buckets[0].rdx):]
+					delete(seh.ht, toDelKey)
 				}
-				toDelKey := bkey[util.ComputeStrideByBase(buckets[0].rdx):]
-				delete(seh.ht, toDelKey)
+				// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
+				seh.UpdateSEHToDB(db)
+				seh.latch.Unlock()
 			}
-			// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
-			seh.UpdateSEHToDB(db)
-			seh.latch.Unlock()
 		}
 		bucket.RootLatchGainFlag = false // 重置状态
 		bucket.DelegationList = nil

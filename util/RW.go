@@ -37,17 +37,39 @@ func GetDirAllFilePathsFollowSymlink(dirname string) ([]string, error) {
 	return paths, nil
 }
 
-func ReadKVPairFromJsonFile(filepath string) []*KVPair {
-	file, err := os.Open(filepath)
+func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []*KVPair) {
+	content, err := os.ReadFile(filepath)
 	if err != nil {
 		panic(err)
 	}
-	defer func(file *os.File) {
-		if err := file.Close(); err != nil {
-			panic(err)
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		if len(line) == 0 || i == num {
+			break
 		}
-	}(file)
-	var kvPairs []*KVPair
+		line_ := Strip(line, "\r")
+		kvs := strings.Split(line_, ",")
+		kvPairs = append(kvPairs, NewKVPair(kvs[0], kvs[1]))
+	}
+	return
+}
+
+func ReadQueryOwnerFromFile(filepath string, num int) (ret []string) {
+	content, err := os.ReadFile(filepath)
+	if err != nil {
+		panic(err)
+	}
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		if len(line) == 0 || i == num {
+			break
+		}
+		ret = append(ret, Strip(line, "\r"))
+	}
+	return
+}
+
+func ReadKVPairFromJsonFile(filepath string) (kvPairs []*KVPair) {
 	content, err := os.ReadFile(filepath)
 	if err != nil {
 		panic(err)
@@ -73,12 +95,10 @@ func ReadKVPairFromJsonFile(filepath string) []*KVPair {
 				}
 			}
 			kvPair := NewKVPair(address+string(os.PathSeparator)+k1, strings.Join(v_, ","))
-			//fmt.Println(kvPair.GetKey())
-			//fmt.Println(kvPair.GetValue())
 			kvPairs = append(kvPairs, kvPair)
 		}
 	}
-	return kvPairs
+	return
 }
 
 func ReadKVPairFromFile(filepath string) []*KVPair {
@@ -120,6 +140,26 @@ func WriteStringToFile(filePath string, data string) {
 	file, err := os.Create(filePath)
 	if err != nil {
 		fmt.Println("Create file error!")
+		return
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(file)
+	//写字符串
+	_, err = file.WriteString(data)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func WriteResultToFile(filePath string, data string) {
+	//打开文件
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Println("Open file error!")
 		return
 	}
 	defer func(file *os.File) {

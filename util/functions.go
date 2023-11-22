@@ -84,7 +84,7 @@ func CommPrefix(a string, b string) string {
 			break
 		}
 	}
-	return a[:idx]
+	return (" " + a[:idx])[1:]
 }
 
 func StringToHex(s string) string {
@@ -123,7 +123,9 @@ func Strip(input string, args string) string {
 	if !lok || !rok {
 		return ""
 	}
-	return string(s[lpos : rpos+1])
+	ret := make([]rune, rpos+1-lpos)
+	copy(ret, s[lpos:rpos+1])
+	return string(ret)
 }
 
 var (

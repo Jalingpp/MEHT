@@ -36,7 +36,7 @@ type BucketCacheCapacity int
 type SegmentCacheCapacity int
 type MerkleTreeCacheCapacity int
 
-var DefaultNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)
+var DefaultMgtNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)
 var DefaultBucketCacheCapacity = BucketCacheCapacity(128)
 var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)
 var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128)
@@ -65,7 +65,7 @@ func NewSEDB(seh []byte, dbPath string, siMode string, mehtName string, rdx int,
 	if err != nil {
 		log.Fatal(err)
 	}
-	//mgtNodeCacheCapacity := DefaultNodeCacheCapacity
+	//mgtNodeCacheCapacity := DefaultMgtNodeCacheCapacity
 	//bucketNodeCacheCapacity := DefaultBucketCacheCapacity
 	//segmentCacheCapacity := DefaultSegmentCacheCapacity
 	//merkleTreeCacheCapacity := DefaultMerkleTreeCapacity
@@ -281,8 +281,8 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 		}
 	}
 	//data := hex.EncodeToString(sedb.seHash) + "," + sedb.dbPath + "\n"
-	data := "," + sedb.dbPath + "\n"
-	util.WriteStringToFile(filePath, data)
+	//data := "," + sedb.dbPath + "\n"
+	//util.WriteStringToFile(filePath, data)
 }
 
 // 从文件中读取seHash和dbPath

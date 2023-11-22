@@ -249,7 +249,7 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (st
 func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
 	shortNodeCC = int(DefaultShortNodeCacheCapacity)
 	fullNodeCC = int(DefaultFullNodeCacheCapacity)
-	mgtNodeCC = int(DefaultNodeCacheCapacity)
+	mgtNodeCC = int(DefaultMgtNodeCacheCapacity)
 	bucketCC = int(DefaultBucketCacheCapacity)
 	segmentCC = int(DefaultSegmentCacheCapacity)
 	merkleTreeCC = int(DefaultMerkleTreeCapacity)

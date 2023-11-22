@@ -41,9 +41,10 @@ type Bucket struct {
 	DelegationList    map[string]*util.KVPair // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
 	RootLatchGainFlag bool                    // 用于判断被委托线程是否已经获取到树根，如果获取到了，那么置为True，其余线程停止对DelegationLatch进行获取尝试，保证被委托线程在获取到树根以后可以尽快获取到DelegationLatch并开始不接受委托
 	latch             sync.RWMutex
-	segLatch          sync.RWMutex
-	mtLatch           sync.RWMutex
-	DelegationLatch   sync.Mutex // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
+
+	segLatch        sync.RWMutex
+	mtLatch         sync.RWMutex
+	DelegationLatch sync.Mutex // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
 }
 
 // 新建一个Bucket
@@ -56,6 +57,7 @@ func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 
 // 更新bucket至db中
 func (b *Bucket) UpdateBucketToDB(db *leveldb.DB, cache *[]interface{}) {
+	//跳转到此函数时bucket已加写锁
 	if cache != nil {
 		targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
 		targetCache.Add(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx), b)
@@ -100,6 +102,7 @@ func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{})
 
 // 更新segment至db中
 func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB, cache *[]interface{}) {
+	//跳转到此函数时桶已加写锁
 	if b.GetSegments()[segkey] == nil {
 		return
 	}
@@ -163,6 +166,7 @@ func (b *Bucket) GetMerkleTrees() map[string]*mht.MerkleTree {
 
 // 获取segment对应的merkle tree,若不存在,则从db中获取
 func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{}) *mht.MerkleTree {
+	//跳转到此函数时已对树加写锁或者对桶加写锁
 	if b.merkleTrees[index] == nil {
 		//fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
 		var ok bool
@@ -186,6 +190,7 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{
 
 // 将merkle tree更新至db中
 func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB, cache *[]interface{}) {
+	//跳转到此函数时桶已加写锁
 	if b.GetMerkleTrees()[index] == nil {
 		return
 	}
@@ -243,6 +248,8 @@ func (b *Bucket) GetSegmentKey(key string) string {
 
 // 给定一个key, 判断它是否在该bucket中
 func (b *Bucket) IsInBucket(key string, db *leveldb.DB, cache *[]interface{}) bool {
+	b.latch.RLock()
+	defer b.latch.RUnlock()
 	segkey := b.GetSegmentKey(key)
 	b.segLatch.Lock()
 	kvpairs := b.GetSegment(segkey, db, cache)
@@ -257,6 +264,8 @@ func (b *Bucket) IsInBucket(key string, db *leveldb.DB, cache *[]interface{}) bo
 
 // 给定一个key, 返回它在该bucket中的value
 func (b *Bucket) GetValue(key string, db *leveldb.DB, cache *[]interface{}) string {
+	b.latch.RLock()
+	defer b.latch.RUnlock()
 	segkey := b.GetSegmentKey(key)
 	b.segLatch.Lock()
 	kvpairs := b.GetSegment(segkey, db, cache)
@@ -272,6 +281,7 @@ func (b *Bucket) GetValue(key string, db *leveldb.DB, cache *[]interface{}) stri
 
 // 给定一个key, 返回它所在的segkey，seg是否存在，在seg中的index, 如果不在, 返回-1
 func (b *Bucket) GetIndex(key string, db *leveldb.DB, cache *[]interface{}) (string, bool, int) {
+	//跳转到此函数是bucket已加锁
 	segkey := b.GetSegmentKey(key)
 	b.segLatch.Lock()
 	kvpairs := b.GetSegment(segkey, db, cache)
@@ -291,11 +301,9 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{
 	segkey, _, index := b.GetIndex(kvpair.GetKey(), db, cache)
 	if index != -1 {
 		//在bucket中,修改value
-		b.segLatch.Lock()
 		b.GetSegment(segkey, db, cache)[index].SetValue(kvpair.GetValue())
 		//将修改后的segment更新至db中
 		b.UpdateSegmentToDB(segkey, db, cache)
-		b.segLatch.Unlock()
 		//更新bucket中对应segment的merkle tree
 		b.GetMerkleTree(segkey, db, cache).UpdateRoot(index, []byte(kvpair.GetValue()))
 		//将更新后的merkle tree更新至db中
@@ -313,7 +321,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{
 		//判断bucket是否已满
 		if b.number < b.capacity {
 			//判断segment是否存在,不存在则创建,同时创建merkleTree
-			b.segLatch.Lock()
 			if b.GetSegment(segkey, db, cache) == nil {
 				b.segments[segkey] = NewSegment()
 			}
@@ -321,7 +328,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{
 			b.segments[segkey] = append(b.segments[segkey], *kvpair)
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segkey, db, cache)
-			b.segLatch.Unlock()
 			b.number++
 			//若该segment对应的merkle tree不存在,则创建,否则插入value到merkle tree中
 			if b.GetMerkleTree(segkey, db, cache) == nil {
@@ -372,9 +378,7 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	b.SetBucketKey(append([]int{0}, originBkey...))
 	b.number = 0
 	bsegments := b.GetSegments()
-	b.segLatch.Lock()
 	b.segments = make(map[string][]util.KVPair)
-	b.segLatch.Unlock()
 	b.merkleTrees = make(map[string]*mht.MerkleTree)
 	buckets = append(buckets, b)
 	//创建rdx-1个新bucket
@@ -399,6 +403,8 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 
 // 给定一个key, 返回它的value,所在segkey,是否存在,在seg中的index, 如果不在, 返回-1
 func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) (string, string, bool, int) {
+	b.latch.RLock()
+	defer b.latch.RUnlock()
 	segkey, isSegExist, index := b.GetIndex(key, db, cache)
 	if index == -1 {
 		return "", segkey, isSegExist, index
@@ -411,9 +417,14 @@ func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{})
 
 // 给定一个key, 返回它所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segkey及其segRootHash
 func (b *Bucket) GetProof(segkey string, isSegExist bool, index int, db *leveldb.DB, cache *[]interface{}) ([]byte, *mht.MHTProof) {
+	b.latch.RLock()
+	defer b.latch.RUnlock()
+	b.mtLatch.Lock()
+	segHash := b.GetMerkleTree(segkey, db, cache) // 为bucket加读锁后树最多更新一次
+	b.mtLatch.Unlock()
 	if index != -1 {
-		segHashRoot := b.GetMerkleTree(segkey, db, cache).GetRootHash()
-		proof := b.GetMerkleTree(segkey, db, cache).GetProof(index)
+		segHashRoot := segHash.GetRootHash()
+		proof := segHash.GetProof(index)
 		return segHashRoot, proof
 	} else if isSegExist {
 		//segment存在,但key不存在,返回此seg中所有值及其哈希
@@ -424,7 +435,7 @@ func (b *Bucket) GetProof(segkey string, isSegExist bool, index int, db *leveldb
 		for i := 0; i < len(kvpairs); i++ {
 			values = append(values, kvpairs[i].GetValue())
 		}
-		segHashRoot := b.GetMerkleTree(segkey, db, cache).GetRootHash()
+		segHashRoot := segHash.GetRootHash()
 		return segHashRoot, mht.NewMHTProof(false, nil, true, values, nil, nil)
 	} else {
 		//segment不存在,返回所有segkey及其segRootHash
@@ -432,7 +443,7 @@ func (b *Bucket) GetProof(segkey string, isSegExist bool, index int, db *leveldb
 		segRootHashes := make([][]byte, 0)
 		for segkey := range b.merkleTrees {
 			segKeys = append(segKeys, segkey)
-			segRootHashes = append(segRootHashes, b.GetMerkleTree(segkey, db, cache).GetRootHash())
+			segRootHashes = append(segRootHashes, segHash.GetRootHash())
 		}
 		return nil, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)
 	}
@@ -468,20 +479,22 @@ func (b *Bucket) PrintBucket(db *leveldb.DB, cache *[]interface{}) {
 	//打印segments
 	b.latch.RLock()
 	defer b.latch.RUnlock()
+	b.segLatch.Lock()
 	for segkey := range b.GetSegments() {
 		fmt.Printf("segkey: %s\n", segkey)
-		b.segLatch.Lock()
 		kvpairs := b.GetSegment(segkey, db, cache)
-		b.segLatch.Unlock()
 		for _, kvpair := range kvpairs {
 			fmt.Printf("%s:%s\n", kvpair.GetKey(), kvpair.GetValue())
 		}
 	}
+	b.segLatch.Unlock()
 	//打印所有merkle tree
+	b.mtLatch.Lock()
 	for segkey := range b.GetMerkleTrees() {
 		fmt.Printf("Merkle Tree of Segement %s:\n", segkey)
 		b.GetMerkleTree(segkey, db, cache).PrintTree()
 	}
+	b.mtLatch.Unlock()
 }
 
 // 打印mhtProof mht.MHTProof
@@ -564,6 +577,7 @@ type SeBucket struct {
 
 // 序列化Bucket
 func SerializeBucket(b *Bucket) []byte {
+	//跳转到此函数时bucket已加锁或者没有后续插入
 	seBucket := &SeBucket{b.name, b.BucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
 	for k := range b.segments {
 		seBucket.SegKeys = append(seBucket.SegKeys, k)

@@ -70,7 +70,9 @@ func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int
 
 // 更新MEHT到db
 func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
+	meht.latch.RLock()
 	meMEHT := SerializeMEHT(meht)
+	meht.latch.RUnlock()
 	if err := db.Put([]byte(meht.name+"meht"), meMEHT, nil); err != nil {
 		panic(err)
 	}
@@ -96,7 +98,9 @@ func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
 		mgtString, error_ := db.Get(meht.mgtHash, nil)
 		if error_ == nil {
 			mgt, _ := DeserializeMGT(mgtString)
+			meht.updateLatch.Lock()
 			meht.mgt = mgt
+			meht.updateLatch.Unlock()
 		}
 	}
 	return meht.mgt
@@ -117,13 +121,11 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
-		meht.mgt.latch.Lock()
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
-		meht.mgt.latch.Unlock()
 		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
 	}
 	for meht.GetSEH(db).bucketsNumber == 0 { // 等待最初的桶建成
@@ -202,7 +204,9 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	//找到segRootHash和segProof
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, meht.cache)
 	//根据key找到mgtRootHash和mgtProof
+	meht.mgt.latch.RLock()
 	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db, meht.cache)
+	meht.mgt.latch.RUnlock()
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 

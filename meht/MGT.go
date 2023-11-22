@@ -185,6 +185,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 
 // 更新nodeHash,并将node存入leveldb
 func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) {
+	//跳转到此函数时MGT已加写锁
 	//delete the old node in leveldb
 	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
 		panic(err)
@@ -205,6 +206,7 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) 
 
 // 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点
 func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]interface{}) []*MGTNode {
+	//跳转到此函数时mgt已加锁
 	result := make([]*MGTNode, 0)
 	//递归遍历根节点的所有子节点,找到bucketKey对应的叶子节点
 	p := mgt.GetRoot(db)
@@ -361,9 +363,10 @@ func (mgt *MGT) PrintMGT(mehtName string, db *leveldb.DB, cache *[]interface{}) 
 		return
 	}
 	//递归打印MGT
+	mgt.latch.RLock() //mgt结构将不会更新，只会将未从磁盘中完全加载的结构从磁盘更新到内存结构中
 	fmt.Printf("MGTRootHash: %x\n", mgt.mgtRootHash)
 	mgt.PrintMGTNode(mehtName, mgt.GetRoot(db), 0, db, cache)
-
+	mgt.latch.RUnlock()
 }
 
 // 递归打印MGT
@@ -398,6 +401,7 @@ type MGTProof struct {
 
 // 给定bucketKey，返回它的mgtRootHash和mgtProof，不存在则返回nil
 func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, cache *[]interface{}) ([]byte, []MGTProof) {
+	//跳转到此函数时已对MGT加锁
 	//根据bucketKey,找到叶子节点和路径
 	nodePath := mgt.GetLeafNodeAndPath(bucketKey, db, cache)
 	//找到mgtProof

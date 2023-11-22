@@ -80,6 +80,8 @@ func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
 
 // GetSEH returns the SEH of the MEHT
 func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
+	meht.latch.RLock()
+	defer meht.latch.RUnlock()
 	if meht.seh == nil {
 		sehString, error_ := db.Get([]byte(meht.name+"seh"), nil)
 		if error_ == nil {
@@ -133,10 +135,13 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	var bucketDelegationCode_ bucketDelegationCode = FAILED
 	var bucketss [][]*Bucket
-	var timestamp *int64
+	var timestamp *int64 //特定桶当前时间戳，可能是正在执行插入的线程开始接收委托的时间戳，也可能是 0
+	//Client等待Delegate完成桶插入时桶的时间戳，在Delegate做完后waitTimestamp一定会与timestamp的值不同，
+	//即使实际的桶已经不是timestamp所在的桶了，因为非零时间戳永远是递增的，因此可以用来判断Delegate是否已经完成了插入
+	//因为无论是桶时间戳的改变还是换了一个新桶，这都意味着上一次插入已经完成了
 	var waitTimestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketss, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch) // 这里应该传一个参数，是当前
+		bucketss, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch)
 	}
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
@@ -149,20 +154,22 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	}
 	//获取当前KV插入的bucket
 	for {
-		if bucketDelegationCode_ == CLIENT && *timestamp == waitTimestamp {
+		if bucketDelegationCode_ == CLIENT && *timestamp == waitTimestamp { //Client等待Delegate完成插入，此处使用时间戳可以避免ht的读写冲突
 			continue
 		}
-		meht.mgt.latch.RLock() // 读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
-		meht.seh.latch.RLock()
+		//很有可能在获取读锁之前又有新的正式插入执行而获取到了mgt的写锁，那么这里就会被阻塞，
+		//但这并不影响确实插入了这个东西的存在性证明，总会在某一个时刻找到一个当前时刻的位置的哈希与proof证明插入成功
+		meht.mgt.latch.RLock() //读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
+		//meht.seh.latch.RLock() //这里其实可以不锁，因为只有桶插入后分裂才会引发seh更新，但是mgt锁住其实就已经不可能正式执行桶插入了
 		kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
-		meht.seh.latch.RUnlock()
-		kvbucket.latch.RLock()
-		kvbucket.mtLatch.RLock()
+		//meht.seh.latch.RUnlock()
+		//kvbucket.latch.RLock() //这里其实可以不锁，因为mgt锁住其实就已经不可能有正式桶插入了，而且不锁的话可以在这部分获取proof的同时让其他插入线程继续在这个桶委托，等待一并插入
+		//kvbucket.mtLatch.RLock() //这里其实可以不锁，因为只有桶插入才会引发树更新，但是mgt锁住其实就已经不可能正式执行桶插入了
 		merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
 		segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
 		mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
-		kvbucket.mtLatch.RUnlock()
-		kvbucket.latch.RUnlock()
+		//kvbucket.mtLatch.RUnlock()
+		//kvbucket.latch.RUnlock()
 		meht.mgt.latch.RUnlock()
 		return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}

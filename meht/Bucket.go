@@ -78,7 +78,7 @@ func NewSegment() []util.KVPair {
 
 // 获取segment,若不存在,则从db中获取
 func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
-	//func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
+	//跳转到此函数时bucket已加写锁
 	if len(b.segments[segkey]) == 0 {
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 		var ok bool
@@ -570,8 +570,7 @@ type SeBucket struct {
 	Capacity int // capacity of the bucket, initial given
 	Number   int // number of data objects in the bucket, initial zero
 
-	SegNum int // number of segment bits in the bucket, initial given
-
+	SegNum  int      // number of segment bits in the bucket, initial given
 	SegKeys []string // segment keys of segments, is used to index the segments and mhts in leveldb
 }
 

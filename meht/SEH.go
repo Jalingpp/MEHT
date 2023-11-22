@@ -208,7 +208,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 				// 而这个工作线程在不久的将来就会更新完桶并释放锁，说不定你就在上一个if代码块里工作了
 				return nil, FAILED, nil, 0
 			}
-			if bucket.latchTimestamp == 0 {
+			if bucket.latchTimestamp == 0 { //等待一个委托线程准备好接受委托，准备好的意思就是它已经把自己要插入的数据加入到delegationList
 				continue
 			}
 			if bucket.DelegationLatch.TryLock() {

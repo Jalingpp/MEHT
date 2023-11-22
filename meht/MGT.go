@@ -245,6 +245,7 @@ func GetOldBucketKey(bucket *Bucket) []int {
 
 // MGT生长,给定新的buckets,返回更新后的MGT
 func (mgt *MGT) MGTUpdate(newBucketss [][]*Bucket, db *leveldb.DB, cache *[]interface{}) *MGT {
+	//跳转到此函数时mgt已经加写锁，因此任何查询、插入等操作都无需额外锁操作
 	if len(newBucketss) == 0 {
 		//fmt.Printf("newBuckets is empty\n")
 		return mgt

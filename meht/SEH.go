@@ -126,7 +126,7 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, int64) {
+func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, *int64, int64) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -138,7 +138,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
-		return [][]*Bucket{buckets}, DELEGATE, 0
+		return [][]*Bucket{buckets}, DELEGATE, nil, 0
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	seh.latch.RLock()
@@ -195,18 +195,18 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		bucket.DelegationLatch.Unlock()
 		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
 		//fmt.Println("Unlock the bucket " + util.IntArrayToString(bucket.BucketKey, bucket.rdx))
-		return bucketss, DELEGATE, 0
+		return bucketss, DELEGATE, nil, 0
 	} else {
 		// 成为委托者
 		for len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
-			return nil, FAILED, 0
+			return nil, FAILED, nil, 0
 		}
 		for !bucket.latch.TryLock() { // 重复查看是否存在可以委托的对象
 			if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag {
 				// 发现一定无法再委托则退出函数并重做，直到这个桶因一个线程的插入而分裂，产生新的空间
 				// 说不定重做以后这就是新的被委托者，毕竟桶已满就说明一定有一个获得了桶锁的线程在工作中
 				// 而这个工作线程在不久的将来就会更新完桶并释放锁，说不定你就在上一个if代码块里工作了
-				return nil, FAILED, 0
+				return nil, FAILED, nil, 0
 			}
 			if bucket.latchTimestamp == 0 {
 				continue
@@ -215,7 +215,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 				defer bucket.DelegationLatch.Unlock()
 				if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
-					return nil, FAILED, 0
+					return nil, FAILED, nil, 0
 				}
 				if bucket.DelegationList[kvpair.GetKey()] != nil {
 					bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
@@ -224,12 +224,12 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 				}
 				// 成功委托
 				//fmt.Println("Client with timestamp " + strconv.Itoa(int(bucket.latchTimestamp)))
-				return nil, CLIENT, bucket.latchTimestamp
+				return nil, CLIENT, &bucket.latchTimestamp, bucket.latchTimestamp
 			}
 		}
 		// 发现没有可委托的人，重做，尝试成为被委托者
 		bucket.latch.Unlock()
-		return nil, FAILED, 0
+		return nil, FAILED, nil, 0
 	}
 }
 

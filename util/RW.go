@@ -157,7 +157,7 @@ func WriteStringToFile(filePath string, data string) {
 
 func WriteResultToFile(filePath string, data string) {
 	//打开文件
-	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE, 0666)
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println("Open file error!")
 		return

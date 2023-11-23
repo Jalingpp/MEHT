@@ -77,7 +77,7 @@ func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) {
 	if mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
 		defer mpt.latch.Unlock()
 		//创建一个ShortNode
-		mpt.root = NewShortNode("", true, kvpair.GetKey(), nil, []byte(kvpair.GetValue()), db)
+		mpt.root = NewShortNode("", true, kvpair.GetKey(), nil, []byte(kvpair.GetValue()), db, mpt.cache)
 		//更新mpt根哈希并更新到数据库
 		mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
 	}
@@ -108,13 +108,13 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			//如果共同前缀的长度等于当前节点的suffix的长度
 			if len(comprefix) == len(cnode.suffix) {
 				//新建一个LeafNode（此情况下，suffix一定不为空，前面的判断条件予以保证）
-				newLeaf := NewShortNode(prefix+suffix[0:len(comprefix)+1], true, suffix[len(comprefix)+1:], nil, value, db)
+				newLeaf := NewShortNode(prefix+suffix[0:len(comprefix)+1], true, suffix[len(comprefix)+1:], nil, value, db, mpt.cache)
 				//创建一个BranchNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(suffix[len(comprefix)])] = newLeaf
-				newBranch := NewFullNode(children, cnode.value, db)
+				newBranch := NewFullNode(children, cnode.value, db, mpt.cache)
 				//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为新建的FullNode
-				newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, db)
+				newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, db, mpt.cache)
 				return newExtension
 			} else if len(comprefix) == len(suffix) {
 				//如果共同前缀的长度等于suffix的长度
@@ -125,9 +125,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				//新建一个FullNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
-				newBranch := NewFullNode(children, value, db)
+				newBranch := NewFullNode(children, value, db, mpt.cache)
 				//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为新建的FullNode
-				newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, db)
+				newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, db, mpt.cache)
 				return newExtension
 			} else {
 				//新建一个LeafNode,如果suffix在除去comprefix+1个i字节后没有字节了，则suffix为nil，否则为剩余字节
@@ -137,7 +137,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				} else {
 					newsuffix1 = ""
 				}
-				leafnode := NewShortNode(prefix+suffix[0:len(comprefix)+1], true, newsuffix1, nil, value, db)
+				leafnode := NewShortNode(prefix+suffix[0:len(comprefix)+1], true, newsuffix1, nil, value, db, mpt.cache)
 				//更新当前节点的prefix和suffix，nodeHash
 				cnode.prefix = cnode.prefix + cnode.suffix[0:len(comprefix)+1]
 				if len(cnode.suffix) > len(comprefix)+1 {
@@ -150,9 +150,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
 				children[util.ByteToHexIndex(suffix[len(comprefix)])] = leafnode
-				newBranch := NewFullNode(children, nil, db)
+				newBranch := NewFullNode(children, nil, db, mpt.cache)
 				//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为新建的FullNode
-				newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, db)
+				newExtension := NewShortNode(prefix, false, comprefix, newBranch, nil, db, mpt.cache)
 				return newExtension
 			}
 		}
@@ -185,9 +185,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			//新建一个FullNode，包含当前节点和value
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
-			newBranch := NewFullNode(children, value, db)
+			newBranch := NewFullNode(children, value, db, mpt.cache)
 			//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为新建的FullNode
-			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db)
+			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
 			return newExtension
 		} else {
 			//更新当前节点的prefix和suffix，nodeHash
@@ -205,14 +205,14 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			} else {
 				newsuffix = ""
 			}
-			newLeaf := NewShortNode(prefix+suffix[0:len(commPrefix)+1], true, newsuffix, nil, value, db)
+			newLeaf := NewShortNode(prefix+suffix[0:len(commPrefix)+1], true, newsuffix, nil, value, db, mpt.cache)
 			//创建一个BranchNode
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cnode.prefix[len(cnode.prefix)-1])] = cnode
 			children[util.ByteToHexIndex(suffix[len(commPrefix)])] = newLeaf
-			newBranch := NewFullNode(children, nil, db)
+			newBranch := NewFullNode(children, nil, db, mpt.cache)
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comprefix，其nextNode为一个FullNode
-			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db)
+			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
 			return newExtension
 		}
 	}
@@ -241,7 +241,7 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 		if childNode != nil {
 			childnode = mpt.RecursiveInsertShortNode(prefix+suffix[:1], newsuffix, value, childNode, db)
 		} else {
-			childnode = NewShortNode(prefix+suffix[:1], true, newsuffix, nil, value, db)
+			childnode = NewShortNode(prefix+suffix[:1], true, newsuffix, nil, value, db, mpt.cache)
 		}
 		cnode.children[util.ByteToHexIndex(suffix[0])] = childnode
 		cnode.childrenHash[util.ByteToHexIndex(suffix[0])] = childnode.nodeHash

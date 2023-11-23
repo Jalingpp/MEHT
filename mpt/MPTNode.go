@@ -98,7 +98,7 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 }
 
 // NewShortNode creates a ShortNode and computes its nodeHash
-func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode, value []byte, db *leveldb.DB) *ShortNode {
+func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode, value []byte, db *leveldb.DB, cache *[]interface{}) *ShortNode {
 	nodeHash := append([]byte(prefix), suffix...)
 	var nextNodeHash []byte
 	if isLeaf {
@@ -112,9 +112,14 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 	nodeHash = hash[:]
 	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value, sync.RWMutex{}, sync.Mutex{}}
 	//将sn写入db中
-	ssn := SerializeShortNode(sn)
-	if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
-		fmt.Println("Insert ShortNode to DB error:", err)
+	if cache != nil {
+		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
+		targetCache.Add(string(sn.nodeHash), sn)
+	} else {
+		ssn := SerializeShortNode(sn)
+		if err := db.Put(sn.nodeHash, ssn, nil); err != nil {
+			fmt.Println("Insert ShortNode to DB error:", err)
+		}
 	}
 	return sn
 }
@@ -147,7 +152,7 @@ func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
 }
 
 // NewFullNode creates a new FullNode and computes its nodeHash
-func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNode {
+func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[]interface{}) *FullNode {
 	var childrenHash [16][]byte
 	var nodeHash []byte
 	for i := 0; i < 16; i++ {
@@ -163,7 +168,10 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNod
 	nodeHash = hash[:]
 	fn := &FullNode{nodeHash, children, childrenHash, value, sync.RWMutex{}, sync.Mutex{}}
 	//将fn写入db中
-	if db != nil {
+	if cache != nil {
+		targetCache, _ := ((*cache)[1]).(*lru.Cache[string, *FullNode])
+		targetCache.Add(string(fn.nodeHash), fn)
+	} else {
 		sfn := SerializeFullNode(fn)
 		if err := db.Put(fn.nodeHash, sfn, nil); err != nil {
 			fmt.Println("Insert FullNode to DB error:", err)
@@ -174,10 +182,10 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB) *FullNod
 
 // UpdateFullNodeHash updates the nodeHash of a FullNode
 func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
-	//先删除db中原有节点
-	if err := db.Delete(fn.nodeHash, nil); err != nil {
-		fmt.Println("Delete FullNode from DB error:", err)
-	}
+	////先删除db中原有节点
+	//if err := db.Delete(fn.nodeHash, nil); err != nil {
+	//	fmt.Println("Delete FullNode from DB error:", err)
+	//}
 	var nodeHash []byte
 	for i := 0; i < 16; i++ {
 		nodeHash = append(nodeHash, fn.childrenHash[i]...)

@@ -3,7 +3,6 @@ package main
 import (
 	"MEHT/util"
 	"fmt"
-	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -12,55 +11,25 @@ import (
 )
 
 func main() {
-	//测试SEDB
-	//参数设置
-	//allocateJsonFiles := func(kvPairsJsonFiles []string, kvPairCh chan *util.KVPair) (insertNum int) {
-	//	for j, file := range kvPairsJsonFiles {
-	//		fmt.Println(file)
-	//		kvPairs := util.ReadKVPairFromJsonFile(file)
-	//		insertNum += len(kvPairs)
-	//		//插入KVPair数组
-	//		for i := 0; i < len(kvPairs); i++ {
-	//			kvPairs[i].SetKey(util.StringToHex(kvPairs[i].GetKey()))
-	//			kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
-	//			//插入SEDB
-	//			kvPairCh <- kvPairs[i]
-	//			//seDB.InsertKVPair(kvPairs[i])
-	//		}
-	//		if j == 5 {
-	//			break
-	//		}
-	//	}
-	//	close(kvPairCh)
-	//	return
-	//}
-	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair) {
-		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for _, kvPair := range kvPairs {
-			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
-			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
-			kvPairCh <- kvPair
+	//测试SEDB查询
+	allocateQueryOwner := func(filepath string, opNum int, queryCh chan string) {
+		queries := util.ReadQueryOwnerFromFile(filepath, opNum)
+		for _, query := range queries {
+			queryCh <- query
 		}
-		close(kvPairCh)
+		close(queryCh)
 	}
-	//allocateQueryOwner := func(filepath string, opNum int, queryCh chan string) {
-	//	queries := util.ReadQueryOwnerFromFile(filepath, opNum)
-	//	for _, query := range queries {
-	//		queryCh <- query
-	//	}
-	//	close(queryCh)
-	//}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
-		for kvPair := range kvPairCh {
-			seDB.InsertKVPair(kvPair)
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string) {
+		for query := range queryCh {
+			seDB.QueryKVPairsByHexKeyword(query)
 		}
 		wg.Done()
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryCh chan string) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go worker(&wg, seDB, kvPairCh)
+			go worker(&wg, seDB, queryCh)
 		}
 		wg.Wait()
 	}
@@ -74,9 +43,9 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	//var queryNum = []int{500000, 1000000, 1500000, 2000000, 2500000, 3000000}
-	for _, num := range insertNum {
+	//var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	var queryNum = []int{9000}
+	for _, num := range queryNum {
 		filePath := "data/levelDB/config" + strconv.Itoa(num) + ".txt" //存储seHash和dbPath的文件路径
 		//siMode := "meht" //辅助索引类型，meht或mpt
 		//siMode := "mpt"
@@ -120,18 +89,17 @@ func main() {
 		//}
 		var start time.Time
 		var duration time.Duration = 0
-		kvPairCh := make(chan *util.KVPair)
+		queryCh := make(chan string)
 
 		//go allocateJsonFiles(kvPairsJsonFiles)
-		go allocateNFTOwner("data/nft-owner", num, kvPairCh)
+		go allocateQueryOwner("data/nft-owner", num, queryCh)
 		start = time.Now()
-		createWorkerPool(numOfWorker, seDB, kvPairCh)
+		createWorkerPool(numOfWorker, seDB, queryCh)
 		seDB.WriteSEDBInfoToFile(filePath)
 		duration = time.Since(start)
-		util.WriteResultToFile("data/result", argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
+		util.WriteResultToFile("data/qresult", argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
 			duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps.")
-		fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
-		os.RemoveAll("data/levelDB/testSEDB")
+		fmt.Println("Query ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
 		seDB = nil
 	}
 

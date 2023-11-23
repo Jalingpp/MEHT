@@ -66,7 +66,10 @@ func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
 	ret := 0
 	power := ComputeStrideByBase(rdx)
 	keyPoint := len(str) - power*offset - (power - 1)
-	startPos := max(0, keyPoint)
+	var startPos = 0
+	if keyPoint > 0 {
+		startPos = keyPoint
+	}
 	doNum := power
 	if keyPoint < 0 { // 如果起始位置小于0,则从0位开始但截取长度比原先少了起始位置与0的距离的长度
 		doNum += keyPoint

@@ -1,1 +1,1 @@
-,data/levelDB/testSEDB
+,data/levelDB/PrimaryDB,data/levelDB/SecondaryDB

@@ -171,9 +171,18 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 				bucketss[0][0].UpdateBucketToDB(db, cache) // 更新桶
 				bucketss = [][]*Bucket{{bucket}}
 			} else {
-				newld := min(bucketss[0][0].GetLD(), bucketss[0][1].GetLD()) + len(bucketss) - 1
+				var newld int
+				ld1 := bucketss[0][0].GetLD()
+				ld2 := bucketss[0][1].GetLD()
+				if ld1 < ld2 {
+					newld = ld1 + len(bucketss) - 1
+				} else {
+					newld = ld2 + len(bucketss) - 1
+				}
 				seh.latch.Lock()
-				seh.gd = max(seh.gd, newld)
+				if seh.gd < newld {
+					seh.gd = newld
+				}
 				//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
 				for i, buckets := range bucketss {
 					var bkey string

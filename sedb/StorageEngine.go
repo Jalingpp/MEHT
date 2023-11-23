@@ -125,25 +125,25 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 }
 
 // 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
-func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
+func (se *StorageEngine) Insert(kvpair *util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
 	//插入主键索引
 	//如果是第一次插入
-	if se.GetPrimaryIndex(db) == nil && se.latch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
+	if se.GetPrimaryIndex(primaryDb) == nil && se.latch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
 		//创建一个新的主键索引
 		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
-		se.primaryIndex = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
+		se.primaryIndex = mpt.NewMPT(primaryDb, se.cacheEnable, shortNodeCC, fullNodeCC)
 		se.latch.Unlock()
 	}
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
-	oldvalue, oldprimaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
+	oldvalue, oldprimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvpair.GetKey(), primaryDb)
 	if oldvalue == kvpair.GetValue() {
 		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 		return oldprimaryProof, nil, nil
 	}
 	//将KV插入到主键索引中
-	se.primaryIndex.Insert(kvpair, db)
+	se.primaryIndex.Insert(kvpair, primaryDb)
 	se.updateLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
 	se.primaryIndex.GetUpdateLatch().Lock()
 	piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
@@ -160,7 +160,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 
 		//插入到mpt类型的非主键索引中
 		//_, mptProof := se.InsertIntoMPT(reversedKV, db)
-		se.InsertIntoMPT(reversedKV, db)
+		se.InsertIntoMPT(reversedKV, secondaryDb)
 		//打印插入结果
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//mptProof.PrintMPTProof()
@@ -171,7 +171,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 	} else if se.secondaryIndexMode == "meht" {
 		//var mehtProof *meht.MEHTProof
 		//_, mehtProof  = se.InsertIntoMEHT(reversedKV, db)
-		se.InsertIntoMEHT(reversedKV, db)
+		se.InsertIntoMEHT(reversedKV, secondaryDb)
 		//打印插入结果
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//meht.PrintMEHTProof(mehtProof)

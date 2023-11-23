@@ -112,7 +112,8 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	for sedb.se == nil {
 	} // 其余线程等待se创建
 	//向StorageEngine中插入一条记录
-	primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
+	//primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
+	sedb.GetStorageEngine().Insert(kvpair, sedb.db)
 	//更新seHash，并将se更新至db
 	sedb.se.UpdateStorageEngineToDB(sedb.db) // 保证sedb留存的seHash与se实际的Hash一致
 	sedb.updateLatch.Lock()
@@ -120,11 +121,12 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	sedb.seHash = sedb.se.seHash
 	sedb.se.updateLatch.Unlock()
 	sedb.updateLatch.Unlock()
-	var pProof []*mpt.MPTProof
-	pProof = append(pProof, primaryProof)
-	sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)
+	//var pProof []*mpt.MPTProof
+	//pProof = append(pProof, primaryProof)
+	//sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)
 	//返回插入结果
-	return sedbProof
+	//return sedbProof
+	return nil
 }
 
 // QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair

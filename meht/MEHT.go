@@ -122,15 +122,16 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		defer meht.seh.latch.Unlock()
 		//插入KV到SEH
 		bucketss, _, _, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
-		merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
+		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
-		return bucketss[0][0], kvpair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
+		//mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
+		//return bucketss[0][0], kvpair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
+		return bucketss[0][0], kvpair.GetValue(), nil
 	}
 	for meht.GetSEH(db).bucketsNumber == 0 { // 等待最初的桶建成
 	}
@@ -167,13 +168,14 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		//meht.seh.latch.RUnlock()
 		//kvbucket.latch.RLock() //这里其实可以不锁，因为mgt锁住其实就已经不可能有正式桶插入了，而且不锁的话可以在这部分获取proof的同时让其他插入线程继续在这个桶委托，等待一并插入
 		//kvbucket.mtLatch.RLock() //这里其实可以不锁，因为只有桶插入才会引发树更新，但是mgt锁住其实就已经不可能正式执行桶插入了
-		merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
-		segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
-		mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
+		//merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
+		//segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
+		//mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
 		//kvbucket.mtLatch.RUnlock()
 		//kvbucket.latch.RUnlock()
 		meht.mgt.latch.RUnlock()
-		return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		//return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		return kvbucket, kvpair.GetValue(), nil
 	}
 }
 

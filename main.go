@@ -82,7 +82,10 @@ func main() {
 	}
 	var insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
 	//var queryNum = []int{500000, 1000000, 1500000, 2000000, 2500000, 3000000}
-	for _, num := range insertNum {
+	for i, num := range insertNum {
+		if i == 0 {
+			continue
+		}
 		filePath := "data/levelDB/config.txt" //存储seHash和dbPath的文件路径
 		//siMode := "meht" //辅助索引类型，meht或mpt
 		//siMode := "mpt"
@@ -135,7 +138,7 @@ func main() {
 		util.WriteResultToFile("data/result", argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 			duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps.")
 		fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
-		os.RemoveAll("data/levelDB")
+		os.RemoveAll("data/levelDB/testSEDB")
 		seDB = nil
 	}
 

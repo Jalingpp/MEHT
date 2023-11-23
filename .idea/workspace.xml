@@ -5,20 +5,33 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="31007cdf-ffa3-4cdb-9791-e94d0e0f2c01" name="更改" comment="">
+      <change afterPath="$PROJECT_DIR$/test_query.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/test_query_without_vo.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/util/sizeOf.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/result" beforeDir="false" afterPath="$PROJECT_DIR$/data/result" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/config9000.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config9000.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/result" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MEHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MEHT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mpt/MPT.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mpt/MPTNode.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTNode.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mht/MHTProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/mht/MHTProof.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/mpt/MPTProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTProof.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/SEDB.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDB.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/sedb/SEDBProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDBProof.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/test_insertion.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_insertion.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_query,go.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_query,go.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/util/RW.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/RW.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_query,go.go" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
     <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Go File" />
+      </list>
+    </option>
   </component>
   <component name="GOROOT" url="file://$PROJECT_DIR$/../../../../Program Files/Go" />
   <component name="Git.Settings">
@@ -33,26 +46,27 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
-    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;zyfChange&quot;,
-    &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
-    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/Lenovo&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.general&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "DefaultGoTemplateProperty": "Go File",
+    "RunOnceActivity.OpenProjectViewOnStart": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.go.formatter.settings.were.checked": "true",
+    "RunOnceActivity.go.migrated.go.modules.settings": "true",
+    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
+    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
+    "WebServerToolWindowFactoryState": "false",
+    "git-widget-placeholder": "zyfChange",
+    "go.import.settings.migrated": "true",
+    "go.sdk.automatically.set": "true",
+    "last_opened_file_path": "C:/Users/Lenovo",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "settings.editor.selected.configurable": "preferences.general"
   }
-}</component>
-  <component name="RunManager">
-    <configuration name="go build MEHT" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
+}]]></component>
+  <component name="RunManager" selected="Go 构建.go build insertion">
+    <configuration name="go build insertion" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true">
       <module name="MEHT" />
       <working_directory value="$PROJECT_DIR$" />
       <kind value="FILE" />
@@ -61,9 +75,22 @@
       <filePath value="$PROJECT_DIR$/test_insertion.go" />
       <method v="2" />
     </configuration>
+    <configuration name="go build query" type="GoApplicationRunConfiguration" factoryName="Go Application">
+      <module name="MEHT" />
+      <working_directory value="$PROJECT_DIR$" />
+      <kind value="FILE" />
+      <package value="MEHT" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$/test_query.go" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Go 构建.go build query" />
+      <item itemvalue="Go 构建.go build insertion" />
+    </list>
     <recent_temporary>
       <list>
-        <item itemvalue="Go 构建.go build MEHT" />
+        <item itemvalue="Go 构建.go build insertion" />
       </list>
     </recent_temporary>
   </component>

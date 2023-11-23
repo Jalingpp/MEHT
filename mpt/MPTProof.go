@@ -1,6 +1,9 @@
 package mpt
 
-import "fmt"
+import (
+	"MEHT/util"
+	"fmt"
+)
 
 //func (mptProof *MPTProof) PrintMPTProof() {}： 打印 MPTProof
 
@@ -16,10 +19,27 @@ type ProofElement struct {
 	childrenHashes [16][]byte // children hashes of branch node
 }
 
+func (proofElement *ProofElement) GetSizeOf() uint {
+	ret := 2*util.SIZEOFINT + uint(len(proofElement.prefix)+len(proofElement.suffix))*util.SIZEOFBYTE +
+		uint(len(proofElement.value)+len(proofElement.nextNodeHash))*util.SIZEOFBYTE
+	for _, hash := range proofElement.childrenHashes {
+		ret += uint(len(hash)) * util.SIZEOFBYTE
+	}
+	return ret
+}
+
 type MPTProof struct {
 	isExist bool            //是否存在
 	levels  int             //证明的最高level
 	proofs  []*ProofElement //存在证明的elements
+}
+
+func (mptProof *MPTProof) GetSizeOf() uint {
+	ret := util.SIZEOFBOOL + util.SIZEOFINT
+	for _, proof := range mptProof.proofs {
+		ret += proof.GetSizeOf()
+	}
+	return ret
 }
 
 func NewProofElement(level int, proofType int, prefix string, suffix string, value []byte, nextNodeHash []byte, childrenHashes [16][]byte) *ProofElement {

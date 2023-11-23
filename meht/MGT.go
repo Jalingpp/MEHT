@@ -400,6 +400,10 @@ type MGTProof struct {
 	dataHash []byte //哈希值
 }
 
+func (mgtProof *MGTProof) GetSizeOf() uint {
+	return util.SIZEOFINT + uint(len(mgtProof.dataHash))*util.SIZEOFBYTE
+}
+
 // 给定bucketKey，返回它的mgtRootHash和mgtProof，不存在则返回nil
 func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, cache *[]interface{}) ([]byte, []MGTProof) {
 	//跳转到此函数时已对MGT加锁

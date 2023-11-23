@@ -443,6 +443,9 @@ func (b *Bucket) GetProof(segkey string, isSegExist bool, index int, db *leveldb
 		segRootHashes := make([][]byte, 0)
 		for segkey := range b.merkleTrees {
 			segKeys = append(segKeys, segkey)
+			b.mtLatch.Lock()
+			segHash := b.GetMerkleTree(segkey, db, cache)
+			b.mtLatch.Unlock()
 			segRootHashes = append(segRootHashes, segHash.GetRootHash())
 		}
 		return nil, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)

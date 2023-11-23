@@ -1,0 +1,1 @@
+siMode: mpt,	rdx: 16,	bc: 1280,	bs: 1,	cacheEnable: true,	shortNodeCacheCapacity: 128000,	fullNodeCacheCapacity: 128000,	mgtNodeCacheCapacity100000,	bucketCacheCapacity: 128000,	segmentCacheCapacity: 128000,	merkleTreeCacheCapacity: 128000,	numOfThread: 2.	Insert 9000 records in 532.1808ms, throughput = 16911.54585058311 tps.

@@ -1,8 +1,14 @@
 package mht
 
+import "MEHT/util"
+
 type ProofPair struct {
 	Index int    //0表示左子节点,1表示右子节点
 	Hash  []byte //左子节点或右子节点的哈希值
+}
+
+func (proofPair *ProofPair) GetSizeOf() uint {
+	return util.SIZEOFINT + uint(len(proofPair.Hash))*util.SIZEOFBYTE
 }
 
 type MHTProof struct {
@@ -14,6 +20,23 @@ type MHTProof struct {
 
 	segKeys       []string //所有segment的segkey，在segment不存在时有效
 	segRootHashes [][]byte //所有segment的根哈希，在segment不存在时有效，用于计算segment的默克尔树根
+}
+
+func (mhtProof *MHTProof) GetSizeOf() uint {
+	ret := 2 * util.SIZEOFBOOL
+	for _, proofPair := range mhtProof.proofPairs {
+		ret += proofPair.GetSizeOf()
+	}
+	for _, value := range mhtProof.values {
+		ret += uint(len(value)) * util.SIZEOFBYTE
+	}
+	for _, segKey := range mhtProof.segKeys {
+		ret += uint(len(segKey)) * util.SIZEOFBYTE
+	}
+	for _, hash := range mhtProof.segRootHashes {
+		ret += uint(len(hash)) * util.SIZEOFBYTE
+	}
+	return ret
 }
 
 // 新建一个MHTProof

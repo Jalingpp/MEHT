@@ -12,6 +12,18 @@ type SEDBProof struct {
 	secondaryMEHTIndexProof *meht.MEHTProof //meht类型的辅助索引的证明
 }
 
+func (sedbProof *SEDBProof) GetSizeOf() (ret uint) {
+	if sedbProof.secondaryMPTIndexProof != nil {
+		ret += sedbProof.secondaryMPTIndexProof.GetSizeOf()
+	} else if sedbProof.secondaryMEHTIndexProof != nil {
+		ret += sedbProof.secondaryMEHTIndexProof.GetSizeOf()
+	}
+	for _, proof := range sedbProof.primaryIndexProof {
+		ret += proof.GetSizeOf()
+	}
+	return
+}
+
 // NewSEDBProof() *SEDBProof: 返回一个新的SEDBProof
 func NewSEDBProof(pProof []*mpt.MPTProof, sMPTProof *mpt.MPTProof, sMEHTProof *meht.MEHTProof) *SEDBProof {
 	return &SEDBProof{pProof, sMPTProof, sMEHTProof}

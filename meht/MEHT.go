@@ -194,6 +194,17 @@ type MEHTProof struct {
 	mgtProof    []MGTProof
 }
 
+func (mehtProof *MEHTProof) GetSizeOf() uint {
+	ret := uint(len(mehtProof.segRootHash)+len(mehtProof.mgtRootHash)) * util.SIZEOFBYTE
+	if mehtProof.mhtProof != nil {
+		mehtProof.mhtProof.GetSizeOf()
+	}
+	for _, proof := range mehtProof.mgtProof {
+		ret += proof.GetSizeOf()
+	}
+	return ret
+}
+
 // 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
 func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket

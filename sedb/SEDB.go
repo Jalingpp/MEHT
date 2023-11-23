@@ -155,7 +155,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		secondaryMEHTProof = nil
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			fmt.Println("No such key!")
+			//fmt.Println("No such key!")
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
 		}
 		primarykeys := strings.Split(primaryKey, ",")
@@ -188,7 +188,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		}(ch)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			fmt.Println("No such key!")
+			//fmt.Println("No such key!")
 		} else {
 			primarykeys := strings.Split(primaryKey, ",")
 			wg.Add(len(primarykeys))

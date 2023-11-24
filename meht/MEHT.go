@@ -126,7 +126,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
-		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx)
+		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		//mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
@@ -426,76 +426,3 @@ func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
 		panic(err)
 	}
 }
-
-// func main() {
-
-//new a database
-// dbPath := "data/levelDB/test"
-// db, err := leveldb.OpenFile(dbPath, nil)
-// if err != nil {
-// 	fmt.Printf("OpenDB error: %v\n", err)
-// 	return
-// }
-
-//测试MEHT
-//创建一个bucket
-// MEHT := meht.NewMEHT(mehtName, 2, 2, 1) //rdx,capacity,segNum
-
-// var MEHT *meht.MEHT
-// seTest := sedb.NewStorageEngine("meht", mehtName, 2, 2, 1)
-// MEHT = seTest.GetSecondaryIndex_meht(db)
-// if MEHT == nil {
-// 	fmt.Printf("meht is nil, new meht\n")
-// 	MEHT = meht.NewMEHT(mehtName, 2, 2, 1) //rdx, bc, bs
-// }
-// //创建4个KVPair
-// kvpair1 := util.NewKVPair("0000", "value1")
-// kvpair2 := util.NewKVPair("1001", "value2")
-// kvpair3 := util.NewKVPair("0010", "value3")
-// kvpair4 := util.NewKVPair("0000", "value4")
-
-// MEHT.SetSEH(nil)
-// MEHT.SetMGT(nil)
-
-// MEHT.PrintMEHT(db)
-
-// //插入kvpair1到MEHT
-// MEHT.Insert(kvpair1, db)
-// //打印整个MEHT
-// MEHT.PrintMEHT(db)
-
-// // 插入kvpair2到MEHT
-// MEHT.Insert(kvpair2, db)
-// // 打印整个MEHT
-// MEHT.PrintMEHT(db)
-
-// //插入kvpair3到MEHT
-// MEHT.Insert(kvpair3, db)
-// //打印整个MEHT
-// MEHT.PrintMEHT(db)
-
-// //插入kvpair4到MEHT
-// MEHT.Insert(kvpair4, db)
-// // //打印整个MEHT
-// MEHT.PrintMEHT(db)
-
-// MEHT.UpdateMEHTToDB(db)
-
-// //查询kvpair1
-// qv1, bucket1, segkey1, isSegExist1, index1 := MEHT.QueryValueByKey(kvpair1.GetKey(), db)
-// //获取查询证明
-// qpf1 := MEHT.GetQueryProof(bucket1, segkey1, isSegExist1, index1, db)
-// //打印查询结果
-// meht.PrintQueryResult(kvpair1.GetKey(), qv1, qpf1)
-// //验证查询结果
-// meht.VerifyQueryResult(qv1, qpf1)
-
-// //查询kvpair1
-// qv2, bucket2, segkey2, isSegExist2, index2 := MEHT.QueryValueByKey(kvpair2.GetKey(), db)
-// //获取查询证明
-// qpf2 := MEHT.GetQueryProof(bucket2, segkey2, isSegExist2, index2, db)
-// //打印查询结果
-// meht.PrintQueryResult(kvpair2.GetKey(), qv2, qpf2)
-// //验证查询结果
-// meht.VerifyQueryResult(qv2, qpf2)
-// }

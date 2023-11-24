@@ -51,8 +51,10 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	var siModeOptions = []string{"", "mpt"}
+	//var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	var queryNum = []int{1200000}
+	//var siModeOptions = []string{"", "mpt"}
+	var siModeOptions = []string{""}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径

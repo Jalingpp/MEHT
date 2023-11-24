@@ -5,21 +5,25 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="31007cdf-ffa3-4cdb-9791-e94d0e0f2c01" name="更改" comment="">
-      <change afterPath="$PROJECT_DIR$/test_query.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/test_query_without_vo.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/util/sizeOf.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/config9000.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config9000.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/result" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/000062.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/CURRENT" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/CURRENT" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/CURRENT.bak" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/CURRENT.bak" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/LOG" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/LOG" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/PrimaryDB9000/MANIFEST-000063" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/000020.log" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/CURRENT" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/CURRENT" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/CURRENT.bak" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/CURRENT.bak" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/LOG" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/LOG" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/SecondaryDB9000/MANIFEST-000021" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/levelDB/config1200000.txt" beforeDir="false" afterPath="$PROJECT_DIR$/data/levelDB/config1200000.txt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MEHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MEHT.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mht/MHTProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/mht/MHTProof.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mpt/MPTProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTProof.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sedb/SEDB.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDB.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sedb/SEDBProof.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDBProof.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_insertion.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_insertion.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_query,go.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/SEH.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/SEH.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_query.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_query.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_query_without_vo.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_query_without_vo.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -46,26 +50,26 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "DefaultGoTemplateProperty": "Go File",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.go.formatter.settings.were.checked": "true",
-    "RunOnceActivity.go.migrated.go.modules.settings": "true",
-    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
-    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "git-widget-placeholder": "zyfChange",
-    "go.import.settings.migrated": "true",
-    "go.sdk.automatically.set": "true",
-    "last_opened_file_path": "C:/Users/Lenovo",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "settings.editor.selected.configurable": "preferences.general"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;DefaultGoTemplateProperty&quot;: &quot;Go File&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;zyfChange&quot;,
+    &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
+    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Lenovo&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.general&quot;
   }
-}]]></component>
-  <component name="RunManager" selected="Go 构建.go build insertion">
+}</component>
+  <component name="RunManager" selected="Go 构建.go build test_query_without_vo.go">
     <configuration name="go build insertion" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true">
       <module name="MEHT" />
       <working_directory value="$PROJECT_DIR$" />
@@ -84,8 +88,18 @@
       <filePath value="$PROJECT_DIR$/test_query.go" />
       <method v="2" />
     </configuration>
+    <configuration name="go build test_query_without_vo.go" type="GoApplicationRunConfiguration" factoryName="Go Application" nameIsGenerated="true">
+      <module name="MEHT" />
+      <working_directory value="$PROJECT_DIR$" />
+      <kind value="FILE" />
+      <package value="MEHT" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$/test_query_without_vo.go" />
+      <method v="2" />
+    </configuration>
     <list>
       <item itemvalue="Go 构建.go build query" />
+      <item itemvalue="Go 构建.go build test_query_without_vo.go" />
       <item itemvalue="Go 构建.go build insertion" />
     </list>
     <recent_temporary>

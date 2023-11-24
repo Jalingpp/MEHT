@@ -42,8 +42,10 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	var siModeOptions = []string{"", "mpt"}
+	//var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	//var siModeOptions = []string{"", "mpt"}
+	var queryNum = []int{9000}
+	var siModeOptions = []string{""}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径
@@ -84,11 +86,9 @@ func main() {
 			var start time.Time
 			var duration time.Duration = 0
 			queryCh := make(chan string)
-			done := make(chan bool)
 			go allocateQueryOwner("data/nft-owner", num, queryCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh)
-			<-done
 			seDB.WriteSEDBInfoToFile(filePath)
 			duration = time.Since(start)
 			util.WriteResultToFile("data/qresult"+siModeOption+"WithoutVO", argsString+"\tQuery "+strconv.Itoa(num)+" records in "+

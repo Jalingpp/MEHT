@@ -52,21 +52,23 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret := seh.ht[bucketKey]
 	if ret == nil {
-		var ok bool
-		key_ := seh.name + "bucket" + bucketKey
-		if cache != nil {
-			targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
-			ret, ok = targetCache.Get(key_)
-		}
-		if !ok {
-			if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
-				bucket, _ := DeserializeBucket(bucketString)
-				ret = bucket
-			} else {
-				ret = seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache)
-			}
+		return seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache)
+	} else if ret != dummyBucket {
+		return ret
+	}
+	var ok bool
+	key_ := seh.name + "bucket" + bucketKey
+	if cache != nil {
+		targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
+		ret, ok = targetCache.Get(key_)
+	}
+	if !ok {
+		if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
+			bucket, _ := DeserializeBucket(bucketString)
+			ret = bucket
 		}
 	}
+	seh.ht[bucketKey] = ret
 	return ret
 }
 
@@ -81,12 +83,9 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{})
 	} else {
 		bkey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
 	}
+	seh.updateLatch.Lock()
+	defer seh.updateLatch.Unlock()
 	return seh.GetBucket(bkey, db, cache)
-	//不在ht中保存跳转桶
-	//if seh.GetBucket(bkey, db) == nil {
-	//	return nil
-	//}
-	//return seh.ht[bkey]
 }
 
 // GetGD returns the global depth of the SEH
@@ -255,10 +254,12 @@ func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 	}
 	fmt.Printf("SEH: gd=%d, rdx=%d, bucketCapacity=%d, bucketSegNum=%d, bucketsNumber=%d\n", seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, seh.bucketsNumber)
 	seh.latch.RLock()
+	seh.updateLatch.Lock()
 	for k := range seh.ht {
 		fmt.Printf("bucketKey=%s\n", k)
 		seh.GetBucket(k, db, cache).PrintBucket(db, cache)
 	}
+	seh.updateLatch.Unlock()
 	seh.latch.RUnlock()
 }
 
@@ -304,67 +305,8 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		if htKeys[i] == "" && seSEH.Gd > 0 {
 			continue
 		} else {
-			seh.ht[htKeys[i]] = nil
+			seh.ht[htKeys[i]] = dummyBucket
 		}
 	}
 	return seh, nil
 }
-
-// import (
-// 	"MEHT/meht"
-// 	"MEHT/util"
-// 	"encoding/hex"
-// 	"fmt"
-// )
-
-// func main() {
-//测试SEH
-// var seh *meht.SEH
-// mehtTest := meht.NewMEHT(mehtName, 2, 2, 1)
-// mehtTest.SetSEH(nil)
-// seh = mehtTest.GetSEH(db)
-// if seh == nil {
-// 	fmt.Printf("seh is nil, new seh\n")
-// 	seh = meht.NewSEH(mehtName, 2, 2, 1) //rdx, bc, bs
-// }
-
-// //打印SEH
-// seh.PrintSEH(db)
-
-// kvpair1 := util.NewKVPair("1000", "value5")
-// kvpair2 := util.NewKVPair("1001", "value6")
-// // kvpair1 := util.NewKVPair("0000", "value1")
-// // kvpair2 := util.NewKVPair("0001", "value2")
-// kvpair3 := util.NewKVPair("0010", "value3")
-// kvpair4 := util.NewKVPair("0011", "value4")
-
-// //插入kvpair1
-// _, insertedV1, _, _ := seh.Insert(kvpair1, db)
-// //输出插入的bucketkey,插入的value,segRootHash,proof
-// fmt.Printf("kvpair1 has been inserted into bucket %s: insertedValue=%s\n", util.IntArrayToString(seh.GetBucketByKey(kvpair1.GetKey(), db).GetBucketKey()), insertedV1)
-// fmt.Printf("----------------------------------------------------------------------------------------------------------------------------\n")
-
-// //插入kvpair1
-// _, insertedV2, _, _ := seh.Insert(kvpair2, db)
-// //输出插入的bucketkey,插入的value,segRootHash,proof
-// fmt.Printf("kvpair2 has been inserted into bucket %s: insertedValue=%s\n", util.IntArrayToString(seh.GetBucketByKey(kvpair2.GetKey(), db).GetBucketKey()), insertedV2)
-// fmt.Printf("----------------------------------------------------------------------------------------------------------------------------\n")
-
-// //插入kvpair1
-// _, insertedV3, _, _ := seh.Insert(kvpair3, db)
-// //输出插入的bucketkey,插入的value,segRootHash,proof
-// fmt.Printf("kvpair3 has been inserted into bucket %s: insertedValue=%s\n", util.IntArrayToString(seh.GetBucketByKey(kvpair3.GetKey(), db).GetBucketKey()), insertedV3)
-// fmt.Printf("----------------------------------------------------------------------------------------------------------------------------\n")
-
-// //插入kvpair1
-// _, insertedV4, _, _ := seh.Insert(kvpair4, db)
-// //输出插入的bucketkey,插入的value,segRootHash,proof
-// fmt.Printf("kvpair4 has been inserted into bucket %s: insertedValue=%s\n", util.IntArrayToString(seh.GetBucketByKey(kvpair4.GetKey(), db).GetBucketKey()), insertedV4)
-// fmt.Printf("----------------------------------------------------------------------------------------------------------------------------\n")
-
-// //打印SEH
-// seh.PrintSEH(db)
-
-// seh.UpdateSEHToDB(db)
-
-// }

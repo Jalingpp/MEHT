@@ -84,16 +84,25 @@ func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) {
 	for mpt.root == nil {
 	} // 等待最先拿到mpt锁的线程新建一个树根
 	//如果不是第一次插入，递归插入
-	mpt.root = mpt.RecursiveInsertShortNode("", kvpair.GetKey(), []byte(kvpair.GetValue()), mpt.GetRoot(db), db)
+	oldValueAddedFlag := false
+	mpt.root = mpt.RecursiveInsertShortNode("", kvpair.GetKey(), []byte(kvpair.GetValue()), mpt.GetRoot(db), db, &oldValueAddedFlag)
 	//更新mpt根哈希并更新到数据库
 	mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
 }
 
 // 递归插入当前MPT Node
-func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cnode *ShortNode, db *leveldb.DB) *ShortNode {
+func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cnode *ShortNode, db *leveldb.DB, flag *bool) *ShortNode {
 	//如果当前节点是叶子节点
 	cnode.latch.Lock()
 	defer cnode.latch.Unlock()
+	if flag != nil && !(*flag) {
+		val, _ := mpt.QueryByKey(prefix+suffix, db, true)
+		toAdd := util.NewKVPair(prefix+suffix, val)
+		toAdd.AddValue(string(value))
+		value = []byte(toAdd.GetValue())
+		*flag = true
+		fmt.Println(prefix+suffix, string(value))
+	}
 	if cnode.isLeaf {
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if strings.Compare(cnode.suffix, suffix) == 0 {
@@ -239,7 +248,7 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			newsuffix = ""
 		}
 		if childNode != nil {
-			childnode = mpt.RecursiveInsertShortNode(prefix+suffix[:1], newsuffix, value, childNode, db)
+			childnode = mpt.RecursiveInsertShortNode(prefix+suffix[:1], newsuffix, value, childNode, db, nil)
 		} else {
 			childnode = NewShortNode(prefix+suffix[:1], true, newsuffix, nil, value, db, mpt.cache)
 		}
@@ -357,19 +366,21 @@ func (mpt *MPT) RecursivePrintFullNode(cnode *FullNode, level int, db *leveldb.D
 }
 
 // 根据key查询value，返回value和证明
-func (mpt *MPT) QueryByKey(key string, db *leveldb.DB) (string, *MPTProof) {
+func (mpt *MPT) QueryByKey(key string, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
 	//如果MPT为空，返回空
 	if root := mpt.GetRoot(db); root == nil {
 		return "", &MPTProof{false, 0, nil}
 	} else {
 		//递归查询
-		return mpt.RecursiveQueryShortNode(key, 0, 0, root, db)
+		return mpt.RecursiveQueryShortNode(key, 0, 0, root, db, isLockFree)
 	}
 }
 
-func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *ShortNode, db *leveldb.DB) (string, *MPTProof) {
-	cnode.latch.RLock()
-	defer cnode.latch.RUnlock()
+func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *ShortNode, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
+	if !isLockFree {
+		cnode.latch.RLock()
+		defer cnode.latch.RUnlock()
+	}
 	if cnode == nil {
 		return "", &MPTProof{false, 0, nil}
 	}
@@ -390,7 +401,7 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *Sho
 		//当前节点的suffix被key的suffix完全包含，则继续递归查询nextNode，将子查询结果与当前结果合并返回
 		if cnode.suffix == "" || p < len(key) && len(util.CommPrefix(cnode.suffix, key[p:])) == len(cnode.suffix) {
 			nextNode := cnode.GetNextNode(db, mpt.cache)
-			valuestr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cnode.suffix), level+1, nextNode, db)
+			valuestr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cnode.suffix), level+1, nextNode, db, isLockFree)
 			proofElements := append(mptProof.GetProofs(), proofElement)
 			return valuestr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
 		} else {
@@ -399,9 +410,11 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *Sho
 	}
 }
 
-func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cnode *FullNode, db *leveldb.DB) (string, *MPTProof) {
-	cnode.latch.RLock()
-	defer cnode.latch.RUnlock()
+func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cnode *FullNode, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
+	if !isLockFree {
+		cnode.latch.RLock()
+		defer cnode.latch.RUnlock()
+	}
 	proofElement := NewProofElement(level, 2, "", "", cnode.value, nil, cnode.childrenHash)
 	if p >= len(key) {
 		//判断当前FullNode是否有value，如果有，构造存在证明返回
@@ -417,7 +430,7 @@ func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cnode *Full
 		return "", &MPTProof{false, level, []*ProofElement{proofElement}}
 	}
 	//如果当前FullNode的children中有对应的key[p]，则递归查询children，将子查询结果与当前结果合并返回
-	valuestr, mptProof := mpt.RecursiveQueryShortNode(key, p+1, level+1, childNodeP, db)
+	valuestr, mptProof := mpt.RecursiveQueryShortNode(key, p+1, level+1, childNodeP, db, isLockFree)
 	proofElements := append(mptProof.GetProofs(), proofElement)
 	return valuestr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
 }

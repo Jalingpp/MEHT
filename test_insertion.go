@@ -46,7 +46,7 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	var insertNum = []int{16}
 	var siModeOptions = []string{"", "mpt"}
 	for i, siModeOption := range siModeOptions {
 		if i == 0 {
@@ -95,7 +95,7 @@ func main() {
 			var start time.Time
 			var duration time.Duration = 0
 			kvPairCh := make(chan *util.KVPair)
-			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
+			go allocateNFTOwner("data/nft-owner_", num, kvPairCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh)
 			seDB.WriteSEDBInfoToFile(filePath)

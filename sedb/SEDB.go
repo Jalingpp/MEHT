@@ -154,7 +154,7 @@ func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, loc
 
 func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
 	for primaryKey := range primaryKeyCh {
-		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb)
+		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb, false)
 		//用qV和primarykeys[i]构造一个kvpair
 		kvpair := util.NewKVPair(primaryKey, qV)
 		lock.Lock()
@@ -166,6 +166,8 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 	}
 	wg.Done()
 }
+
+var sum = 0
 
 // QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
@@ -180,15 +182,16 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var primaryProof []*mpt.MPTProof
 	var queryResult []*util.KVPair
 	var lock sync.Mutex
-	var primaryKeyCh chan string
+	primaryKeyCh := make(chan string)
 	if sedb.siMode == "mpt" {
 		//now := time.Now()
-		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb)
+		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb, false)
 		//fmt.Println("secondMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		secondaryMEHTProof = nil
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			//fmt.Println("No such key!")
+			//sum++
+			//fmt.Println("No such key!", "     ", sum)
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")
@@ -213,7 +216,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		}(ch)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			//fmt.Println("No such key!")
+			sum++
+			fmt.Println("No such key!", "     ", sum)
 		} else {
 			primaryKeys := strings.Split(primaryKey, ",")
 			//now := time.Now()

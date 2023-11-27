@@ -137,9 +137,9 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, primaryDb *leveldb.DB, seco
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
-	oldvalue, oldprimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvpair.GetKey(), primaryDb)
+	oldvalue, oldprimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvpair.GetKey(), primaryDb, false)
 	if oldvalue == kvpair.GetValue() {
-		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+		fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 		return oldprimaryProof, nil, nil
 	}
 	//将KV插入到主键索引中
@@ -197,14 +197,14 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 	for se.secondaryIndex_mpt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvpair.GetKey(), db)
+	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvpair.GetKey(), db, false)
 	//用原有values构建待插入的kvpair
 	insertedKV := util.NewKVPair(kvpair.GetKey(), values)
 	//将新的value插入到kvpair中
 	isChange := insertedKV.AddValue(kvpair.GetValue())
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
-		se.secondaryIndex_mpt.Insert(insertedKV, db)
+		se.secondaryIndex_mpt.Insert(kvpair, db)
 		se.updateLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
 		se.secondaryIndex_mpt.GetUpdateLatch().Lock()
 		seHash := sha256.Sum256(se.secondaryIndex_mpt.GetRootHash())

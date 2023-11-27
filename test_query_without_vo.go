@@ -18,9 +18,16 @@ func main() {
 		}
 		close(queryCh)
 	}
+	//allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
+	//	queries := util.ReadQueryFromFile(dirPath, opNum)
+	//	for _, query := range queries {
+	//		queryCh <- query
+	//	}
+	//	close(queryCh)
+	//}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string) {
 		for query := range queryCh {
-			seDB.QueryKVPairsByHexKeyword(query)
+			seDB.QueryKVPairsByHexKeyword(util.StringToHex(query))
 		}
 		wg.Done()
 	}
@@ -44,8 +51,8 @@ func main() {
 	}
 	//var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
 	//var siModeOptions = []string{"", "mpt"}
-	var queryNum = []int{9000}
-	var siModeOptions = []string{""}
+	var queryNum = []int{16}
+	var siModeOptions = []string{"mpt"}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径
@@ -86,7 +93,8 @@ func main() {
 			var start time.Time
 			var duration time.Duration = 0
 			queryCh := make(chan string)
-			go allocateQueryOwner("data/nft-owner", num, queryCh)
+			//go allocateQuery("data/query-owner", num, queryCh)
+			go allocateQueryOwner("data/query-owner_", num, queryCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh)
 			seDB.WriteSEDBInfoToFile(filePath)

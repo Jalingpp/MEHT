@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -56,6 +57,24 @@ func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []*KVPair) {
 
 func ReadQueryOwnerFromFile(filepath string, num int) (ret []string) {
 	content, err := os.ReadFile(filepath)
+	if err != nil {
+		panic(err)
+	}
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		if len(line) == 0 || i == num {
+			break
+		}
+		ret = append(ret, Strip(line, "\r"))
+	}
+	return
+}
+
+func ReadQueryFromFile(dirPath string, num int) (ret []string) {
+	if dirPath[len(dirPath)-1] != '/' || dirPath[len(dirPath)-1] != '\\' {
+		dirPath = (" " + dirPath[:len(dirPath)-1])[1:] + string(os.PathSeparator)
+	}
+	content, err := os.ReadFile(dirPath + "query-" + strconv.Itoa(num/10000) + "W")
 	if err != nil {
 		panic(err)
 	}

@@ -3,3 +3,10 @@ data/nft-owner
 data/query-owner
 
 data/levelDB/*
+
+data/query-120W
+data/query-90W
+data/query-30W
+data/query-60W
+data/query-150W
+data/OK

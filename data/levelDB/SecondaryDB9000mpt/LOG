@@ -98,3 +98,25 @@
 19:20:18.196393 table@build created L1@35 N·8967 S·2MiB "\"<\xfc..L\x86\xe9,v17779":"3no..\xc8\xc5e,v131973"
 19:20:18.279797 table@build created L1@36 N·8969 S·2MiB "3n\xb5..)\x1a\xb5,v124989":"D\xd3{..bƁ,v49125"
 19:20:18.375166 table@build created L1@37 N·8939 S·2MiB "Dӝ..:\x836,v45194":"U\xea`..\x82\xb8h,v108099"
+=============== Nov 27, 2023 (CST) ===============
+09:49:02.855474 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+09:49:02.863516 version@stat F·[7 5] S·28MiB[18MiB 9MiB] Sc·[1.75 0.10]
+09:49:02.863516 db@open opening
+09:49:02.863516 journal@recovery F·1
+09:49:02.864043 journal@recovery recovering @31
+09:49:02.864561 version@stat F·[7 5] S·28MiB[18MiB 9MiB] Sc·[1.75 0.10]
+09:49:03.019923 db@janitor F·20 G·6
+09:49:03.019923 db@janitor removing table-33
+09:49:03.020448 db@janitor removing table-34
+09:49:03.020448 db@janitor removing table-35
+09:49:03.020994 db@janitor removing table-36
+09:49:03.021554 db@janitor removing table-37
+09:49:03.021554 db@janitor removing table-38
+09:49:03.022633 db@open done T·159.1167ms
+09:49:03.022633 table@compaction L0·7 -> L1·5 S·28MiB Q·132874
+09:49:03.109804 table@build created L1@35 N·8905 S·2MiB "\x00\x00\x1f..\xadӛ,v126085":"\x11V\x19..\x1fOf,v24648"
+09:49:03.198679 table@build created L1@36 N·8883 S·2MiB "\x11V\xda..\xb3\x02\xc1,v66231":"\"<k..\xeb:\x95,v128651"
+09:49:03.276353 table@build created L1@37 N·8967 S·2MiB "\"<\xfc..L\x86\xe9,v17779":"3no..\xc8\xc5e,v131973"
+09:49:03.351601 table@build created L1@38 N·8969 S·2MiB "3n\xb5..)\x1a\xb5,v124989":"D\xd3{..bƁ,v49125"
+09:49:03.426470 table@build created L1@39 N·8939 S·2MiB "Dӝ..:\x836,v45194":"U\xea`..\x82\xb8h,v108099"
+09:49:03.501393 table@build created L1@40 N·9056 S·2MiB "U\xead..\x1b\xb8\xcf,v129693":"g\x1d~..\xae\x8ea,v97655"

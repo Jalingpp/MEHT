@@ -33,8 +33,9 @@ type Bucket struct {
 	capacity int // capacity of the bucket, initial given
 	number   int // number of data objects in the bucket, initial zero
 
-	segNum      int                        // number of segment bits in the bucket, initial given
-	segments    map[string][]util.KVPair   // segments: data objects in each segment
+	segNum      int                      // number of segment bits in the bucket, initial given
+	segments    map[string][]util.KVPair // segments: data objects in each segment
+	segIdxMaps  map[string]map[string]int
 	merkleTrees map[string]*mht.MerkleTree // merkle trees: one for each segment
 
 	latchTimestamp    int64
@@ -52,7 +53,7 @@ var dummyBucket = &Bucket{name: "name", ld: -1, rdx: -1, capacity: -1, segNum: -
 // 新建一个Bucket
 func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{name, nil, ld, rdx, capacity, 0, segNum,
-		make(map[string][]util.KVPair), make(map[string]*mht.MerkleTree), 0,
+		make(map[string][]util.KVPair), make(map[string]map[string]int), make(map[string]*mht.MerkleTree), 0,
 		make(map[string]*util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
 		sync.RWMutex{}, sync.Mutex{}}
 }
@@ -90,12 +91,18 @@ func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{})
 			targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
 			if kvs_, ok = targetCache.Get(key_); ok {
 				b.segments[segkey] = *kvs_
+				b.segIdxMaps[segkey] = nil
+				b.segIdxMaps[segkey] = make(map[string]int)
+				for idx, seg := range b.segments[segkey] {
+					b.segIdxMaps[segkey][seg.GetKey()] = idx
+				}
 			}
 		}
 		if !ok {
 			if kvString, error_ := db.Get([]byte(key_), nil); error_ == nil {
-				kvs, _ := DeserializeSegment(kvString)
+				kvs, segIdxMap, _ := DeserializeSegment(kvString)
 				b.segments[segkey] = kvs
+				b.segIdxMaps[segkey] = segIdxMap
 			}
 		}
 	}
@@ -254,14 +261,10 @@ func (b *Bucket) IsInBucket(key string, db *leveldb.DB, cache *[]interface{}) bo
 	defer b.latch.RUnlock()
 	segkey := b.GetSegmentKey(key)
 	b.segLatch.Lock()
-	kvpairs := b.GetSegment(segkey, db, cache)
-	b.segLatch.Unlock()
-	for _, kvpair := range kvpairs {
-		if kvpair.GetKey() == key {
-			return true
-		}
-	}
-	return false
+	defer b.segLatch.Unlock()       // 防止segIdxMaps并发读写，segIdxMaps只会在GetSegment调用时可能被修改，上锁后保证只有一个线程对其读或写
+	b.GetSegment(segkey, db, cache) // 如果segments还没有从磁盘中读取，那么segIdxMaps[segkey]此时也会是缺省状态
+	_, ok := b.segIdxMaps[segkey][key]
+	return ok
 }
 
 // 给定一个key, 返回它在该bucket中的value
@@ -270,13 +273,11 @@ func (b *Bucket) GetValue(key string, db *leveldb.DB, cache *[]interface{}) stri
 	defer b.latch.RUnlock()
 	segkey := b.GetSegmentKey(key)
 	b.segLatch.Lock()
-	kvpairs := b.GetSegment(segkey, db, cache)
-	b.segLatch.Unlock()
+	defer b.segLatch.Unlock()       // 防止segIdxMaps并发读写，segIdxMaps只会在GetSegment调用时可能被修改，上锁后保证只有一个线程对其读或写
+	b.GetSegment(segkey, db, cache) // 如果segments还没有从磁盘中读取，那么segIdxMaps[segkey]此时也会是缺省状态
 	//判断是否在bucket中,在则返回value,不在则返回空字符串
-	for _, kvpair := range kvpairs {
-		if kvpair.GetKey() == key {
-			return kvpair.GetValue()
-		}
+	if idx, ok := b.segIdxMaps[segkey][key]; ok {
+		return b.segments[segkey][idx].GetValue()
 	}
 	return ""
 }
@@ -286,12 +287,10 @@ func (b *Bucket) GetIndex(key string, db *leveldb.DB, cache *[]interface{}) (str
 	//跳转到此函数是bucket已加锁
 	segkey := b.GetSegmentKey(key)
 	b.segLatch.Lock()
-	kvpairs := b.GetSegment(segkey, db, cache)
-	b.segLatch.Unlock()
-	for i, kvpair := range kvpairs {
-		if kvpair.GetKey() == key {
-			return segkey, true, i
-		}
+	defer b.segLatch.Unlock()       // 防止segIdxMaps并发读写，segIdxMaps只会在GetSegment调用时可能被修改，上锁后保证只有一个线程对其读或写
+	b.GetSegment(segkey, db, cache) // 如果segments还没有从磁盘中读取，那么segIdxMaps[segkey]此时也会是缺省状态
+	if idx, ok := b.segIdxMaps[segkey][key]; ok {
+		return segkey, true, idx
 	}
 	return "", false, -1
 }
@@ -321,9 +320,11 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{
 			//判断segment是否存在,不存在则创建,同时创建merkleTree
 			if b.GetSegment(segkey, db, cache) == nil {
 				b.segments[segkey] = NewSegment()
+				b.segIdxMaps[segkey] = make(map[string]int)
 			}
 			//未满,插入到对应的segment中
 			b.segments[segkey] = append(b.segments[segkey], *kvpair)
+			b.segIdxMaps[segkey][kvpair.GetKey()] = len(b.segments[segkey]) - 1
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segkey, db, cache)
 			b.number++
@@ -376,8 +377,12 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	b.SetBucketKey(append([]int{0}, originBkey...))
 	b.number = 0
 	bsegments := b.GetSegments()
+	b.segments = nil
 	b.segments = make(map[string][]util.KVPair)
+	b.merkleTrees = nil
 	b.merkleTrees = make(map[string]*mht.MerkleTree)
+	b.segIdxMaps = nil
+	b.segIdxMaps = make(map[string]map[string]int)
 	buckets = append(buckets, b)
 	//创建rdx-1个新bucket
 	for i := 0; i < b.rdx-1; i++ {
@@ -543,22 +548,26 @@ func SerializeSegment(kvpairs []util.KVPair) []byte {
 	return jsonSegment
 }
 
-func DeserializeSegment(data []byte) ([]util.KVPair, error) {
+func DeserializeSegment(data []byte) ([]util.KVPair, map[string]int, error) {
 	var seSegment SeSegment
 	err := json.Unmarshal(data, &seSegment)
 	if err != nil {
 		fmt.Printf("DeserializeSegment error: %v\n", err)
-		return nil, err
+		return nil, nil, err
 	}
 	kvstrings := strings.Split(seSegment.KVPairs, ";")
 	kvpairs := make([]util.KVPair, 0)
+	segIdxMap := make(map[string]int)
+	idx := 0
 	for i := 0; i < len(kvstrings); i++ {
 		kvpair := strings.Split(kvstrings[i], ":")
 		if len(kvpair) == 2 {
 			kvpairs = append(kvpairs, *util.NewKVPair(kvpair[0], kvpair[1]))
+			segIdxMap[kvpair[0]] = idx
+			idx++
 		}
 	}
-	return kvpairs, nil
+	return kvpairs, segIdxMap, nil
 }
 
 type SeBucket struct {
@@ -605,7 +614,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		mhts[seBucket.SegKeys[i]] = nil
 	}
 	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
-		seBucket.SegNum, segments, mhts, 0,
+		seBucket.SegNum, segments, make(map[string]map[string]int), mhts, 0,
 		make(map[string]*util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
 		sync.RWMutex{}, sync.Mutex{}}
 	return bucket, nil

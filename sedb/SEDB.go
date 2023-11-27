@@ -136,6 +136,37 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	return nil
 }
 
+func generatePrimaryKey(primaryKeys []string, primaryKeyCh chan string) {
+	for _, key := range primaryKeys {
+		primaryKeyCh <- key
+	}
+	close(primaryKeyCh)
+}
+
+func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
+	wg := sync.WaitGroup{}
+	wg.Add(numOfWorker)
+	for i := 0; i < numOfWorker; i++ {
+		go workerForPrimarySearch(&wg, sedb, primaryKeyCh, lock, queryResult, primaryProof)
+	}
+	wg.Wait()
+}
+
+func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
+	for primaryKey := range primaryKeyCh {
+		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb)
+		//用qV和primarykeys[i]构造一个kvpair
+		kvpair := util.NewKVPair(primaryKey, qV)
+		lock.Lock()
+		//把kvpair加入queryResult
+		*queryResult = append(*queryResult, kvpair)
+		//把pProof加入primaryProof
+		*primaryProof = append(*primaryProof, pProof)
+		lock.Unlock()
+	}
+	wg.Done()
+}
+
 // QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
@@ -149,64 +180,46 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var primaryProof []*mpt.MPTProof
 	var queryResult []*util.KVPair
 	var lock sync.Mutex
-	var wg sync.WaitGroup
+	var primaryKeyCh chan string
 	if sedb.siMode == "mpt" {
+		//now := time.Now()
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb)
+		//fmt.Println("secondMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		secondaryMEHTProof = nil
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			//fmt.Println("No such key!")
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMEHTProof)
 		}
-		primarykeys := strings.Split(primaryKey, ",")
-		wg.Add(len(primarykeys))
-		for i := 0; i < len(primarykeys); i++ {
-			go func(primarykey string, mutex *sync.Mutex) {
-				qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primarykey, sedb.primaryDb)
-				//用qV和primarykeys[i]构造一个kvpair
-				kvpair := util.NewKVPair(primarykey, qV)
-				lock.Lock()
-				//把kvpair加入queryResult
-				queryResult = append(queryResult, kvpair)
-				//把pProof加入primaryProof
-				primaryProof = append(primaryProof, pProof)
-				lock.Unlock()
-				wg.Done()
-			}(primarykeys[i], &lock)
-		}
-		wg.Wait()
+		primaryKeys := strings.Split(primaryKey, ",")
+		//now = time.Now()
+		go generatePrimaryKey(primaryKeys, primaryKeyCh)
+		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
+		//fmt.Println("primaryMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
 		secondaryMPTProof = nil
+		//now := time.Now()
 		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).QueryValueByKey(Hexkeyword, sedb.secondaryDb)
+		//fmt.Println("getQkeyProof cost ", time.Since(now).Milliseconds()*100, " .")
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
 		go func(ch chan *meht.MEHTProof) {
+			//now := time.Now()
 			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.secondaryDb)
+			//fmt.Println("mehtProof cost ", time.Since(now).Milliseconds(), " .")
 			ch <- seMEHTProof
 		}(ch)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			//fmt.Println("No such key!")
 		} else {
-			primarykeys := strings.Split(primaryKey, ",")
-			wg.Add(len(primarykeys))
-			for i := 0; i < len(primarykeys); i++ {
-				go func(primarykey string, mutex *sync.Mutex) {
-					qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primarykey, sedb.primaryDb)
-					//用qV和primarykeys[i]构造一个kvpair
-					kvpair := util.NewKVPair(primarykey, qV)
-					lock.Lock()
-					//把kvpair加入queryResult
-					queryResult = append(queryResult, kvpair)
-					//把pProof加入primaryProof
-					primaryProof = append(primaryProof, pProof)
-					lock.Unlock()
-					wg.Done()
-				}(primarykeys[i], &lock)
-			}
-			wg.Wait()
+			primaryKeys := strings.Split(primaryKey, ",")
+			//now := time.Now()
+			go generatePrimaryKey(primaryKeys, primaryKeyCh)
+			createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
+			//fmt.Println("primaryProof cost ", time.Since(now).Milliseconds()*100, " .")
 		}
 		secondaryMEHTProof = <-ch
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMEHTProof)

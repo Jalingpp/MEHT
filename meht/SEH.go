@@ -221,7 +221,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		return bucketss, DELEGATE, nil, 0
 	} else {
 		// 成为委托者
-		for len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
+		if len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
 			return nil, FAILED, nil, 0
 		}
 		for !bucket.latch.TryLock() { // 重复查看是否存在可以委托的对象
@@ -246,10 +246,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 				if bucket.DelegationList[kvpair.GetKey()] != nil {
 					bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
 				} else {
-					value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache, false) //连带旧值一并更新
-					toAdd := util.NewKVPair(kvpair.GetKey(), value)
-					toAdd.AddValue(kvpair.GetValue())
-					bucket.DelegationList[kvpair.GetKey()] = toAdd
+					bucket.DelegationList[kvpair.GetKey()] = kvpair
 				}
 				// 成功委托
 				//fmt.Println("Client with timestamp " + strconv.Itoa(int(bucket.latchTimestamp)))

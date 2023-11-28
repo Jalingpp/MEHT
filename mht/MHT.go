@@ -76,7 +76,7 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 
 	// 构建树
 	for len(nodes) > 1 {
-		var newLevel []*MerkleNode
+		newLevel := make([]*MerkleNode, 0)
 		for i := 0; i < len(nodes); i += 2 {
 			if i+1 < len(nodes) {
 				node := NewMerkleNode(nodes[i], nodes[i+1], nil) //data字段在新建节点时根据左右子节点的data字段计算得到

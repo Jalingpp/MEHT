@@ -15,10 +15,11 @@ func main() {
 	//测试辅助索引查询
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair) {
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for _, kvPair := range kvPairs {
+		for i, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
+			fmt.Println(i)
 		}
 		close(kvPairCh)
 	}
@@ -46,8 +47,9 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var insertNum = []int{16}
-	var siModeOptions = []string{"", "mpt"}
+	//var insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	var siModeOptions = []string{""}
+	var insertNum = []int{600000}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range insertNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径
@@ -64,7 +66,7 @@ func main() {
 			rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 			bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-			numOfWorker := 2
+			numOfWorker := 3
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
@@ -92,7 +94,7 @@ func main() {
 			var start time.Time
 			var duration time.Duration = 0
 			kvPairCh := make(chan *util.KVPair)
-			go allocateNFTOwner("data/nft-owner_", num, kvPairCh)
+			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh)
 			seDB.WriteSEDBInfoToFile(filePath)

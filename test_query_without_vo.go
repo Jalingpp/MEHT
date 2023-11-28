@@ -11,20 +11,20 @@ import (
 
 func main() {
 	//测试SEDB查询
-	allocateQueryOwner := func(filepath string, opNum int, queryCh chan string) {
-		queries := util.ReadQueryOwnerFromFile(filepath, opNum)
-		for _, query := range queries {
-			queryCh <- query
-		}
-		close(queryCh)
-	}
-	//allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
-	//	queries := util.ReadQueryFromFile(dirPath, opNum)
+	//allocateQueryOwner := func(filepath string, opNum int, queryCh chan string) {
+	//	queries := util.ReadQueryOwnerFromFile(filepath, opNum)
 	//	for _, query := range queries {
 	//		queryCh <- query
 	//	}
 	//	close(queryCh)
 	//}
+	allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
+		queries := util.ReadQueryFromFile(dirPath, opNum)
+		for _, query := range queries {
+			queryCh <- query
+		}
+		close(queryCh)
+	}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string) {
 		for query := range queryCh {
 			seDB.QueryKVPairsByHexKeyword(util.StringToHex(query))
@@ -49,9 +49,7 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	//var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	//var siModeOptions = []string{"", "mpt"}
-	var queryNum = []int{16}
+	var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
 	var siModeOptions = []string{"", "mpt"}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range queryNum {
@@ -65,7 +63,7 @@ func main() {
 			rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 			bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-			numOfWorker := 2
+			numOfWorker := 3
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
@@ -94,7 +92,7 @@ func main() {
 			var duration time.Duration = 0
 			queryCh := make(chan string)
 			//go allocateQuery("data/query-owner", num, queryCh)
-			go allocateQueryOwner("data/query-owner_", num, queryCh)
+			go allocateQuery("data/", num, queryCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh)
 			seDB.WriteSEDBInfoToFile(filePath)

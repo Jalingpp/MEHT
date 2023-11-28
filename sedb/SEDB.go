@@ -71,22 +71,6 @@ func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode st
 	if err != nil {
 		log.Fatal(err)
 	}
-	//mgtNodeCacheCapacity := DefaultMgtNodeCacheCapacity
-	//bucketNodeCacheCapacity := DefaultBucketCacheCapacity
-	//segmentCacheCapacity := DefaultSegmentCacheCapacity
-	//merkleTreeCacheCapacity := DefaultMerkleTreeCapacity
-	//for _, capacity := range cacheCapacity {
-	//	switch capacity.(type) {
-	//	case MgtNodeCacheCapacity:
-	//		mgtNodeCacheCapacity = capacity.(MgtNodeCacheCapacity)
-	//	case BucketCacheCapacity:
-	//		bucketNodeCacheCapacity = capacity.(BucketCacheCapacity)
-	//	case SegmentCacheCapacity:
-	//		segmentCacheCapacity = capacity.(SegmentCacheCapacity)
-	//	case MerkleTreeCacheCapacity:
-	//		merkleTreeCacheCapacity = capacity.(MerkleTreeCacheCapacity)
-	//	}
-	//}
 	return &SEDB{nil, seh, primaryDb, secondaryDb, primaryDbPath, secondaryDbPath,
 		siMode, mehtName, rdx, bc, bs,
 		cacheEnabled, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
@@ -167,8 +151,6 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 	wg.Done()
 }
 
-var sum = 0
-
 // QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
@@ -216,8 +198,6 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		}(ch)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			sum++
-			fmt.Println("No such key!", "     ", sum)
 		} else {
 			primaryKeys := strings.Split(primaryKey, ",")
 			//now := time.Now()

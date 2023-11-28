@@ -101,7 +101,6 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		toAdd.AddValue(string(value))
 		value = []byte(toAdd.GetValue())
 		*flag = true
-		fmt.Println(prefix+suffix, string(value))
 	}
 	if cnode.isLeaf {
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中

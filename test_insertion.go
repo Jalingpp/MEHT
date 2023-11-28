@@ -48,10 +48,7 @@ func main() {
 	}
 	var insertNum = []int{16}
 	var siModeOptions = []string{"", "mpt"}
-	for i, siModeOption := range siModeOptions {
-		if i == 0 {
-			continue
-		}
+	for _, siModeOption := range siModeOptions {
 		for _, num := range insertNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径
 			if _, err := os.Stat(filePath); os.IsNotExist(err) {

@@ -405,9 +405,11 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 }
 
 // 给定一个key, 返回它的value,所在segkey,是否存在,在seg中的index, 如果不在, 返回-1
-func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) (string, string, bool, int) {
-	b.latch.RLock()
-	defer b.latch.RUnlock()
+func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}, isBucketLockFree bool) (string, string, bool, int) {
+	if !isBucketLockFree {
+		b.latch.RLock()
+		defer b.latch.RUnlock()
+	}
 	segkey, isSegExist, index := b.GetIndex(key, db, cache)
 	if index == -1 {
 		return "", segkey, isSegExist, index

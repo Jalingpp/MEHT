@@ -216,7 +216,7 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 	if bucket := seh.GetBucketByKey(key, db, meht.cache); bucket != nil {
 		//根据key找到value
 		seh.latch.RUnlock() //防止在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，导致死锁
-		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache)
+		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache, false)
 		return value, bucket, segkey, isSegExist, index
 	}
 	seh.latch.RUnlock()

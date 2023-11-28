@@ -52,7 +52,11 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret := seh.ht[bucketKey]
 	if ret == nil {
-		return seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache)
+		if len(bucketKey) > 0 {
+			return seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache)
+		} else {
+			return nil
+		}
 	} else if ret != dummyBucket {
 		return ret
 	}
@@ -75,7 +79,7 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 // GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	if seh.gd == 0 {
-		return seh.ht[""]
+		return seh.GetBucket("", db, cache)
 	}
 	var bkey string
 	if len(key) >= seh.gd {
@@ -116,10 +120,8 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 
 // GetProof returns the proof of the key-value pair with the given key
 func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
-	//seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
-	//seh.latch.RUnlock()
-	value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, cache)
+	value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, cache, false)
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, cache)
 	return value, segRootHash, mhtProof
 }
@@ -157,7 +159,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		if bucket.DelegationList[kvpair.GetKey()] != nil {
 			bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
 		} else {
-			value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache) //连带旧值一并更新
+			value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache, true) //连带旧值一并更新
 			toAdd := util.NewKVPair(kvpair.GetKey(), value)
 			toAdd.AddValue(kvpair.GetValue())
 			bucket.DelegationList[kvpair.GetKey()] = toAdd
@@ -216,7 +218,6 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		bucket.latchTimestamp = 0
 		bucket.DelegationLatch.Unlock()
 		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
-		//fmt.Println("Unlock the bucket " + util.IntArrayToString(bucket.BucketKey, bucket.rdx))
 		return bucketss, DELEGATE, nil, 0
 	} else {
 		// 成为委托者
@@ -245,7 +246,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 				if bucket.DelegationList[kvpair.GetKey()] != nil {
 					bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
 				} else {
-					value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache) //连带旧值一并更新
+					value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache, false) //连带旧值一并更新
 					toAdd := util.NewKVPair(kvpair.GetKey(), value)
 					toAdd.AddValue(kvpair.GetValue())
 					bucket.DelegationList[kvpair.GetKey()] = toAdd

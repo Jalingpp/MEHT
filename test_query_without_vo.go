@@ -52,7 +52,7 @@ func main() {
 	//var queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
 	//var siModeOptions = []string{"", "mpt"}
 	var queryNum = []int{16}
-	var siModeOptions = []string{"mpt"}
+	var siModeOptions = []string{"", "mpt"}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径

@@ -134,7 +134,7 @@ func ReadKVPairFromFile(filepath string) []*KVPair {
 		}
 	}(file)
 	//创建KVPair数组
-	var kvPairs []*KVPair
+	kvPairs := make([]*KVPair, 0)
 	//读取文件内容
 	readr := bufio.NewReader(file)
 	for {

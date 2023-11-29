@@ -108,9 +108,11 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//更新seHash，并将se更新至db
 	sedb.se.UpdateStorageEngineToDB(sedb.primaryDb) // 保证sedb留存的seHash与se实际的Hash一致
 	sedb.updateLatch.Lock()
-	sedb.se.updateLatch.Lock()
+	sedb.se.updatePrimaryLatch.Lock()
+	sedb.se.updateSecondaryLatch.Lock()
 	sedb.seHash = sedb.se.seHash
-	sedb.se.updateLatch.Unlock()
+	sedb.se.updateSecondaryLatch.Unlock()
+	sedb.se.updatePrimaryLatch.Unlock()
 	sedb.updateLatch.Unlock()
 	//var pProof []*mpt.MPTProof
 	//pProof = append(pProof, primaryProof)

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"runtime"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -36,14 +37,16 @@ type StorageEngine struct {
 
 	secondaryIndex_meht *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
 
-	mehtName      string //meht的参数，meht的名字，用于区分不同的meht
-	rdx           int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc            int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs            int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-	cacheEnable   bool
-	cacheCapacity []interface{}
-	latch         sync.RWMutex
-	updateLatch   sync.Mutex
+	mehtName             string //meht的参数，meht的名字，用于区分不同的meht
+	rdx                  int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	bc                   int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	bs                   int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	cacheEnable          bool
+	cacheCapacity        []interface{}
+	primaryLatch         sync.RWMutex
+	secondaryLatch       sync.RWMutex
+	updatePrimaryLatch   sync.Mutex
+	updateSecondaryLatch sync.Mutex
 }
 
 // NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
@@ -51,7 +54,8 @@ func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
 	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
 		nil, nil, mehtName, rdx, bc, bs,
-		cacheEnable, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
+		cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
+		sync.Mutex{}, sync.Mutex{}}
 }
 
 // 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
@@ -61,8 +65,9 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 	//	fmt.Println("Delete StorageEngine from DB error:", err)
 	//}
 	//更新seHash的哈希值
-	var seHashs []byte
-	se.updateLatch.Lock() // 保证se的哈希与辅助索引根哈希是相关联的
+	seHashs := make([]byte, 0)
+	se.updatePrimaryLatch.Lock()
+	se.updateSecondaryLatch.Lock() // 保证se的哈希与辅助索引根哈希是相关联的
 	seHashs = append(seHashs, se.primaryIndexHash...)
 	if se.secondaryIndexMode == "mpt" {
 		seHashs = append(seHashs, se.secondaryIndexHash_mpt...)
@@ -73,7 +78,8 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 	}
 	hash := sha256.Sum256(seHashs)
 	se.seHash = hash[:]
-	se.updateLatch.Unlock()
+	se.updateSecondaryLatch.Unlock()
+	se.updatePrimaryLatch.Unlock()
 	//将更新后的se写入db中
 	//if err := db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 	//	fmt.Println("Insert StorageEngine to DB error:", err)
@@ -83,7 +89,7 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 // 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
-	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 && se.latch.TryLock() { // 只允许一个线程重构主索引
+	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 && se.primaryLatch.TryLock() { // 只允许一个线程重构主索引
 		if primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil); error_ == nil {
 			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
@@ -91,7 +97,7 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 		} else {
 			fmt.Printf("GetPrimaryIndex error:%v\n", error_)
 		}
-		se.latch.Unlock()
+		se.primaryLatch.Unlock()
 	}
 	for se.primaryIndex == nil && len(se.primaryIndexHash) != 0 {
 	} // 其余线程等待主索引重构
@@ -126,73 +132,86 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 
 // 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
 func (se *StorageEngine) Insert(kvpair *util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
+	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" {
+		fmt.Printf("非主键索引类型siMode设置错误\n")
+		return nil, nil, nil
+	}
 	//插入主键索引
 	//如果是第一次插入
-	if se.GetPrimaryIndex(primaryDb) == nil && se.latch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
+	if se.GetPrimaryIndex(primaryDb) == nil && se.primaryLatch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
 		//创建一个新的主键索引
 		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		se.primaryIndex = mpt.NewMPT(primaryDb, se.cacheEnable, shortNodeCC, fullNodeCC)
-		se.latch.Unlock()
+		se.primaryLatch.Unlock()
 	}
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
 	oldvalue, oldprimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvpair.GetKey(), primaryDb, false)
 	if oldvalue == kvpair.GetValue() {
-		fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 		return oldprimaryProof, nil, nil
 	}
-	//将KV插入到主键索引中
-	se.primaryIndex.Insert(kvpair, primaryDb)
-	se.updateLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
-	se.primaryIndex.GetUpdateLatch().Lock()
-	piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
-	se.primaryIndexHash = piHash[:]
-	se.primaryIndex.GetUpdateLatch().Unlock()
-	se.updateLatch.Unlock()
-	//_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
-	//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+	runtime.GOMAXPROCS(1)
+	var wG sync.WaitGroup
+	wG.Add(2)
+	go func() {
+		defer wG.Done()
+		//将KV插入到主键索引中
+		se.primaryIndex.Insert(kvpair, primaryDb)
+		se.updatePrimaryLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
+		se.primaryIndex.GetUpdateLatch().Lock()
+		piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
+		se.primaryIndexHash = piHash[:]
+		se.primaryIndex.GetUpdateLatch().Unlock()
+		se.updatePrimaryLatch.Unlock()
+		//_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
+		//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+	}()
 	//构造倒排KV
 	reversedKV := util.ReverseKVPair(kvpair)
 	//插入非主键索引
-	if se.secondaryIndexMode == "mpt" {
+	if se.secondaryIndexMode == "mpt" { //插入mpt
 		//如果oldvalue不为空，则在非主键索引中删除该value-key对
 
 		//插入到mpt类型的非主键索引中
 		//_, mptProof := se.InsertIntoMPT(reversedKV, db)
-		se.InsertIntoMPT(reversedKV, secondaryDb)
+		go func() { // 实际应该为返回值mptProof构建一个chan并等待输出
+			defer wG.Done()
+			se.InsertIntoMPT(reversedKV, secondaryDb)
+		}()
 		//打印插入结果
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//mptProof.PrintMPTProof()
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, mptProof, nil
-		return nil, nil, nil
-	} else if se.secondaryIndexMode == "meht" {
+	} else { //插入meht
 		//var mehtProof *meht.MEHTProof
 		//_, mehtProof  = se.InsertIntoMEHT(reversedKV, db)
-		se.InsertIntoMEHT(reversedKV, secondaryDb)
+		go func() { //实际应该为返回值mehtProof构建一个chan并等待输出
+			defer wG.Done()
+			se.InsertIntoMEHT(reversedKV, secondaryDb)
+		}()
 		//打印插入结果
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		//meht.PrintMEHTProof(mehtProof)
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, nil, mehtProof
-		return nil, nil, nil
-	} else {
-		fmt.Printf("非主键索引类型siMode设置错误\n")
-		return nil, nil, nil
 	}
+	wG.Wait()
+	return nil, nil, nil
 }
 
 // 插入非主键索引
 func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_mpt(db) == nil && se.latch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
+	if se.GetSecondaryIndex_mpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
 		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		se.secondaryIndex_mpt = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
-		se.latch.Unlock()
+		se.secondaryLatch.Unlock()
 	}
 	for se.secondaryIndex_mpt == nil { // 其余线程等待非主键索引创建
 	}
@@ -205,12 +224,12 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
 		se.secondaryIndex_mpt.Insert(kvpair, db)
-		se.updateLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
+		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
 		se.secondaryIndex_mpt.GetUpdateLatch().Lock()
 		seHash := sha256.Sum256(se.secondaryIndex_mpt.GetRootHash())
 		se.secondaryIndexHash_mpt = seHash[:]
 		se.secondaryIndex_mpt.GetUpdateLatch().Unlock()
-		se.updateLatch.Unlock()
+		se.updateSecondaryLatch.Unlock()
 		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
 		//return newValues, newProof
 		return "", nil
@@ -221,11 +240,11 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 // 插入非主键索引
 func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_meht(db) == nil && se.latch.TryLock() { // 总有一个线程会获得锁并创建meht
+	if se.GetSecondaryIndex_meht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
-		se.latch.Unlock()
+		se.secondaryLatch.Unlock()
 	}
 	for se.GetSecondaryIndex_meht(db) == nil { // 其余线程等待meht创建成功
 	}
@@ -344,7 +363,8 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 	}
 	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
 		nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName,
-		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
+		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
+		sync.Mutex{}, sync.Mutex{}}
 	return se, nil
 }
 

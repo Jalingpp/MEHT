@@ -141,8 +141,8 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 
 // NewMGTNode creates a new MGTNode
 func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB, rdx int, cache *[]interface{}) *MGTNode {
-	var nodeHash []byte
-	var dataHashes [][]byte
+	nodeHash := make([]byte, 0)
+	dataHashes := make([][]byte, 0)
 
 	//如果是叶子节点,遍历其所有segment,将每个segment的根hash加入dataHashes
 	if isLeaf {
@@ -335,8 +335,8 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 
 // 根据子节点哈希计算当前节点哈希
 func UpdateNodeHash(node *MGTNode) {
-	var nodeHash []byte
-	var keys []int
+	nodeHash := make([]byte, 0)
+	keys := make([]int, 0)
 	for key := range node.dataHashes {
 		keys = append(keys, key)
 	}
@@ -421,7 +421,7 @@ func ComputMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {
 	//遍历mgtProof中前segNum个元素，如果segRootHash不存在，则返回nil，否则计算得到第0个node的nodeHash
 	isSRHExist := false
 	nodeHash0 := segRootHash
-	var nodeHash1 []byte
+	nodeHash1 := make([]byte, 0)
 	level := mgtProof[len(mgtProof)-1].level
 	for i := len(mgtProof) - 1; i >= 0; i-- {
 		if mgtProof[i].level != level {

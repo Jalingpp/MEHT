@@ -58,7 +58,7 @@ func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int
 		lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
 			callBackFoo[string, *mht.MerkleTree](k, v, db)
 		})
-		var c []interface{}
+		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
 			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
@@ -279,7 +279,8 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	if !mehtProof.mhtProof.GetIsExist() {
 		if mehtProof.mhtProof.GetIsSegExist() {
 			//key不存在，segment存在
-			var data [][]byte
+			//var data [][]byte
+			data := make([][]byte, 0)
 			for i := 0; i < len(mehtProof.mhtProof.GetValues()); i++ {
 				data = append(data, []byte(mehtProof.mhtProof.GetValues()[i]))
 			}
@@ -385,7 +386,8 @@ func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 		lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
 			callBackFoo[string, *mht.MerkleTree](k, v, db)
 		})
-		var c []interface{}
+		//var c []interface{}
+		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
 			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}

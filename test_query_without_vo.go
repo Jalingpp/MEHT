@@ -63,7 +63,7 @@ func main() {
 			rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 			bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-			numOfWorker := 3
+			numOfWorker := 2
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false

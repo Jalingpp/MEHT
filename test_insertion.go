@@ -47,9 +47,9 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	//var insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	var insertNum = []int{600001}
 	var siModeOptions = []string{""}
-	var insertNum = []int{600000}
+	//var insertNum = []int{600000}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range insertNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径
@@ -66,7 +66,7 @@ func main() {
 			rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 			bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-			numOfWorker := 3
+			numOfWorker := 2
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
@@ -97,8 +97,9 @@ func main() {
 			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh)
-			seDB.WriteSEDBInfoToFile(filePath)
 			duration = time.Since(start)
+			seDB.WriteSEDBInfoToFile(filePath)
+			//duration = time.Since(start)
 			util.WriteResultToFile("data/result"+siModeOption, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps.\n")
 			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")

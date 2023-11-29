@@ -63,7 +63,7 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 		lFullNode, _ := lru.NewWithEvict[string, *FullNode](fullNodeCC, func(k string, v *FullNode) {
 			callBackFoo[string, *FullNode](k, v, db)
 		})
-		var c []interface{}
+		c := make([]interface{}, 0)
 		c = append(c, lShortNode, lFullNode)
 		return &MPT{nil, nil, &c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
@@ -461,7 +461,7 @@ func (mpt *MPT) VerifyQueryResult(value string, mptProof *MPTProof) bool {
 func ComputMPTRoot(value string, mptProof *MPTProof) []byte {
 	proofs := mptProof.GetProofs()
 	nodeHash0 := []byte(value)
-	var nodeHash1 []byte
+	nodeHash1 := make([]byte, 0)
 	for i := 0; i < len(proofs); i++ {
 		proof := proofs[i]
 		if proof.proofType == 0 {

@@ -87,11 +87,11 @@ func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{})
 		var ok bool
 		var kvs_ *[]util.KVPair
 		key_ := b.name + util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segkey
+		b.segIdxMaps[segkey] = nil
 		if cache != nil {
 			targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
 			if kvs_, ok = targetCache.Get(key_); ok {
 				b.segments[segkey] = *kvs_
-				b.segIdxMaps[segkey] = nil
 				b.segIdxMaps[segkey] = make(map[string]int)
 				for idx, seg := range b.segments[segkey] {
 					b.segIdxMaps[segkey][seg.GetKey()] = idx
@@ -466,7 +466,7 @@ func ComputSegHashRoot(value string, proofPairs []mht.ProofPair) []byte {
 	data := valuehash[:]
 	//逐层计算segHashRoot
 	for i := 0; i < len(proofPairs); i++ {
-		var parentHash []byte
+		parentHash := make([]byte, 0)
 		if proofPairs[i].Index == 0 {
 			parentHash = append(proofPairs[i].Hash, data...)
 		} else {

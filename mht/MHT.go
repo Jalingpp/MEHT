@@ -35,19 +35,25 @@ type MerkleTree struct {
 
 // NewMerkleNode 创建一个新的默克尔树节点
 func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
-	node := MerkleNode{}
+	node := new(MerkleNode)
 	if left == nil && right == nil {
 		hash := sha256.Sum256(data)
 		node.Data = hash[:]
 	} else {
-		prevHashes := append(left.Data, right.Data...)
+		prevHashes := make([]byte, 0)
+		if left != nil {
+			prevHashes = append(prevHashes, left.Data...)
+		}
+		if right != nil {
+			prevHashes = append(prevHashes, right.Data...)
+		}
 		hash := sha256.Sum256(prevHashes)
 		node.Data = hash[:]
 	}
 	node.Left = left
 	node.Right = right
 	node.Parent = nil
-	return &node
+	return node
 }
 
 // 新建一个空的默克尔树
@@ -64,14 +70,14 @@ func NewMerkleTree(data [][]byte) *MerkleTree {
 		copy(copiedData, data[i])
 		dataList[i] = copiedData
 	}
-	var nodes []*MerkleNode
-	var leafnodes []*MerkleNode
+	nodes := make([]*MerkleNode, len(data))
+	leafnodes := make([]*MerkleNode, len(data))
 
 	// 创建叶子节点
 	for i := 0; i < len(data); i++ {
 		node := NewMerkleNode(nil, nil, data[i])
-		nodes = append(nodes, node)
-		leafnodes = append(leafnodes, node)
+		nodes[i] = node
+		leafnodes[i] = node
 	}
 
 	// 构建树
@@ -153,7 +159,7 @@ func (node *MerkleNode) PrintNode() {
 
 // 返回某个叶子节点的默克尔证明
 func (tree *MerkleTree) GetProof(i int) *MHTProof {
-	var proof []ProofPair
+	proof := make([]ProofPair, 0)
 	node := tree.LeafNodes[i]
 	for node.Parent != nil {
 		if node.Parent.Left == node {

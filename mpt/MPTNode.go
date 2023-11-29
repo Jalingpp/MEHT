@@ -186,7 +186,7 @@ func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
 	//if err := db.Delete(fn.nodeHash, nil); err != nil {
 	//	fmt.Println("Delete FullNode from DB error:", err)
 	//}
-	var nodeHash []byte
+	nodeHash := make([]byte, 0)
 	for i := 0; i < 16; i++ {
 		nodeHash = append(nodeHash, fn.childrenHash[i]...)
 	}

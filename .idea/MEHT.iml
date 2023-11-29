@@ -3,12 +3,7 @@
   <component name="Go" enabled="true" />
   <component name="NewModuleRootManager">
     <content url="file://$MODULE_DIR$">
-      <excludeFolder url="file://$MODULE_DIR$/data/levelDB/PrimaryDB1200000" />
-      <excludeFolder url="file://$MODULE_DIR$/data/levelDB/SecondaryDB1200000" />
-      <excludeFolder url="file://$MODULE_DIR$/data/levelDB/PrimaryDB16" />
-      <excludeFolder url="file://$MODULE_DIR$/data/levelDB/PrimaryDB16mpt" />
-      <excludeFolder url="file://$MODULE_DIR$/data/levelDB/SecondaryDB16" />
-      <excludeFolder url="file://$MODULE_DIR$/data/levelDB/SecondaryDB16mpt" />
+      <excludeFolder url="file://$MODULE_DIR$/data/levelDB" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

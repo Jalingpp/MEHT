@@ -5,20 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b4d7c888-51d1-4442-9fb5-13cfef9f0387" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/MEHT.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/MEHT.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/data/levelDB/config1200000.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/Bucket.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/Bucket.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/meht/MEHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MEHT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mht/MHT.go" beforeDir="false" afterPath="$PROJECT_DIR$/mht/MHT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mpt/MPT.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/mpt/MPTNode.go" beforeDir="false" afterPath="$PROJECT_DIR$/mpt/MPTNode.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/meht/SEH.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/SEH.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/sedb/SEDB.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/SEDB.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/sedb/StorageEngine.go" beforeDir="false" afterPath="$PROJECT_DIR$/sedb/StorageEngine.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_insertion.exe" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/test_insertion.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_insertion.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_query_without_vo.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_query_without_vo.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/util/RW.go" beforeDir="false" afterPath="$PROJECT_DIR$/util/RW.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

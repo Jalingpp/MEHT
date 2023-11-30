@@ -106,14 +106,14 @@ func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
 	sedb.GetStorageEngine().Insert(kvpair, sedb.primaryDb, sedb.secondaryDb)
 	//更新seHash，并将se更新至db
-	sedb.se.UpdateStorageEngineToDB(sedb.primaryDb) // 保证sedb留存的seHash与se实际的Hash一致
-	sedb.updateLatch.Lock()
-	sedb.se.updatePrimaryLatch.Lock()
-	sedb.se.updateSecondaryLatch.Lock()
-	sedb.seHash = sedb.se.seHash
-	sedb.se.updateSecondaryLatch.Unlock()
-	sedb.se.updatePrimaryLatch.Unlock()
-	sedb.updateLatch.Unlock()
+	//sedb.se.UpdateStorageEngineToDB(sedb.primaryDb) // 保证sedb留存的seHash与se实际的Hash一致
+	//sedb.updateLatch.Lock()
+	//sedb.se.updatePrimaryLatch.Lock()
+	//sedb.se.updateSecondaryLatch.Lock()
+	//sedb.seHash = sedb.se.seHash
+	//sedb.se.updateSecondaryLatch.Unlock()
+	//sedb.se.updatePrimaryLatch.Unlock()
+	//sedb.updateLatch.Unlock()
 	//var pProof []*mpt.MPTProof
 	//pProof = append(pProof, primaryProof)
 	//sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)
@@ -274,6 +274,8 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 // 写seHash和dbPath到文件
 func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	se := sedb.GetStorageEngine()
+	se.UpdateStorageEngineToDB(sedb.primaryDb)
+	sedb.seHash = se.seHash
 	if err := sedb.primaryDb.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 		fmt.Println("Insert StorageEngine to DB error:", err)
 	}
@@ -282,6 +284,7 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 		switch sedb.siMode {
 		case "meht":
 			sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).PurgeCache()
+			se.GetSecondaryIndex_meht(sedb.secondaryDb).GetSEH(sedb.secondaryDb).UpdateSEHToDB(sedb.secondaryDb)
 		case "mpt":
 			sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).PurgeCache()
 		default:

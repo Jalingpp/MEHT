@@ -208,7 +208,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 					delete(seh.ht, toDelKey)
 				}
 				// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
-				seh.UpdateSEHToDB(db)
+				//seh.UpdateSEHToDB(db)
 				seh.latch.Unlock()
 			}
 		}

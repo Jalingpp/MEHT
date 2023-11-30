@@ -15,11 +15,11 @@ func main() {
 	//测试辅助索引查询
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair) {
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for i, kvPair := range kvPairs {
+		for _, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
-			fmt.Println(i)
+			//fmt.Println(i)
 		}
 		close(kvPairCh)
 	}
@@ -47,9 +47,9 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var insertNum = []int{600001}
-	var siModeOptions = []string{""}
-	//var insertNum = []int{600000}
+	var insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	var siModeOptions = []string{"", "mpt"}
+	//var insertNum = []int{300001}
 	for _, siModeOption := range siModeOptions {
 		for _, num := range insertNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siModeOption + ".txt" //存储seHash和dbPath的文件路径
@@ -73,10 +73,10 @@ func main() {
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := 128000
-				fullNodeCacheCapacity := 128000
-				mgtNodeCacheCapacity := 100000
-				bucketCacheCapacity := 128000
+				shortNodeCacheCapacity := 1280000
+				fullNodeCacheCapacity := 1280000
+				mgtNodeCacheCapacity := 1000000
+				bucketCacheCapacity := 1280000
 				segmentCacheCapacity := bs * bucketCacheCapacity
 				merkleTreeCacheCapacity := bs * bucketCacheCapacity
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, "test", rdx, bc, bs, cacheEnable,

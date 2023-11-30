@@ -124,7 +124,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		bucketss, _, _, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
 		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
 		//更新seh到db
-		meht.seh.UpdateSEHToDB(db)
+		//meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx, meht.cache)
 		//更新mgt的根节点哈希并更新到db

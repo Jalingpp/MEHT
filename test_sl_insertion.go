@@ -12,43 +12,30 @@ import (
 )
 
 func main() {
-	//测试SEDB查询
-	//allocateQueryOwner := func(filepath string, opNum int, queryCh chan string) {
-	//	queries := util.ReadQueryOwnerFromFile(filepath, opNum)
-	//	for _, query := range queries {
-	//		queryCh <- query
-	//	}
-	//	close(queryCh)
-	//}
-	allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
-		queries := util.ReadQueryFromFile(dirPath, opNum)
-		for _, query := range queries {
-			queryCh <- query
+	//测试辅助索引查询
+	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair) {
+		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
+		for _, kvPair := range kvPairs {
+			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
+			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
+			kvPairCh <- kvPair
+			//fmt.Println(i)
 		}
-		close(queryCh)
+		close(kvPairCh)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string, voCh chan uint) {
-		for query := range queryCh {
-			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(query))
-			vo := proof.GetSizeOf()
-			voCh <- vo
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
+		for kvPair := range kvPairCh {
+			seDB.InsertKVPair(kvPair)
 		}
 		wg.Done()
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryCh chan string, voCh chan uint) {
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go worker(&wg, seDB, queryCh, voCh)
+			go worker(&wg, seDB, kvPairCh)
 		}
 		wg.Wait()
-		close(voCh)
-	}
-	countVo := func(voCh chan uint, done chan bool, voSize *uint) {
-		for vo := range voCh {
-			*voSize += vo
-		}
-		done <- true
 	}
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
@@ -60,7 +47,7 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
-	var queryNum = make([]int, 0)
+	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
 	var numOfWorker = 2
 	args := os.Args
@@ -70,37 +57,43 @@ func main() {
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
 				if n >= 300000 {
-					queryNum = append(queryNum, n)
+					insertNum = append(insertNum, n)
 				} else {
 					numOfWorker = n
 				}
 			}
 		}
 	}
-	sort.Ints(queryNum)
+	sort.Ints(insertNum)
 	sort.Strings(siModeOptions)
-	if len(queryNum) == 0 {
-		queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	if len(insertNum) == 0 {
+		insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
 	}
 	if len(siModeOptions) == 0 {
 		siModeOptions = []string{"meht", "mpt"}
 	}
+	//var siModeOptions = []string{"", "mpt"}
+	//var insertNum = []int{300001}
 	for _, siMode := range siModeOptions {
-		for _, num := range queryNum {
+		for _, num := range insertNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
-			rdx := 16                                                               //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-			bc := 1280                                                              //meht中bucket的容量，即每个bucket中最多存储的KVPair数
-			bs := 1                                                                 //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			if _, err := os.Stat(filePath); os.IsNotExist(err) {
+				util.WriteStringToFile(filePath, ",data/levelDB/PrimaryDB"+strconv.Itoa(num)+siMode+
+					",data/levelDB/SecondaryDB"+strconv.Itoa(num)+siMode+"\n")
+			}
+			rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+			bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
+			bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := 128000
-				fullNodeCacheCapacity := 128000
-				mgtNodeCacheCapacity := 100000
-				bucketCacheCapacity := 128000
+				shortNodeCacheCapacity := 1280000
+				fullNodeCacheCapacity := 1280000
+				mgtNodeCacheCapacity := 1000000
+				bucketCacheCapacity := 1280000
 				segmentCacheCapacity := bs * bucketCacheCapacity
 				merkleTreeCacheCapacity := bs * bucketCacheCapacity
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, "test", rdx, bc, bs, cacheEnable,
@@ -117,23 +110,16 @@ func main() {
 			}
 			var start time.Time
 			var duration time.Duration = 0
-			var voSize uint = 0
-			queryCh := make(chan string)
-			voCh := make(chan uint)
-			done := make(chan bool)
-			go allocateQuery("data/", num, queryCh)
-			go countVo(voCh, done, &voSize)
+			kvPairCh := make(chan *util.KVPair)
+			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
 			start = time.Now()
-			createWorkerPool(numOfWorker, seDB, queryCh, voCh)
-			<-done
-			//seDB.WriteSEDBInfoToFile(filePath)
+			createWorkerPool(numOfWorker, seDB, kvPairCh)
 			duration = time.Since(start)
-			util.WriteResultToFile("data/qresult"+siMode, argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
-				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
-				"average latency is "+strconv.FormatFloat(float64(duration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+
-				"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+"B, average vo = "+
-				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt.\n")
-			fmt.Println("Query ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
+			seDB.WriteSEDBInfoToFile(filePath)
+			//duration = time.Since(start)
+			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
+				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps.\n")
+			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
 			seDB = nil
 		}
 	}

@@ -37,10 +37,11 @@ type MEHT struct {
 	//bucketCache          *lru.Cache[string, *Bucket]
 	//segmentCache         *lru.Cache[string, *[]util.KVPair]
 	// merkleTreeCache	   *lru.Cache[string, *mht.MerkleTree]
-	cache       *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
-	cacheEnable bool
-	latch       sync.RWMutex
-	updateLatch sync.Mutex
+	cache          *[]interface{} // cache[0],cache[1],cache[2],cache[3] represent cache of mgtNode,bucket,segment and merkleTree respectively
+	cacheEnable    bool
+	latch          sync.RWMutex
+	sehUpdateLatch sync.Mutex
+	mgtUpdateLatch sync.Mutex
 }
 
 // NewMEHT returns a new MEHT
@@ -61,10 +62,10 @@ func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	} else {
 		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
-			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	}
 }
 
@@ -82,14 +83,15 @@ func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
 func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 	meht.latch.RLock()
 	defer meht.latch.RUnlock()
-	if meht.seh == nil {
+	if meht.seh == nil && meht.sehUpdateLatch.TryLock() {
 		sehString, error_ := db.Get([]byte(meht.name+"seh"), nil)
 		if error_ == nil {
 			seh, _ := DeserializeSEH(sehString)
-			meht.updateLatch.Lock()
 			meht.seh = seh
-			meht.updateLatch.Unlock()
 		}
+		meht.sehUpdateLatch.Unlock()
+	}
+	for meht.seh == nil {
 	}
 	return meht.seh
 }
@@ -98,14 +100,15 @@ func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
 	meht.latch.RLock()
 	defer meht.latch.RUnlock()
-	if meht.mgt == nil {
+	if meht.mgt == nil && meht.mgtUpdateLatch.TryLock() {
 		mgtString, error_ := db.Get(meht.mgtHash, nil)
 		if error_ == nil {
 			mgt, _ := DeserializeMGT(mgtString)
-			meht.updateLatch.Lock()
 			meht.mgt = mgt
-			meht.updateLatch.Unlock()
 		}
+		meht.mgtUpdateLatch.Unlock()
+	}
+	for meht.mgt == nil {
 	}
 	return meht.mgt
 }
@@ -229,9 +232,8 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, meht.cache)
 	//根据key找到mgtRootHash和mgtProof
 	meht.GetMGT(db).latch.RLock()
-	meht.mgt.latch.RLock()
-	mgtRootHash, mgtProof := meht.GetMGT(db).GetProof(bucket.GetBucketKey(), db, meht.cache)
-	meht.GetMGT(db).latch.RUnlock()
+	mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey(), db, meht.cache)
+	meht.mgt.latch.RUnlock()
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
@@ -390,10 +392,10 @@ func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
-			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	} else {
 		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
-			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	}
 	return
 }

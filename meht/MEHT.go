@@ -231,7 +231,8 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	//找到segRootHash和segProof
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, meht.cache)
 	//根据key找到mgtRootHash和mgtProof
-	meht.GetMGT(db).latch.RLock()
+	meht.GetMGT(db) // 保证 mgt 不为空
+	meht.mgt.latch.RLock()
 	mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey(), db, meht.cache)
 	meht.mgt.latch.RUnlock()
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}

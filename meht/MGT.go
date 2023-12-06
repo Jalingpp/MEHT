@@ -8,11 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
-	"strings"
-	"sync"
-
 	"github.com/syndtr/goleveldb/leveldb"
 	"sort"
+	"strings"
+	"sync"
 	// "MEHT/util"
 )
 
@@ -493,10 +492,10 @@ type SeMGTNode struct {
 
 func SerializeMGTNode(node *MGTNode) []byte {
 	dataHashString := ""
-	for i := 0; i < len(node.dataHashes); i++ {
-		dataHashString += hex.EncodeToString(node.dataHashes[i])
-		if i != len(node.dataHashes)-1 {
-			dataHashString += ","
+	if len(node.dataHashes) > 0 {
+		dataHashString += hex.EncodeToString(node.dataHashes[0])
+		for _, hash := range node.dataHashes[1:] {
+			dataHashString += hex.EncodeToString(hash) + ","
 		}
 	}
 	// fmt.Printf("dataHashString is %s\n", dataHashString)

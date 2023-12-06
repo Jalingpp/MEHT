@@ -113,6 +113,7 @@ func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
 
 func (mbt *MBT) Insert(kvPair *util.KVPair, db *leveldb.DB) {
 	// TODO
+
 }
 
 func (mbt *MBT) RecursivelyInsertMBTNode(index int, key string, value string, cnode *MBTNode, db *leveldb.DB, flag *bool) *MBTNode {

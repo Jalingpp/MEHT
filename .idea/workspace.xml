@@ -5,15 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b4d7c888-51d1-4442-9fb5-13cfef9f0387" name="更改" comment="">
-      <change afterPath="$PROJECT_DIR$/mbt/MBT.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/mbt/MBTNode.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/mbt/MBTProof.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/meht/MGT.go" beforeDir="false" afterPath="$PROJECT_DIR$/meht/MGT.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_insertion.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_insertion.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test_query.go" beforeDir="false" afterPath="$PROJECT_DIR$/test_query.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

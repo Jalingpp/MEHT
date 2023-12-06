@@ -65,6 +65,7 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 		if mgtString, error_ := db.Get(mgt.mgtRootHash, nil); error_ == nil {
 			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
+			//此处由于root尚未被其他地方引用，因此getBucket无需加锁
 			mgt.Root.GetBucket(mgt.rdx, util.IntArrayToString(mgt.Root.bucketKey, mgt.rdx), db, nil)
 		}
 	}
@@ -73,7 +74,12 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 
 // 获取subnode,如果subnode为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *[]interface{}) *MGTNode {
+	//跳转到此函数时mgt已经加写锁
 	if mgtNode.subNodes[index] == nil && mgtNode.updateLatch.TryLock() { // 既然进入这个函数那么是一定能找到节点的
+		if mgtNode.subNodes[index] != nil {
+			mgtNode.updateLatch.Unlock()
+			return mgtNode.subNodes[index]
+		}
 		var node *MGTNode
 		var ok bool
 		if cache != nil {
@@ -89,6 +95,7 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *[]
 			}
 		}
 		if node != nil && node.isLeaf {
+			//此处由于node尚未被其他地方引用，因此getBucket无需加锁
 			node.GetBucket(rdx, util.IntArrayToString(node.bucketKey, rdx), db, cache)
 		}
 		mgtNode.updateLatch.Unlock()
@@ -100,6 +107,7 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *[]
 
 // 获取bucket,如果bucket为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetBucket(rdx int, name string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+	//跳转到此函数时保证无需考虑锁
 	if mgtNode.bucket == nil {
 		var ok bool
 		var bucket *Bucket
@@ -364,6 +372,7 @@ func (mgt *MGT) PrintMGT(mehtName string, db *leveldb.DB, cache *[]interface{}) 
 
 // 递归打印MGT
 func (mgt *MGT) PrintMGTNode(mehtName string, node *MGTNode, level int, db *leveldb.DB, cache *[]interface{}) {
+	//跳转到此函数时mgt已经加写锁
 	if node == nil {
 		return
 	}

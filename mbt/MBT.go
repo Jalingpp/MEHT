@@ -2,6 +2,7 @@ package mbt
 
 import (
 	"MEHT/util"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -30,27 +31,9 @@ func NewMBT(name string, bucketNum int, rdx int, db *leveldb.DB, cacheEnable boo
 	if bucketNum <= 0 {
 		panic("BucketNum of MBT must exceed 0.")
 	} else if bucketNum == 1 {
-		root = &MBTNode{
-			nodeHash:    nil,
-			subNodes:    nil,
-			dataHashes:  make([][]byte, 0),
-			isLeaf:      true,
-			bucket:      make([]util.KVPair, 0),
-			bucketKey:   nil,
-			latch:       sync.RWMutex{},
-			updateLatch: sync.Mutex{},
-		}
+		root = &MBTNode{nil, nil, make([][]byte, 0), true, make([]util.KVPair, 0), nil, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		root = &MBTNode{
-			nodeHash:    nil,
-			subNodes:    make([]*MBTNode, rdx),
-			dataHashes:  make([][]byte, 0),
-			isLeaf:      false,
-			bucket:      nil,
-			bucketKey:   nil,
-			latch:       sync.RWMutex{},
-			updateLatch: sync.Mutex{},
-		}
+		root = &MBTNode{nil, make([]*MBTNode, rdx), make([][]byte, 0), false, nil, nil, sync.RWMutex{}, sync.Mutex{}}
 		round := len(util.IntToHEXString(bucketNum - 1))
 		queue := arrayqueue.New()
 		queue.Enqueue(root)
@@ -68,16 +51,7 @@ func NewMBT(name string, bucketNum int, rdx int, db *leveldb.DB, cacheEnable boo
 						ssubNode = make([]*MBTNode, rdx)
 						bbucket = make([]util.KVPair, 0)
 					}
-					newNode := &MBTNode{
-						nodeHash:    nil,
-						subNodes:    ssubNode,
-						dataHashes:  make([][]byte, 0),
-						isLeaf:      isLeaf_,
-						bucket:      bbucket,
-						bucketKey:   append([]int{k}, cnode.bucketKey...),
-						latch:       sync.RWMutex{},
-						updateLatch: sync.Mutex{},
-					}
+					newNode := &MBTNode{nil, ssubNode, make([][]byte, 0), isLeaf_, bbucket, append([]int{k}, cnode.bucketKey...), sync.RWMutex{}, sync.Mutex{}}
 					cnode.subNodes[j] = newNode
 					if !isLeaf_ {
 						queue.Enqueue(newNode)
@@ -116,13 +90,32 @@ func (mbt *MBT) Insert(kvPair *util.KVPair, db *leveldb.DB) {
 
 }
 
-func (mbt *MBT) RecursivelyInsertMBTNode(index int, key string, value string, cnode *MBTNode, db *leveldb.DB, flag *bool) *MBTNode {
+func (mbt *MBT) RecursivelyInsertMBTNode(level int, key string, value string, cnode *MBTNode, db *leveldb.DB, flag *bool) *MBTNode {
 	// TODO
+	cnode.latch.Lock()
+	defer cnode.latch.Unlock()
+	if flag != nil && !(*flag) {
+		//val_, _ := mbt.QueryByKey()
+	}
 	return nil
 }
 
-func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
+func (mbt *MBT) RecursivelyQueryMBTNode(level int, bucketKey []int, cnode *MBTNode, db *leveldb.DB, isLockFree bool) (string, *MBTProof) {
+	return "", nil
+}
+
+func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) []byte {
 	// TODO
+	hash := sha256.Sum256(mbt.rootHash)
+	if err := db.Delete(hash[:], nil); err != nil {
+		panic(err)
+	}
+	mbt.rootHash = mbt.GetRoot(db).nodeHash
+	hash = sha256.Sum256(mbt.rootHash)
+	if err := db.Put(hash[:], SerializeMBT(mbt), nil); err != nil {
+		panic(err)
+	}
+	return hash[:]
 }
 
 func (mbt *MBT) PurgeCache() {

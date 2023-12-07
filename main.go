@@ -75,4 +75,6 @@ func main() {
 	//写seHash和dbPath到文件
 	seDB.WriteSEDBInfoToFile(filePath)
 
+	//测试上传
+
 }

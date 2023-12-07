@@ -11,6 +11,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
+
 //NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {}: creates a new Bucket object
 //GetSegment(key string) string {} :给定一个key，返回该key所在的segment map key
 //IsInBucket(key string) bool {}:给定一个key, 判断它是否在该bucket中

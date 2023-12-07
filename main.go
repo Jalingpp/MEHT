@@ -60,6 +60,7 @@ func main() {
 
 	//测试修改
 	//新建分支测试
+	//测试新设备新分支
 
 	//测试查询功能
 	qkey := util.StringToHex("Alice")

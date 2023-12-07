@@ -14,29 +14,69 @@ import (
 
 func main() {
 	//测试辅助索引查询
-	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair) {
+	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair, phi int) {
+		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for _, kvPair := range kvPairs {
-			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
-			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
-			kvPairCh <- kvPair
-			//fmt.Println(i)
+		wG := sync.WaitGroup{}
+		wG.Add(phi)
+		batchNum := len(kvPairs)/phi + 1
+		for i := 0; i < phi; i++ {
+			idx := i
+			go func() {
+				st := idx * batchNum
+				var ed int
+				if idx != phi-1 {
+					ed = (idx + 1) * batchNum
+				} else {
+					ed = len(kvPairs)
+				}
+				for _, kvPair := range kvPairs[st:ed] {
+					kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
+					kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
+					kvPairCh <- kvPair
+				}
+				wG.Done()
+			}()
 		}
+		wG.Wait()
 		close(kvPairCh)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan *util.KVPair, durationCh chan time.Duration) {
 		for kvPair := range kvPairCh {
+			st := time.Now()
 			seDB.InsertKVPair(kvPair)
+			du := time.Since(st)
+			durationCh <- du
 		}
 		wg.Done()
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
+	countLatency := func(rets *[]time.Duration, durationChList *[]chan time.Duration, done chan bool) {
+		wG := sync.WaitGroup{}
+		wG.Add(len(*rets))
+		for i := 0; i < len(*rets); i++ {
+			idx := i
+
+			go func() {
+				ch := (*durationChList)[idx]
+				for du := range ch {
+					(*rets)[idx] += du
+				}
+				wG.Done()
+			}()
+		}
+		wG.Wait()
+		done <- true
+	}
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan *util.KVPair, durationChList *[]chan time.Duration) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go worker(&wg, seDB, kvPairCh)
+			go worker(&wg, seDB, kvPairCh, (*durationChList)[i])
 		}
 		wg.Wait()
+		for _, duCh := range *durationChList {
+			close(duCh)
+		}
 	}
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
@@ -51,10 +91,15 @@ func main() {
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
 	var numOfWorker = 2
+	var phi = 2
 	args := os.Args
 	for _, arg := range args[1:] {
 		if arg == "meht" || arg == "mpt" {
 			siModeOptions = append(siModeOptions, arg)
+		} else if len(arg) > 4 && arg[:3] == "-phi" {
+			if n, err := strconv.Atoi(arg[3:]); err == nil {
+				phi = n
+			}
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
 				if n >= 300000 {
@@ -89,8 +134,8 @@ func main() {
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := 128000000
-				fullNodeCacheCapacity := 128000000
+				shortNodeCacheCapacity := rdx * num / 12 * 7
+				fullNodeCacheCapacity := rdx * num / 12 * 7
 				mgtNodeCacheCapacity := 100000000
 				bucketCacheCapacity := 128000000
 				segmentCacheCapacity := bs * bucketCacheCapacity
@@ -107,17 +152,30 @@ func main() {
 					0, 0, 0, 0,
 					numOfWorker)
 			}
-			var start time.Time
+
 			var duration time.Duration = 0
+			var latencyDuration time.Duration = 0
 			kvPairCh := make(chan *util.KVPair)
-			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
-			start = time.Now()
-			createWorkerPool(numOfWorker, seDB, kvPairCh)
+			latencyDurationChList := make([]chan time.Duration, numOfWorker)
+			for i := 0; i < numOfWorker; i++ {
+				latencyDurationChList[i] = make(chan time.Duration)
+			}
+			latencyDurationList := make([]time.Duration, numOfWorker)
+			doneCh := make(chan bool)
+			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
+			go allocateNFTOwner("data/nft-owner", num, kvPairCh, phi)
+			start := time.Now()
+			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
 			duration = time.Since(start)
+			<-doneCh
+			for _, du := range latencyDurationList {
+				duration += du
+			}
 			seDB.WriteSEDBInfoToFile(filePath)
 			//duration = time.Since(start)
 			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
-				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps.\n")
+				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
+				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
 			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
 			seDB = nil
 		}

@@ -58,6 +58,9 @@ func main() {
 	// 打印SEDB
 	seDB.PrintSEDB()
 
+	//测试修改
+	//新建分支测试
+
 	//测试查询功能
 	qkey := util.StringToHex("Alice")
 	qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)

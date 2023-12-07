@@ -87,11 +87,17 @@ func main() {
 	}
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
+			if siMode == "meht" {
+				siMode = ""
+			}
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
 			rdx := 16                                                               //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			bc := 1280                                                              //meht中bucket的容量，即每个bucket中最多存储的KVPair数
 			bs := 1                                                                 //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
+			if siMode == "" {
+				siMode = "meht"
+			}
 			var seDB *sedb.SEDB
 			//cacheEnable := false
 			cacheEnable := true

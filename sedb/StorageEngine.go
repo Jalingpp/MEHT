@@ -90,6 +90,10 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
 	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 && se.primaryLatch.TryLock() { // 只允许一个线程重构主索引
+		if se.primaryIndex != nil {
+			se.primaryLatch.Unlock()
+			return se.primaryIndex
+		}
 		if primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil); error_ == nil {
 			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
@@ -107,7 +111,11 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 // 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 	//如果当前secondaryIndex_mpt为空，则从数据库中查询
-	if se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 {
+	if se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 && se.secondaryLatch.TryLock() {
+		if se.secondaryIndex_mpt != nil {
+			se.secondaryLatch.Unlock()
+			return se.secondaryIndex_mpt
+		}
 		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mpt, nil); len(secondaryIndexString) != 0 {
 			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
@@ -119,12 +127,13 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 
 // 返回meht类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
-	//如果当前secondaryIndex_meht为空，则从数据库中查询
+	//如果当前secondaryIndex_meht为空，则从数据库中查询，如果数据库中也找不到，则在纯查询空meht场景下会有大问题
 	if se.secondaryIndex_meht == nil {
 		if secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil); len(secondaryIndexString) != 0 {
 			_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndex_meht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
 				bucketCC, segmentCC, merkleTreeCC)
+			se.secondaryIndex_meht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
 		}
 	}
 	return se.secondaryIndex_meht

@@ -83,9 +83,12 @@ func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
 func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 	meht.latch.RLock()
 	defer meht.latch.RUnlock()
-	if meht.seh == nil && meht.sehUpdateLatch.TryLock() {
-		sehString, error_ := db.Get([]byte(meht.name+"seh"), nil)
-		if error_ == nil {
+	for meht.seh == nil && meht.sehUpdateLatch.TryLock() {
+		if meht.seh != nil {
+			meht.sehUpdateLatch.Unlock()
+			return meht.seh
+		}
+		if sehString, err := db.Get([]byte(meht.name+"seh"), nil); err == nil {
 			seh, _ := DeserializeSEH(sehString)
 			meht.seh = seh
 		}
@@ -100,9 +103,12 @@ func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
 	meht.latch.RLock()
 	defer meht.latch.RUnlock()
-	if meht.mgt == nil && meht.mgtUpdateLatch.TryLock() {
-		mgtString, error_ := db.Get(meht.mgtHash, nil)
-		if error_ == nil {
+	for meht.mgt == nil && meht.mgtUpdateLatch.TryLock() {
+		if meht.mgt != nil {
+			meht.mgtUpdateLatch.Unlock()
+			return meht.mgt
+		}
+		if mgtString, err := db.Get(meht.mgtHash, nil); err == nil {
 			mgt, _ := DeserializeMGT(mgtString)
 			meht.mgt = mgt
 		}
@@ -121,8 +127,11 @@ func (meht *MEHT) GetCache() *[]interface{} {
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
 func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
-	if meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
-		defer meht.seh.latch.Unlock()
+	for meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
+		if meht.seh.bucketsNumber != 0 {
+			meht.seh.latch.Unlock()
+			break
+		}
 		//插入KV到SEH
 		bucketss, _, _, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
 		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
@@ -134,9 +143,10 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		//mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
 		//return bucketss[0][0], kvpair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
+		meht.seh.latch.Unlock()
 		return bucketss[0][0], kvpair.GetValue(), nil
 	}
-	for meht.GetSEH(db).bucketsNumber == 0 { // 等待最初的桶建成
+	for meht.seh.bucketsNumber == 0 { // 等待最初的桶建成
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	var bucketDelegationCode_ bucketDelegationCode = FAILED
@@ -151,7 +161,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	}
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
-		meht.mgt = meht.GetMGT(db).MGTUpdate(bucketss, db, meht.cache)
+		meht.mgt = meht.mgt.MGTUpdate(bucketss, db, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		//fmt.Println("Try to unlock mgt latch in meht insert.")
@@ -231,7 +241,8 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	//找到segRootHash和segProof
 	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, meht.cache)
 	//根据key找到mgtRootHash和mgtProof
-	meht.GetMGT(db).latch.RLock()
+	meht.GetMGT(db) // 保证 mgt 不为空
+	meht.mgt.latch.RLock()
 	mgtRootHash, mgtProof := meht.mgt.GetProof(bucket.GetBucketKey(), db, meht.cache)
 	meht.mgt.latch.RUnlock()
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}

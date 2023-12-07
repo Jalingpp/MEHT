@@ -76,6 +76,10 @@ type ShortNode struct {
 func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode {
 	//如果当前节点的nextNode为nil，则从数据库中查询
 	if sn.nextNode == nil && len(sn.nextNodeHash) != 0 && sn.updateLatch.TryLock() { // 只允许一个线程重构nextNode
+		if sn.nextNode != nil {
+			sn.updateLatch.Unlock()
+			return sn.nextNode
+		}
 		var ok bool
 		var nextNode *FullNode
 		if cache != nil {

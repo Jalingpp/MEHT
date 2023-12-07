@@ -80,6 +80,10 @@ func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode st
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
 	if sedb.se == nil && sedb.seHash != nil && len(sedb.seHash) != 0 && sedb.latch.TryLock() { // 只允许一个线程重构se
+		if sedb.se != nil {
+			sedb.latch.Unlock()
+			return sedb.se
+		}
 		if seString, error_ := sedb.primaryDb.Get(sedb.seHash, nil); error_ == nil {
 			se, _ := DeserializeStorageEngine(seString, sedb.cacheEnable, sedb.cacheCapacity)
 			sedb.se = se
@@ -94,7 +98,11 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 // 向SEDB中插入一条记录,返回插入证明
 func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
 	//如果是第一次插入
-	if sedb.GetStorageEngine() == nil && sedb.latch.TryLock() { // 只允许一个线程新建se
+	for sedb.GetStorageEngine() == nil && sedb.latch.TryLock() { // 只允许一个线程新建se
+		if sedb.se != nil {
+			sedb.latch.Unlock()
+			break
+		}
 		//创建一个新的StorageEngine
 		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs, sedb.cacheEnable,
 			sedb.cacheCapacity)

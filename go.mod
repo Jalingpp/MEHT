@@ -2,7 +2,10 @@ module MEHT
 
 go 1.21
 
-require github.com/hashicorp/golang-lru/v2 v2.0.7
+require (
+	github.com/emirpasic/gods v1.18.1
+	github.com/hashicorp/golang-lru/v2 v2.0.7
+)
 
 require (
 	github.com/fsnotify/fsnotify v1.6.0 // indirect

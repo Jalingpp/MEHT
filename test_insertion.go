@@ -3,9 +3,11 @@ package main
 import (
 	"MEHT/util"
 	"fmt"
+	"log"
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,6 +123,12 @@ func main() {
 	for _, siMode := range siModeOptions {
 		for _, num := range insertNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
+			dirs := strings.Split(filePath, string(os.PathSeparator))
+			if _, err := os.Stat(strings.Join(dirs[:len(dirs)-1], string(os.PathSeparator))); os.IsNotExist(err) {
+				if err := os.MkdirAll(strings.Join(dirs[:len(dirs)-1], string(os.PathSeparator)), 0750); err != nil {
+					log.Fatal(err)
+				}
+			}
 			if _, err := os.Stat(filePath); os.IsNotExist(err) {
 				util.WriteStringToFile(filePath, ",data/levelDB/PrimaryDB"+strconv.Itoa(num)+siMode+
 					",data/levelDB/SecondaryDB"+strconv.Itoa(num)+siMode+"\n")
@@ -176,7 +184,7 @@ func main() {
 			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 				strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
-				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
+				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.\n")
 			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
 				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
 			seDB = nil

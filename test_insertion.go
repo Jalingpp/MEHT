@@ -80,18 +80,18 @@ func main() {
 	}
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
-		merkleTreeCC int, numOfWorker int) string {
+		merkleTreeCC int, numOfWorker int, phi int) string {
 		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
 			",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
-			strconv.Itoa(numOfWorker) + "."
+			strconv.Itoa(numOfWorker) + ",\tphi: " + strconv.Itoa(phi) + "."
 	}
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
 	var numOfWorker = 2
-	var phi = 2
+	var phi = 1
 	args := os.Args
 	for _, arg := range args[1:] {
 		if arg == "meht" || arg == "mpt" {
@@ -145,12 +145,12 @@ func main() {
 					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
 				argsString = serializeArgs(siMode, rdx, bc, bs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
-					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
+					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, phi)
 			} else {
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, "test", rdx, bc, bs, cacheEnable)
 				argsString = serializeArgs(siMode, rdx, bc, bs, cacheEnable, 0, 0,
 					0, 0, 0, 0,
-					numOfWorker)
+					numOfWorker, phi)
 			}
 
 			var duration time.Duration = 0
@@ -169,14 +169,16 @@ func main() {
 			duration = time.Since(start)
 			<-doneCh
 			for _, du := range latencyDurationList {
-				duration += du
+				latencyDuration += du
 			}
-			seDB.WriteSEDBInfoToFile(filePath)
+			//seDB.WriteSEDBInfoToFile(filePath)
 			//duration = time.Since(start)
 			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
-				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
+				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
+				strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
 				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
-			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps.")
+			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
+				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
 			seDB = nil
 		}
 	}

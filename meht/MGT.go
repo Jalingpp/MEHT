@@ -53,7 +53,7 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {
 		mgtString, error := db.Get(mgt.mgtRootHash, nil)
 		if error == nil {
-			m, _ := DeserializeMGTNode(mgtString)
+			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
 		}
 	}
@@ -61,11 +61,11 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 }
 
 // 获取subnode,如果subnode为空,则从leveldb中读取
-func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB) *MGTNode {
+func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int) *MGTNode {
 	if mgtNode.subNodes[index] == nil {
 		nodeString, error := db.Get(mgtNode.dataHashes[index], nil)
 		if error == nil {
-			node, _ := DeserializeMGTNode(nodeString)
+			node, _ := DeserializeMGTNode(nodeString, rdx)
 			mgtNode.subNodes[index] = node
 		}
 	}
@@ -101,7 +101,7 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 }
 
 // NewMGTNode creates a new MGTNode
-func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB) *MGTNode {
+func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB, rdx int) *MGTNode {
 	var nodeHash []byte
 	var dataHashes [][]byte
 
@@ -113,8 +113,9 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 		}
 	} else {
 		if subNodes == nil {
-			subNodes = make([]*MGTNode, bucket.rdx)
-			dataHashes = make([][]byte, bucket.rdx)
+			//subNodes是nil说明是非叶子节点,显然非叶子节点没有bucket,因此需要额外的rdx参数
+			subNodes = make([]*MGTNode, rdx)
+			dataHashes = make([][]byte, rdx)
 		}
 		for i := 0; i < len(subNodes); i++ {
 			if subNodes[i] != nil {
@@ -128,7 +129,8 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
 	var mgtNode *MGTNode
-	if bucket == nil {
+	//通过判断是否是叶子节点决定bucket是否需要
+	if !isLeaf {
 		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, nil, nil}
 	} else {
 		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, bucket, bucket.bucketKey}
@@ -142,8 +144,8 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 
 // 更新nodeHash,并将node存入leveldb
 func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB) {
-	//delete the old node in leveldb
-	db.Delete(mgtNode.nodeHash, nil)
+	// //delete the old node in leveldb
+	// db.Delete(mgtNode.nodeHash, nil)
 	//update nodeHash
 	UpdateNodeHash(mgtNode)
 	//insert node in leveldb
@@ -166,7 +168,10 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 		if p == nil {
 			return nil
 		}
-		p = p.GetSubnode(bucketKey[identI], db)
+		if p.isLeaf { // 这里其实不该有这个问题
+			break
+		}
+		p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
 		//将p插入到result的第0个位置
 		result = append(result, p)
 	}
@@ -191,7 +196,7 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 	}
 	//如果root为空,则直接为newBuckets创建叶节点(newBuckets中只有一个bucket)
 	if mgt.GetRoot(db) == nil {
-		mgt.Root = NewMGTNode(nil, true, newBuckets[0], db)
+		mgt.Root = NewMGTNode(nil, true, newBuckets[0], db, newBuckets[0].rdx)
 		mgt.Root.UpdateMGTNodeToDB(db)
 		return mgt
 	}
@@ -229,12 +234,12 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	subNodes := make([]*MGTNode, 0)
 
 	for i := 0; i < len(newBuckets); i++ {
-		newNode := NewMGTNode(nil, true, newBuckets[i], db)
+		newNode := NewMGTNode(nil, true, newBuckets[i], db, newBuckets[0].rdx)
 		subNodes = append(subNodes, newNode)
 		newNode.UpdateMGTNodeToDB(db)
 	}
 	//创建新的父节点
-	newFatherNode := NewMGTNode(subNodes, false, nil, db)
+	newFatherNode := NewMGTNode(subNodes, false, nil, db, newBuckets[0].rdx)
 	newFatherNode.UpdateMGTNodeToDB(db)
 
 	//更新父节点的chid为新的父节点
@@ -303,7 +308,7 @@ func (mgt *MGT) PrintMGTNode(mehtName string, node *MGTNode, level int, db *leve
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
-			mgt.PrintMGTNode(mehtName, node.GetSubnode(i, db), level+1, db)
+			mgt.PrintMGTNode(mehtName, node.GetSubnode(i, db, mgt.rdx), level+1, db)
 		}
 	}
 }
@@ -425,7 +430,7 @@ func SerializeMGTNode(node *MGTNode) []byte {
 	return jsonMGTNode
 }
 
-func DeserializeMGTNode(data []byte) (*MGTNode, error) {
+func DeserializeMGTNode(data []byte, rdx int) (*MGTNode, error) {
 	var seMGTNode SeMGTNode
 	err := json.Unmarshal(data, &seMGTNode)
 	if err != nil {
@@ -438,7 +443,8 @@ func DeserializeMGTNode(data []byte) (*MGTNode, error) {
 		dataHash, _ := hex.DecodeString(dataHashStrings[i])
 		dataHashes = append(dataHashes, dataHash)
 	}
-	subnodes := make([]*MGTNode, len(dataHashes))
+	//subnodes := make([]*MGTNode, len(dataHashes))
+	subnodes := make([]*MGTNode, rdx)
 	mgtNode := &MGTNode{seMGTNode.NodeHash, subnodes, dataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey}
 	return mgtNode, nil
 }

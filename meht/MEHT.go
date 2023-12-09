@@ -75,7 +75,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
-		meht.mgt.Root = NewMGTNode(nil, true, buckets[0], db)
+		meht.mgt.Root = NewMGTNode(nil, true, buckets[0], db, meht.rdx)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		mgtRootHash, mgtProof := meht.mgt.GetProof(buckets[0].GetBucketKey(), db)

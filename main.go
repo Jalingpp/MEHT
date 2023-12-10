@@ -11,7 +11,7 @@ func main() {
 
 	// //参数设置
 	// // filePath := "data/levelDB/testMPT/config.txt" //存储seHash和dbPath的文件路径
-	filePath := "data/levelDB/testNFTEHT/config.txt" //存储seHash和dbPath的文件路径
+	filePath := "data/levelDB/testMEHT/config.txt" //存储seHash和dbPath的文件路径
 	// // siMode := "meht" //辅助索引类型，meht或mpt
 	siMode := "meht"
 	mehtName := "OwnerIndex" //meht的名字
@@ -42,11 +42,11 @@ func main() {
 
 	// 读文件创建一个KVPair数组
 	kvdataPath := "data/testdata.txt"
-	// kvdataPath := "G://Data//NFT-ETH//nft-owner"
+	// kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
 	kvPairs := util.ReadKVPairFromFile(kvdataPath)
 
 	//插入KVPair数组
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 10; i++ {
 		//把KV转化为十六进制
 		kvPairs[i].SetKey(kvPairs[i].GetKey())
 		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
@@ -54,7 +54,13 @@ func main() {
 		seDB.InsertKVPair(kvPairs[i])
 		// // 打印SEDB
 		// seDB.PrintSEDB()
+		// if i%10000 == 0 {
+		// 	fmt.Println("Inserted i = ", i)
+		// }
 	}
+
+	// //打印SEDB中SEH的GD
+	// fmt.Println("GD = ", seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetGD())
 
 	// 打印SEDB
 	seDB.PrintSEDB()

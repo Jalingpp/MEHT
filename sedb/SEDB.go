@@ -246,3 +246,8 @@ func (sedb *SEDB) PrintSEDB() {
 	fmt.Println("dbPath:", sedb.dbPath)
 	sedb.GetStorageEngine().PrintStorageEngine(sedb.db)
 }
+
+// 获取db
+func (sedb *SEDB) GetDB() *leveldb.DB {
+	return sedb.db
+}

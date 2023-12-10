@@ -71,7 +71,7 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//判断是否为第一次插入
 	if meht.GetSEH(db).bucketsNumber == 0 {
 		//插入KV到SEH
-		buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
+		buckets, _, segRootHash, mhtProof, _ := meht.seh.Insert(kvpair, db)
 		//更新seh到db
 		meht.seh.UpdateSEHToDB(db)
 		//新建mgt的根节点
@@ -82,11 +82,16 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 		return buckets[0], kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	buckets, _, segRootHash, mhtProof := meht.seh.Insert(kvpair, db)
-	//更新seh到db
-	meht.seh.UpdateSEHToDB(db)
+	buckets, _, segRootHash, mhtProof, isInserted := meht.seh.Insert(kvpair, db)
 	//无论是否分裂，都需要更新mgt
 	meht.mgt = meht.GetMGT(db).MGTUpdate(buckets, db)
+	//如果未插入，则重新执行上述两步（需要再向下分裂）
+	for !isInserted {
+		buckets, _, segRootHash, mhtProof, isInserted = meht.seh.Insert(kvpair, db)
+		meht.mgt = meht.GetMGT(db).MGTUpdate(buckets, db)
+	}
+	//更新seh到db
+	meht.seh.UpdateSEHToDB(db)
 	//更新mgt的根节点哈希并更新到db
 	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	//获取当前KV插入的bucket

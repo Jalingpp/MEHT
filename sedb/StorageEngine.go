@@ -151,7 +151,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		newValues, mehtProof := se.InsertIntoMEHT(reversedKV, db)
 		//打印插入结果
 		fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
-		meht.PrintMEHTProof(mehtProof)
+		// meht.PrintMEHTProof(mehtProof)
 		//更新搜索引擎的哈希值
 		se.UpdateStorageEngineToDB(db)
 		return primaryProof, nil, mehtProof

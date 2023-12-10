@@ -110,8 +110,8 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB) (string, []byte, *mht.MHTPr
 	return value, segRootHash, mhtProof
 }
 
-// Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, []byte, *mht.MHTProof) {
+// Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof,bool表示是否已经插入
+func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, []byte, *mht.MHTProof, bool) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -123,27 +123,27 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
-		return buckets, kvpair.GetValue(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetRootHash(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetProof(0)
+		return buckets, kvpair.GetValue(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetRootHash(), seh.ht[""].merkleTrees[bucket.GetSegmentKey(kvpair.GetKey())].GetProof(0), true
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	bucket := seh.GetBucketByKey(kvpair.GetKey(), db)
 	if bucket != nil {
 		//插入(更新)到已存在的bucket中
-		buckets := bucket.Insert(kvpair, db)
+		buckets, isInserted := bucket.Insert(kvpair, db)
 		seh.bucketsNumber += len(buckets) - 1
 		if len(buckets) == 1 {
 			//未发生分裂
 			//只将bucket[0]更新至db
 			buckets[0].UpdateBucketToDB(db)
-			return buckets, kvpair.GetValue(), buckets[0].merkleTrees[buckets[0].GetSegmentKey(kvpair.GetKey())].GetRootHash(), buckets[0].merkleTrees[buckets[0].GetSegmentKey(kvpair.GetKey())].GetProof(0)
+			return buckets, kvpair.GetValue(), buckets[0].merkleTrees[buckets[0].GetSegmentKey(kvpair.GetKey())].GetRootHash(), buckets[0].merkleTrees[buckets[0].GetSegmentKey(kvpair.GetKey())].GetProof(0), true
 		}
 		//发生分裂,更新ht
 		newld := buckets[0].GetLD()
 		if newld > seh.gd {
 			//ht需扩展
 			seh.gd++
-			newht := make(map[string]*Bucket, seh.gd*seh.rdx)
-			//遍历orifinHT,将bucket指针指向新的bucket
+			newht := make(map[string]*Bucket, len(seh.ht)*seh.rdx)
+			//遍历originHT,将bucket指针指向新的bucket
 			for k, _ := range seh.ht {
 				for i := 0; i < seh.rdx; i++ {
 					newbkey := util.IntArrayToString([]int{i}, buckets[0].rdx) + k
@@ -161,9 +161,9 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, string, 
 		kvbucket := seh.GetBucketByKey(kvpair.GetKey(), db)
 		insertedV, segkey, issegExist, index := kvbucket.GetValueByKey(kvpair.GetKey(), db)
 		segRootHash, proof := kvbucket.GetProof(segkey, issegExist, index, db)
-		return buckets, insertedV, segRootHash, proof
+		return buckets, insertedV, segRootHash, proof, isInserted
 	}
-	return nil, "", nil, nil
+	return nil, "", nil, nil, false
 }
 
 // 打印SEH
@@ -174,7 +174,7 @@ func (seh *SEH) PrintSEH(db *leveldb.DB) {
 	}
 	fmt.Printf("SEH: gd=%d, rdx=%d, bucketCapacity=%d, bucketSegNum=%d, bucketsNumber=%d\n", seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, seh.bucketsNumber)
 	for k, _ := range seh.ht {
-		fmt.Printf("bucketKey=%s\n", k)
+		fmt.Printf("bucketKey=%s in ht.\n", k)
 		seh.GetBucket(k, db).PrintBucket(db)
 	}
 }

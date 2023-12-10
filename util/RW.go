@@ -26,7 +26,7 @@ func ReadKVPairFromFile(filepath string) []*KVPair {
 			break
 		}
 		//将一行分割为key和value
-		line = strings.TrimRight(line, "\n")
+		line = strings.TrimRight(line, "\r\n")
 		kv := strings.Split(line, ",")
 		//创建一个KVPair
 		kvPair := NewKVPair(kv[0], kv[1])

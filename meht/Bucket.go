@@ -11,7 +11,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-
 //NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {}: creates a new Bucket object
 //GetSegment(key string) string {} :给定一个key，返回该key所在的segment map key
 //IsInBucket(key string) bool {}:给定一个key, 判断它是否在该bucket中
@@ -219,7 +218,7 @@ func (b *Bucket) GetIndex(key string, db *leveldb.DB) (string, bool, int) {
 }
 
 // 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
-func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
+func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, bool) {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
 	segkey, _, index := b.GetIndex(kvpair.GetKey(), db)
@@ -238,7 +237,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 		//输出更新后的value和proof
 		fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), kvpair.GetKey(), kvpair.GetValue())
 		PrintMHTProof(updateProof)
-		return buckets
+		return buckets, true
 	} else {
 		//获得kvpair的key的segment
 		segkey := b.GetSegmentKey(kvpair.GetKey())
@@ -253,10 +252,6 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segkey, db)
 			index := len(b.segments[segkey]) - 1
-			// for i := 0; i < len(b.segments[segkey]); i++ {
-			// 	fmt.Printf("key=%s, value=%s", b.segments[segkey][i].GetKey(), b.segments[segkey][i].GetValue())
-			// }
-			// fmt.Printf("index: %d\n", index)
 			b.number++
 			//若该segment对应的merkle tree不存在,则创建,否则插入value到merkle tree中
 			if b.GetMerkleTree(segkey, db) == nil {
@@ -271,7 +266,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 			//输出插入的value和proof
 			fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), kvpair.GetKey(), kvpair.GetValue())
 			PrintMHTProof(updateProof)
-			return buckets
+			return buckets, true
 		} else {
 			//已满,分裂成rdx个bucket
 			fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), b.rdx)
@@ -297,8 +292,13 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) []*Bucket {
 				bk -= 'a' - '9' - 1
 			}
 			fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
+			//判断第bk个bucket是否已满，如果已满则返回MEHT的插入口重插，以避免继续分裂造成HT和MGT更新有误
+			if buckets[bk].number == buckets[bk].capacity {
+				//回滚插入，返回一个未插入布尔值
+				return buckets, false
+			}
 			buckets[bk].Insert(kvpair, db)
-			return buckets
+			return buckets, true
 		}
 	}
 }

@@ -173,7 +173,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 		}
 		p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
 		//将p插入到result的第0个位置
-		result = append(result, p)
+		result = append([]*MGTNode{p}, result...)
 	}
 	return result
 }
@@ -200,13 +200,12 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 		mgt.Root.UpdateMGTNodeToDB(db)
 		return mgt
 	}
-
 	var nodePath []*MGTNode
 	//如果newBuckets中只有一个bucket，则说明没有发生分裂，只更新nodePath中所有的哈希值
 	if len(newBuckets) == 1 {
 		nodePath = mgt.GetLeafNodeAndPath(newBuckets[0].bucketKey, db)
 		//更新叶子节点的dataHashes
-		nodePath[0].dataHashes = nil
+		nodePath[0].dataHashes = make([][]byte, 0)
 		for _, merkleTree := range newBuckets[0].GetMerkleTrees() {
 			nodePath[0].dataHashes = append(nodePath[0].dataHashes, merkleTree.GetRootHash())
 		}
@@ -339,27 +338,28 @@ func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB) ([]byte, []MGTProof) {
 // 给定segRootHash和mgtProof，返回由它们计算得到的mgtRootHash
 func ComputMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {
 	//遍历mgtProof中前segNum个元素，如果segRootHash不存在，则返回nil，否则计算得到第0个node的nodeHash
+	//同样遍历第i层的所有元素，如果第i-1层的nodehash不在其中，则返回nil，否则计算得到第i层node的nodeHash
 	isSRHExist := false
 	nodeHash0 := segRootHash
 	var nodeHash1 []byte
-	level := mgtProof[len(mgtProof)-1].level
-	for i := len(mgtProof) - 1; i >= 0; i-- {
+	level := 0
+	for i := 0; i <= len(mgtProof)-1; i++ {
 		if mgtProof[i].level != level {
 			if !isSRHExist {
 				return nil
 			} else {
-				level--
+				level++
 				isSRHExist = false
 				Hash := sha256.Sum256(nodeHash1)
 				nodeHash0 = Hash[:]
 				nodeHash1 = nodeHash1[:0]
-				i++
+				i--
 			}
 		} else {
 			if bytes.Equal(nodeHash0, mgtProof[i].dataHash) {
 				isSRHExist = true
 			}
-			nodeHash1 = append(mgtProof[i].dataHash, nodeHash1...)
+			nodeHash1 = append(nodeHash1, mgtProof[i].dataHash...)
 		}
 	}
 	if !isSRHExist {

@@ -96,7 +96,7 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 }
 
 // 向SEDB中插入一条记录,返回插入证明
-func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {
+func (sedb *SEDB) InsertKVPair(kvpair util.KVPair) *SEDBProof {
 	//如果是第一次插入
 	for sedb.GetStorageEngine() == nil && sedb.latch.TryLock() { // 只允许一个线程新建se
 		if sedb.se != nil {

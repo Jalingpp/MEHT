@@ -56,6 +56,10 @@ func (mbtProof *MBTProof) GetExist() bool {
 	return mbtProof.isExist
 }
 
+func (mbtProof *MBTProof) GetProofs() []*ProofElement {
+	return mbtProof.proofs
+}
+
 func (mbtProof *MBTProof) PrintMBTProof() {
 	fmt.Printf("打印MBTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("isExist=", mbtProof.isExist)

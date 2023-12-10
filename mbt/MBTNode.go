@@ -17,15 +17,15 @@ type MBTNode struct {
 	subNodes   []*MBTNode
 	dataHashes [][]byte
 
-	isLeaf    bool
-	bucket    []util.KVPair
-	bucketKey []int
+	isLeaf bool
+	bucket []util.KVPair
+	num    int // num of kvPairs in bucket
 
 	latch       sync.RWMutex
 	updateLatch sync.Mutex
 }
 
-func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *lru.Cache[string, *MBTNode]) *MBTNode {
+func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
 	if mbtNode.subNodes[index] == nil && mbtNode.updateLatch.TryLock() {
 		var node *MBTNode
 		var ok bool
@@ -36,7 +36,7 @@ func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, rdx int, cache *lr
 		}
 		if !ok {
 			if nodeString, err := db.Get(mbtNode.dataHashes[index], nil); err == nil {
-				node, _ = DeserializeMBTNode(nodeString, rdx)
+				node, _ = DeserializeMBTNode(nodeString)
 				mbtNode.subNodes[index] = node
 			}
 		}
@@ -52,7 +52,6 @@ type SeMBTNode struct {
 	DataHashes string
 	IsLeaf     bool
 	Bucket     []util.KVPair
-	BucketKey  []int
 }
 
 func SerializeMBTNode(node *MBTNode) []byte {
@@ -63,7 +62,7 @@ func SerializeMBTNode(node *MBTNode) []byte {
 			dataHashString += hex.EncodeToString(hash) + ","
 		}
 	}
-	seMBTNode := &SeMBTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucket, node.bucketKey}
+	seMBTNode := &SeMBTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucket}
 	if jsonMBTNode, err := json.Marshal(seMBTNode); err != nil {
 		fmt.Printf("SerializeMBTNode error: %v\n", err)
 		return nil
@@ -72,7 +71,7 @@ func SerializeMBTNode(node *MBTNode) []byte {
 	}
 }
 
-func DeserializeMBTNode(data []byte, rdx int) (*MBTNode, error) {
+func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 	var seMBTNode SeMBTNode
 	if err := json.Unmarshal(data, &seMBTNode); err != nil {
 		fmt.Printf("DeserializeMBTNode error: %v\n", err)
@@ -85,8 +84,8 @@ func DeserializeMBTNode(data []byte, rdx int) (*MBTNode, error) {
 		dataHashes = append(dataHashes, dataHash)
 	}
 	if seMBTNode.IsLeaf {
-		return &MBTNode{seMBTNode.NodeHash, nil, dataHashes, true, seMBTNode.Bucket, seMBTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, nil, dataHashes, true, seMBTNode.Bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, make([]*MBTNode, rdx), dataHashes, false, nil, seMBTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, make([]*MBTNode, len(dataHashStrings)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }

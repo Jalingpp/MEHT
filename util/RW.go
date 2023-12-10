@@ -38,7 +38,7 @@ func GetDirAllFilePathsFollowSymlink(dirname string) ([]string, error) {
 	return paths, nil
 }
 
-func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []*KVPair) {
+func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []KVPair) {
 	content, err := os.ReadFile(filepath)
 	if err != nil {
 		panic(err)
@@ -50,7 +50,7 @@ func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []*KVPair) {
 		}
 		line_ := Strip(line, "\r")
 		kvs := strings.Split(line_, ",")
-		kvPairs = append(kvPairs, NewKVPair(kvs[0], kvs[1]))
+		kvPairs = append(kvPairs, KVPair{kvs[0], kvs[1]})
 	}
 	return
 }

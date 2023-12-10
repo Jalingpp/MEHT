@@ -26,8 +26,8 @@ func NewKVPair(key string, value string) *KVPair {
 }
 
 // 倒置KV
-func ReverseKVPair(kvpair *KVPair) *KVPair {
-	return &KVPair{kvpair.value, kvpair.key}
+func ReverseKVPair(kvpair KVPair) KVPair {
+	return KVPair{kvpair.value, kvpair.key}
 }
 
 // AddValue adds a new value to the KVPair, if value is changed, returns true

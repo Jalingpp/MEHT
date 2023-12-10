@@ -72,7 +72,7 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 }
 
 // 插入一个KVPair到MPT中，返回新的根节点的哈希值
-func (mpt *MPT) Insert(kvpair *util.KVPair, db *leveldb.DB) {
+func (mpt *MPT) Insert(kvpair util.KVPair, db *leveldb.DB) {
 	//判断是否为第一次插入
 	for mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
 		if mpt.root != nil {
@@ -103,7 +103,10 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 	if flag != nil && !(*flag) {
 		val, _ := mpt.QueryByKey(prefix+suffix, db, true)
 		toAdd := util.NewKVPair(prefix+suffix, val)
-		toAdd.AddValue(string(value))
+		isChange := toAdd.AddValue(string(value))
+		if !isChange {
+			return mpt.root
+		}
 		value = []byte(toAdd.GetValue())
 		*flag = true
 	}
@@ -381,12 +384,12 @@ func (mpt *MPT) QueryByKey(key string, db *leveldb.DB, isLockFree bool) (string,
 }
 
 func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cnode *ShortNode, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
+	if cnode == nil {
+		return "", &MPTProof{false, 0, nil}
+	}
 	if !isLockFree {
 		cnode.latch.RLock()
 		defer cnode.latch.RUnlock()
-	}
-	if cnode == nil {
-		return "", &MPTProof{false, 0, nil}
 	}
 	//当前节点是叶子节点
 	if cnode.isLeaf {

@@ -140,7 +140,7 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 }
 
 // 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
-func (se *StorageEngine) Insert(kvpair *util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
+func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
 	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return nil, nil, nil
@@ -214,7 +214,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, primaryDb *leveldb.DB, seco
 }
 
 // 插入非主键索引
-func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
+func (se *StorageEngine) InsertIntoMPT(kvpair util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndex_mpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
@@ -247,7 +247,7 @@ func (se *StorageEngine) InsertIntoMPT(kvpair *util.KVPair, db *leveldb.DB) (str
 }
 
 // 插入非主键索引
-func (se *StorageEngine) InsertIntoMEHT(kvpair *util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
+func (se *StorageEngine) InsertIntoMEHT(kvpair util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引

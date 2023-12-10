@@ -39,8 +39,8 @@ type Bucket struct {
 	merkleTrees map[string]*mht.MerkleTree // merkle trees: one for each segment
 
 	latchTimestamp    int64
-	DelegationList    map[string]*util.KVPair // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
-	RootLatchGainFlag bool                    // 用于判断被委托线程是否已经获取到树根，如果获取到了，那么置为True，其余线程停止对DelegationLatch进行获取尝试，保证被委托线程在获取到树根以后可以尽快获取到DelegationLatch并开始不接受委托
+	DelegationList    map[string]util.KVPair // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
+	RootLatchGainFlag bool                   // 用于判断被委托线程是否已经获取到树根，如果获取到了，那么置为True，其余线程停止对DelegationLatch进行获取尝试，保证被委托线程在获取到树根以后可以尽快获取到DelegationLatch并开始不接受委托
 	latch             sync.RWMutex
 
 	segLatch        sync.RWMutex
@@ -54,7 +54,7 @@ var dummyBucket = &Bucket{name: "name", ld: -1, rdx: -1, capacity: -1, segNum: -
 func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{name, nil, ld, rdx, capacity, 0, segNum,
 		make(map[string][]util.KVPair), make(map[string]map[string]int), make(map[string]*mht.MerkleTree), 0,
-		make(map[string]*util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
+		make(map[string]util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
 		sync.RWMutex{}, sync.Mutex{}}
 }
 
@@ -296,7 +296,7 @@ func (b *Bucket) GetIndex(key string, db *leveldb.DB, cache *[]interface{}) (str
 }
 
 // 给定一个KVPair, 将它插入到该bucket中,返回插入后的bucket指针,若发生分裂,返回分裂后的rdx个bucket指针
-func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}) [][]*Bucket {
+func (b *Bucket) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{}) [][]*Bucket {
 	buckets := make([]*Bucket, 0)
 	//判断是否在bucket中,在则返回所在的segment及其index,不在则返回-1
 	segkey, _, index := b.GetIndex(kvpair.GetKey(), db, cache)
@@ -323,7 +323,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{
 				b.segIdxMaps[segkey] = make(map[string]int)
 			}
 			//未满,插入到对应的segment中
-			b.segments[segkey] = append(b.segments[segkey], *kvpair)
+			b.segments[segkey] = append(b.segments[segkey], kvpair)
 			b.segIdxMaps[segkey][kvpair.GetKey()] = len(b.segments[segkey]) - 1
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segkey, db, cache)
@@ -398,7 +398,7 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 		for _, kvpair := range kvpairs {
 			//获取key的倒数第ld位
 			//将数据对象插入到对应的bucket中
-			buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(&kvpair, db, cache)
+			buckets[util.StringToBucketKeyIdxWithRdx(kvpair.GetKey(), b.ld, b.rdx)].Insert(kvpair, db, cache)
 		}
 	}
 	return buckets
@@ -617,7 +617,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	}
 	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
 		seBucket.SegNum, segments, make(map[string]map[string]int), mhts, 0,
-		make(map[string]*util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
+		make(map[string]util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
 		sync.RWMutex{}, sync.Mutex{}}
 	return bucket, nil
 }

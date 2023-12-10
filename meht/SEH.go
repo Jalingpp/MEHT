@@ -127,7 +127,7 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, *int64, int64) {
+func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, *int64, int64) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -156,13 +156,13 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		var bucketss [][]*Bucket
 		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
 		bucket.DelegationLatch.Lock()
-		if bucket.DelegationList[kvpair.GetKey()] != nil {
-			bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
+		if kvp, ok := bucket.DelegationList[kvpair.GetKey()]; ok {
+			kvpair.AddValue(kvp.GetValue())
+			bucket.DelegationList[kvpair.GetKey()] = kvpair
 		} else {
 			value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache, true) //连带旧值一并更新
-			toAdd := util.NewKVPair(kvpair.GetKey(), value)
-			toAdd.AddValue(kvpair.GetValue())
-			bucket.DelegationList[kvpair.GetKey()] = toAdd
+			kvpair.AddValue(value)
+			bucket.DelegationList[kvpair.GetKey()] = kvpair
 		}
 		bucket.latchTimestamp = time.Now().Unix()
 		bucket.DelegationLatch.Unlock()      // 允许其他线程委托自己插入
@@ -214,7 +214,7 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 		}
 		bucket.RootLatchGainFlag = false // 重置状态
 		bucket.DelegationList = nil
-		bucket.DelegationList = make(map[string]*util.KVPair)
+		bucket.DelegationList = make(map[string]util.KVPair)
 		bucket.latchTimestamp = 0
 		bucket.DelegationLatch.Unlock()
 		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
@@ -243,8 +243,9 @@ func (seh *SEH) Insert(kvpair *util.KVPair, db *leveldb.DB, cache *[]interface{}
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					return nil, FAILED, nil, 0
 				}
-				if bucket.DelegationList[kvpair.GetKey()] != nil {
-					bucket.DelegationList[kvpair.GetKey()].AddValue(kvpair.GetValue())
+				if kvp, ok := bucket.DelegationList[kvpair.GetKey()]; ok {
+					kvpair.AddValue(kvp.GetValue())
+					bucket.DelegationList[kvpair.GetKey()] = kvpair
 				} else {
 					bucket.DelegationList[kvpair.GetKey()] = kvpair
 				}

@@ -13,7 +13,7 @@ import (
 
 func main() {
 	//测试辅助索引查询
-	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair) {
+	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
 		for _, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
@@ -23,13 +23,13 @@ func main() {
 		}
 		close(kvPairCh)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair) {
 		for kvPair := range kvPairCh {
 			seDB.InsertKVPair(kvPair)
 		}
 		wg.Done()
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan *util.KVPair) {
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan util.KVPair) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
@@ -110,7 +110,7 @@ func main() {
 			}
 			var start time.Time
 			var duration time.Duration = 0
-			kvPairCh := make(chan *util.KVPair)
+			kvPairCh := make(chan util.KVPair)
 			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
 			start = time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh)

@@ -125,7 +125,7 @@ func (meht *MEHT) GetCache() *[]interface{} {
 }
 
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
+func (meht *MEHT) Insert(kvpair util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
 	for meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
 		if meht.seh.bucketsNumber != 0 {

@@ -10,13 +10,17 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"reflect"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
 type MBT struct {
 	name        string
 	bucketNum   int
-	rdx         int
+	aggr        int
+	offset      int
 	rootHash    []byte
 	Root        *MBTNode
 	cache       *lru.Cache[string, *MBTNode]
@@ -25,38 +29,62 @@ type MBT struct {
 	updateLatch sync.Mutex
 }
 
-func NewMBT(name string, bucketNum int, rdx int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
+func NewMBT(name string, bucketNum int, aggr int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
 	//此处就应该将全部的结构都初始化一遍
 	var root *MBTNode
+	var offset = 0
 	if bucketNum <= 0 {
 		panic("BucketNum of MBT must exceed 0.")
 	} else if bucketNum == 1 {
-		root = &MBTNode{nil, nil, make([][]byte, 0), true, make([]util.KVPair, 0), nil, sync.RWMutex{}, sync.Mutex{}}
+		offset++
+		root = &MBTNode{[]byte(""), nil, make([][]byte, 0), true, make([]util.KVPair, 0), 0, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		root = &MBTNode{nil, make([]*MBTNode, rdx), make([][]byte, 0), false, nil, nil, sync.RWMutex{}, sync.Mutex{}}
-		round := len(util.IntToHEXString(bucketNum - 1))
 		queue := arrayqueue.New()
-		queue.Enqueue(root)
-		var curQueueSum int
-		for i := 0; i < round; i++ {
-			curQueueSum = queue.Size()
-			isLeaf_ := i == round-1
-			for j := 0; j < curQueueSum; j++ {
-				cnode_, _ := queue.Dequeue()
-				cnode, _ := cnode_.(*MBTNode)
-				for k := 0; k < rdx; k++ {
-					var ssubNode []*MBTNode
-					var bbucket []util.KVPair
-					if !isLeaf_ {
-						ssubNode = make([]*MBTNode, rdx)
-						bbucket = make([]util.KVPair, 0)
-					}
-					newNode := &MBTNode{nil, ssubNode, make([][]byte, 0), isLeaf_, bbucket, append([]int{k}, cnode.bucketKey...), sync.RWMutex{}, sync.Mutex{}}
-					cnode.subNodes[j] = newNode
-					if !isLeaf_ {
-						queue.Enqueue(newNode)
-					}
+		for i := 0; i < bucketNum; i++ {
+			newNode := &MBTNode{
+				nodeHash:    []byte(strconv.Itoa(i)),
+				subNodes:    nil,
+				dataHashes:  make([][]byte, 0),
+				isLeaf:      true,
+				bucket:      make([]util.KVPair, 0),
+				num:         0,
+				latch:       sync.RWMutex{},
+				updateLatch: sync.Mutex{},
+			}
+			queue.Enqueue(newNode)
+		}
+		for !queue.Empty() {
+			s := queue.Size()
+			if s == 1 {
+				root_, _ := queue.Dequeue()
+				root = root_.(*MBTNode)
+				break
+			}
+			parSize := s / aggr
+			if s%aggr != 0 {
+				parSize++
+			}
+			offset += parSize
+			for i := 0; i < parSize; i++ {
+				ssubNodes := make([]*MBTNode, 0)
+				ddataHashes := make([][]byte, 0)
+				for j := 0; j < aggr && !queue.Empty(); j++ {
+					cnode_, _ := queue.Dequeue()
+					cnode := cnode_.(*MBTNode)
+					ssubNodes = append(ssubNodes, cnode)
+					ddataHashes = append(ddataHashes, cnode.nodeHash)
 				}
+				newNode := &MBTNode{
+					nodeHash:    []byte("branch" + strconv.Itoa(offset)),
+					subNodes:    ssubNodes,
+					dataHashes:  ddataHashes,
+					isLeaf:      false,
+					bucket:      nil,
+					num:         -1,
+					latch:       sync.RWMutex{},
+					updateLatch: sync.Mutex{},
+				}
+				queue.Enqueue(newNode)
 			}
 		}
 	}
@@ -64,9 +92,9 @@ func NewMBT(name string, bucketNum int, rdx int, db *leveldb.DB, cacheEnable boo
 		c, _ := lru.NewWithEvict[string, *MBTNode](mbtNodeCC, func(k string, v *MBTNode) {
 			callBackFoo[string, *MBTNode](k, v, db)
 		})
-		return &MBT{name, bucketNum, rdx, nil, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		return &MBT{name, bucketNum, aggr, offset, nil, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		return &MBT{name, bucketNum, rdx, nil, root, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		return &MBT{name, bucketNum, aggr, offset, nil, root, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 }
 
@@ -78,44 +106,94 @@ func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
 			return mbt.Root
 		}
 		if mbtString, err := db.Get(mbt.rootHash, nil); err == nil {
-			m, _ := DeserializeMBTNode(mbtString, mbt.rdx)
+			m, _ := DeserializeMBTNode(mbtString)
 			mbt.Root = m
 		}
 	}
 	return mbt.Root
 }
 
-func (mbt *MBT) Insert(kvPair *util.KVPair, db *leveldb.DB) {
-	// TODO
-
+func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
+	mbt.GetRoot(db)
+	oldValueAddedFlag := false
+	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.offset, mbt.aggr, kvPair.GetKey()), 0, &kvPair, mbt.Root, db, &oldValueAddedFlag)
+	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
 
-func (mbt *MBT) RecursivelyInsertMBTNode(level int, key string, value string, cnode *MBTNode, db *leveldb.DB, flag *bool) *MBTNode {
-	// TODO
+func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair *util.KVPair, cnode *MBTNode, db *leveldb.DB, flag *bool) {
 	cnode.latch.Lock()
 	defer cnode.latch.Unlock()
+	key := kvPair.GetKey()
 	if flag != nil && !(*flag) {
-		//val_, _ := mbt.QueryByKey()
+		val, _ := mbt.QueryByKey(key, path, db, true)
+		isChange := kvPair.AddValue(val)
+		if !isChange {
+			return
+		}
+		*flag = true
 	}
-	return nil
+	if level == len(path)-1 { //当前节点是叶节点
+		isAdded := false
+		for i, kv := range cnode.bucket {
+			if kv.GetKey() == key {
+				cnode.bucket[i] = *kvPair
+				isAdded = true
+			}
+			if !isAdded {
+				cnode.bucket = append(cnode.bucket, *kvPair)
+				sort.Slice(cnode.bucket, func(i, j int) bool {
+					return strings.Compare(cnode.bucket[i].GetKey(), cnode.bucket[j].GetKey()) <= 0
+				})
+			}
+		}
+	} else {
+		mbt.RecursivelyInsertMBTNode(path, level+1, kvPair, cnode.subNodes[path[level+1]], db, flag)
+	}
 }
 
-func (mbt *MBT) RecursivelyQueryMBTNode(level int, bucketKey []int, cnode *MBTNode, db *leveldb.DB, isLockFree bool) (string, *MBTProof) {
-	return "", nil
+func (mbt *MBT) QueryByKey(key string, path []int, db *leveldb.DB, isLockFree bool) (string, *MBTProof) {
+	if root := mbt.GetRoot(db); root == nil {
+		return "", &MBTProof{false, nil}
+	} else {
+		//递归查询
+		return mbt.RecursivelyQueryMBTNode(key, path, 0, root, db, isLockFree)
+	}
 }
 
-func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) []byte {
-	// TODO
+func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cnode *MBTNode, db *leveldb.DB, isLockFree bool) (string, *MBTProof) {
+	if cnode == nil {
+		return "", &MBTProof{false, nil}
+	}
+	if !isLockFree {
+		cnode.latch.RLock()
+		defer cnode.latch.RUnlock()
+	}
+	if level == len(path)-1 { //当前节点是叶节点
+		proofElement := NewProofElement(level, 0, cnode.nodeHash, nil, nil)
+		for _, kv := range cnode.bucket {
+			if kv.GetKey() == key {
+				return kv.GetValue(), &MBTProof{true, []*ProofElement{proofElement}}
+			}
+		}
+		return "", &MBTProof{false, []*ProofElement{proofElement}}
+	} else {
+		proofElement := NewProofElement(level, 1, cnode.nodeHash, cnode.subNodes[path[level+1]].nodeHash, cnode.dataHashes)
+		valueStr, mbtProof := mbt.RecursivelyQueryMBTNode(key, path, level+1, cnode.subNodes[path[level+1]], db, isLockFree)
+		proofElements := append(mbtProof.GetProofs(), proofElement)
+		return valueStr, &MBTProof{mbtProof.GetExist(), proofElements}
+	}
+}
+
+func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
 	hash := sha256.Sum256(mbt.rootHash)
 	if err := db.Delete(hash[:], nil); err != nil {
 		panic(err)
 	}
-	mbt.rootHash = mbt.GetRoot(db).nodeHash
+	mbt.rootHash = newRootHash
 	hash = sha256.Sum256(mbt.rootHash)
 	if err := db.Put(hash[:], SerializeMBT(mbt), nil); err != nil {
 		panic(err)
 	}
-	return hash[:]
 }
 
 func (mbt *MBT) PurgeCache() {
@@ -159,7 +237,6 @@ func (mbt *MBT) PrintMBTNode(mehtName string, node *MBTNode, level int, db *leve
 	fmt.Printf("Level: %d--------------------------------------------------------------------------\n", level)
 	if node.isLeaf {
 		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash))
-		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey, mbt.rdx))
 	} else {
 		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash))
 	}
@@ -169,7 +246,7 @@ func (mbt *MBT) PrintMBTNode(mehtName string, node *MBTNode, level int, db *leve
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
-			mbt.PrintMBTNode(mehtName, node.GetSubnode(i, db, mbt.rdx, cache), level+1, db, cache)
+			mbt.PrintMBTNode(mehtName, node.GetSubnode(i, db, cache), level+1, db, cache)
 		}
 	}
 }
@@ -177,13 +254,15 @@ func (mbt *MBT) PrintMBTNode(mehtName string, node *MBTNode, level int, db *leve
 type SeMBT struct {
 	Name string
 
-	BucketNum   int
-	Rdx         int
+	BucketNum int
+	aggr      int
+	offset    int
+
 	MBTRootHash []byte
 }
 
 func SerializeMBT(mbt *MBT) []byte {
-	seMBT := &SeMBT{mbt.name, mbt.bucketNum, mbt.rdx, mbt.rootHash}
+	seMBT := &SeMBT{mbt.name, mbt.bucketNum, mbt.aggr, mbt.offset, mbt.rootHash}
 	if jsonMBT, err := json.Marshal(seMBT); err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
 		return nil
@@ -202,9 +281,26 @@ func DeserializeMBT(data []byte, db *leveldb.DB, cacheEnable bool, mbtNodeCC int
 		c, _ := lru.NewWithEvict[string, *MBTNode](mbtNodeCC, func(k string, v *MBTNode) {
 			callBackFoo[string, *MBTNode](k, v, db)
 		})
-		mbt = &MBT{seMBT.Name, seMBT.BucketNum, seMBT.Rdx, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.Name, seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mbt = &MBT{seMBT.Name, seMBT.BucketNum, seMBT.Rdx, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.Name, seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 	return
+}
+
+func ComputePath(bucketNum int, offset int, aggr int, key string) []int {
+	var key_ = key
+	if len(key_) > 5 {
+		key_ = key_[:5]
+	}
+	key__, _ := strconv.ParseInt(key_, 16, 64)
+	cur := int(key__) % bucketNum
+	return ComputePathFoo(aggr, cur+offset)
+}
+
+func ComputePathFoo(aggr int, cur int) []int {
+	if cur == 0 {
+		return []int{-1}
+	}
+	return append(ComputePathFoo(aggr, (cur-1)/aggr), []int{(cur - 1) % aggr}...)
 }

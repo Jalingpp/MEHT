@@ -92,11 +92,16 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	}
 	//更新seh到db
 	meht.seh.UpdateSEHToDB(db)
-	//更新mgt的根节点哈希并更新到db
-	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-	//获取当前KV插入的bucket
+	//获取当前KV插入的bucket和插入证明
 	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db)
 	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db)
+
+	//TODO:
+	//统计桶访问频次
+	//调整桶的位置
+
+	//更新mgt的根节点哈希并更新到db
+	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 

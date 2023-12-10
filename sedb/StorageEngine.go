@@ -124,7 +124,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
 	oldvalue, oldprimaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
 	if oldvalue == kvpair.GetValue() {
-		fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+		// fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 		return oldprimaryProof, nil, nil
 	}
 	//将KV插入到主键索引中
@@ -132,7 +132,7 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 	piHash := sha256.Sum256(piRootHash)
 	se.primaryIndexHash = piHash[:]
 	_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
-	fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+	// fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
 	//构造倒排KV
 	reversedKV := util.ReverseKVPair(kvpair)
 	//插入非主键索引
@@ -140,17 +140,19 @@ func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) (*mpt.MPTPr
 		//如果oldvalue不为空，则在非主键索引中删除该value-key对
 
 		//插入到mpt类型的非主键索引中
-		newValues, mptProof := se.InsertIntoMPT(reversedKV, db)
+		// newValues, mptProof := se.InsertIntoMPT(reversedKV, db)
+		_, mptProof := se.InsertIntoMPT(reversedKV, db)
 		//打印插入结果
-		fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
-		mptProof.PrintMPTProof()
+		// fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
+		// mptProof.PrintMPTProof()
 		//更新搜索引擎的哈希值
 		se.UpdateStorageEngineToDB(db)
 		return primaryProof, mptProof, nil
 	} else if se.secondaryIndexMode == "meht" {
-		newValues, mehtProof := se.InsertIntoMEHT(reversedKV, db)
+		// newValues, mehtProof := se.InsertIntoMEHT(reversedKV, db)
+		_, mehtProof := se.InsertIntoMEHT(reversedKV, db)
 		//打印插入结果
-		fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
+		// fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
 		// meht.PrintMEHTProof(mehtProof)
 		//更新搜索引擎的哈希值
 		se.UpdateStorageEngineToDB(db)

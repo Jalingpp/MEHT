@@ -219,7 +219,7 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 	} else {
 		//如果newBuckets中有多个bucket，则说明发生了分裂，MGT需要生长
 		oldBucketKey := GetOldBucketKey(newBuckets[0])
-		fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, mgt.rdx))
+		// fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, mgt.rdx))
 		//根据旧bucketKey,找到旧bucket所在的叶子节点
 		nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db)
 		mgt.MGTGrow(oldBucketKey, nodePath, newBuckets, db)

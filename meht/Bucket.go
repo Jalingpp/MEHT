@@ -233,10 +233,10 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, bool) {
 		b.UpdateMerkleTreeToDB(segkey, db)
 		//返回更新后的bucket
 		buckets = append(buckets, b)
-		updateProof := b.GetMerkleTree(segkey, db).GetProof(index)
+		// updateProof := b.GetMerkleTree(segkey, db).GetProof(index)
 		//输出更新后的value和proof
-		fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), kvpair.GetKey(), kvpair.GetValue())
-		PrintMHTProof(updateProof)
+		// fmt.Printf("bucket(%s)已存在key=%s,更新value=%s\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), kvpair.GetKey(), kvpair.GetValue())
+		// PrintMHTProof(updateProof)
 		return buckets, true
 	} else {
 		//获得kvpair的key的segment
@@ -251,7 +251,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, bool) {
 			b.segments[segkey] = append(b.segments[segkey], *kvpair)
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segkey, db)
-			index := len(b.segments[segkey]) - 1
+			// index := len(b.segments[segkey]) - 1
 			b.number++
 			//若该segment对应的merkle tree不存在,则创建,否则插入value到merkle tree中
 			if b.GetMerkleTree(segkey, db) == nil {
@@ -262,14 +262,14 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, bool) {
 			//将更新后的merkle tree更新至db中
 			b.UpdateMerkleTreeToDB(segkey, db)
 			buckets = append(buckets, b)
-			updateProof := b.merkleTrees[segkey].GetProof(index)
+			// updateProof := b.merkleTrees[segkey].GetProof(index)
 			//输出插入的value和proof
-			fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), kvpair.GetKey(), kvpair.GetValue())
-			PrintMHTProof(updateProof)
+			// fmt.Printf("bucket(%s)不存在key=%s,已插入value=%s\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), kvpair.GetKey(), kvpair.GetValue())
+			// PrintMHTProof(updateProof)
 			return buckets, true
 		} else {
 			//已满,分裂成rdx个bucket
-			fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), b.rdx)
+			// fmt.Printf("bucket(%s)已满,分裂成%d个bucket\n", util.IntArrayToString(b.GetBucketKey(), b.rdx), b.rdx)
 			buckets = append(buckets, b.SplitBucket(db)...)
 			//为所有bucket构建merkle tree
 			for _, bucket := range buckets {
@@ -291,7 +291,7 @@ func (b *Bucket) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]*Bucket, bool) {
 			if bk > 9 {
 				bk -= 'a' - '9' - 1
 			}
-			fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
+			// fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			//判断第bk个bucket是否已满，如果已满则返回MEHT的插入口重插，以避免继续分裂造成HT和MGT更新有误
 			if buckets[bk].number == buckets[bk].capacity {
 				//回滚插入，返回一个未插入布尔值

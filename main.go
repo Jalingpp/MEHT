@@ -3,6 +3,8 @@ package main
 import (
 	"MEHT/sedb"
 	"MEHT/util"
+	"fmt"
+	"time"
 	// "encoding/hex"
 )
 
@@ -11,7 +13,7 @@ func main() {
 
 	// //参数设置
 	// // filePath := "data/levelDB/testMPT/config.txt" //存储seHash和dbPath的文件路径
-	filePath := "data/levelDB/testMEHT/config.txt" //存储seHash和dbPath的文件路径
+	filePath := "data/levelDB/testNFTETH/config.txt" //存储seHash和dbPath的文件路径
 	// // siMode := "meht" //辅助索引类型，meht或mpt
 	siMode := "meht"
 	mehtName := "OwnerIndex" //meht的名字
@@ -41,12 +43,14 @@ func main() {
 	// seDB.InsertKVPair(util.NewKVPair(key3, value3))
 
 	// 读文件创建一个KVPair数组
-	kvdataPath := "data/testdata.txt"
-	// kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
+	// kvdataPath := "data/testdata.txt"
+	kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
 	kvPairs := util.ReadKVPairFromFile(kvdataPath)
 
+	startTime := time.Now()
+
 	//插入KVPair数组
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 300000; i++ {
 		//把KV转化为十六进制
 		kvPairs[i].SetKey(kvPairs[i].GetKey())
 		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
@@ -54,16 +58,22 @@ func main() {
 		seDB.InsertKVPair(kvPairs[i])
 		// // 打印SEDB
 		// seDB.PrintSEDB()
-		// if i%10000 == 0 {
+		fmt.Println("Inserted i = ", i)
+		// if i%100 == 0 {
 		// 	fmt.Println("Inserted i = ", i)
 		// }
 	}
 
-	// //打印SEDB中SEH的GD
-	// fmt.Println("GD = ", seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetGD())
+	endTime := time.Now()
+	elapsedTime := endTime.Sub(startTime)
+	// 打印运行时间
+	fmt.Printf("程序运行时间: %s\n", elapsedTime)
 
-	// 打印SEDB
-	seDB.PrintSEDB()
+	//打印SEDB中SEH的GD
+	fmt.Println("GD = ", seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetGD())
+
+	// // 打印SEDB
+	// seDB.PrintSEDB()
 
 	// //测试查询功能
 	// qkey := util.StringToHex("Alice")

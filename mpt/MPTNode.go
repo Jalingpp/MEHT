@@ -131,6 +131,7 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 // UpdateShortNodeHash 更新ShortNode的nodeHash
 func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
 	//先删除db中原有节点(考虑到新增的其他ShortNode可能与旧ShortNode的nodeHash相同，删除可能会丢失数据，所以注释掉)
+	db.Delete(sn.nodeHash, nil)
 	// err := db.Delete(sn.nodeHash, nil)
 	// if err != nil {
 	// 	fmt.Println("Delete ShortNode from DB error:", err)

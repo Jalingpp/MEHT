@@ -30,6 +30,11 @@ type ShortNodeCacheCapacity int
 var DefaultFullNodeCacheCapacity = FullNodeCacheCapacity(128)
 var DefaultShortNodeCacheCapacity = ShortNodeCacheCapacity(128)
 
+// MBT Cache
+type MBTNodeCacheCapacity int
+
+var DefaultMBTNodeCacheCapacity = MBTNodeCacheCapacity(128)
+
 // MEHT Cache
 type MgtNodeCacheCapacity int
 type BucketCacheCapacity int

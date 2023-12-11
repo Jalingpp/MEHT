@@ -2,17 +2,20 @@ package mbt
 
 import (
 	"MEHT/util"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
+	"log"
 	"strings"
 	"sync"
 )
 
 type MBTNode struct {
 	nodeHash []byte
+	name     []byte
 
 	subNodes   []*MBTNode
 	dataHashes [][]byte
@@ -23,6 +26,25 @@ type MBTNode struct {
 
 	latch       sync.RWMutex
 	updateLatch sync.Mutex
+}
+
+func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bool, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) (ret *MBTNode) {
+	//由于MBT结构固定，因此此函数只会在MBt初始化时被调用，因此此时dataHashes一定为空，此时nodeHash一定仅包含name
+	if isLeaf {
+		ret = &MBTNode{name, name, subNodes, dataHashes, isLeaf, make([]util.KVPair, 0),
+			0, sync.RWMutex{}, sync.Mutex{}}
+	} else {
+		ret = &MBTNode{name, name, subNodes, dataHashes, isLeaf, nil, -1,
+			sync.RWMutex{}, sync.Mutex{}}
+	}
+	if cache != nil {
+		cache.Add(string(ret.nodeHash), ret)
+	} else {
+		if err := db.Put(ret.nodeHash, SerializeMBTNode(ret), nil); err != nil {
+			log.Fatal("Insert MBTNode to DB error:", err)
+		}
+	}
+	return
 }
 
 func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
@@ -47,8 +69,40 @@ func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, cache *lru.Cache[s
 	return mbtNode.subNodes[index]
 }
 
+func UpdateMBTNodeHash(node *MBTNode, dirtyNodeIdx int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
+	if cache != nil { //删除旧值
+		cache.Remove(string(node.nodeHash))
+	}
+	db.Delete(node.nodeHash, nil)
+	nodeHash := make([]byte, len(node.name))
+	copy(nodeHash, node.name)
+	if node.isLeaf {
+		dataHash := make([]byte, 0)
+		for _, kv := range node.bucket {
+			dataHash = append(dataHash, []byte(kv.GetValue())...)
+		}
+		dataHash_ := sha256.Sum256(dataHash)
+		node.dataHashes[0] = dataHash_[:]
+	} else {
+		node.dataHashes[dirtyNodeIdx] = node.subNodes[dirtyNodeIdx].nodeHash
+	}
+	for _, hash := range node.dataHashes {
+		nodeHash = append(nodeHash, hash...)
+	}
+	newHash := sha256.Sum256(nodeHash)
+	node.nodeHash = newHash[:]
+	if cache != nil { //存入新值
+		cache.Add(string(node.nodeHash), node)
+	} else {
+		if err := db.Put(node.nodeHash, SerializeMBTNode(node), nil); err != nil {
+			log.Fatal("Insert MBTNode to DB error:", err)
+		}
+	}
+}
+
 type SeMBTNode struct {
 	NodeHash   []byte
+	Name       []byte
 	DataHashes string
 	IsLeaf     bool
 	Bucket     []util.KVPair
@@ -62,7 +116,7 @@ func SerializeMBTNode(node *MBTNode) []byte {
 			dataHashString += hex.EncodeToString(hash) + ","
 		}
 	}
-	seMBTNode := &SeMBTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucket}
+	seMBTNode := &SeMBTNode{node.nodeHash, node.name, dataHashString, node.isLeaf, node.bucket}
 	if jsonMBTNode, err := json.Marshal(seMBTNode); err != nil {
 		fmt.Printf("SerializeMBTNode error: %v\n", err)
 		return nil
@@ -84,8 +138,8 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		dataHashes = append(dataHashes, dataHash)
 	}
 	if seMBTNode.IsLeaf {
-		return &MBTNode{seMBTNode.NodeHash, nil, dataHashes, true, seMBTNode.Bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, dataHashes, true, seMBTNode.Bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, make([]*MBTNode, len(dataHashStrings)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, make([]*MBTNode, len(dataHashStrings)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }

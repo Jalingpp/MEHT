@@ -1,6 +1,7 @@
 package sedb
 
 import (
+	"MEHT/mbt"
 	"MEHT/meht"
 	"MEHT/mpt"
 	"MEHT/util"
@@ -30,12 +31,13 @@ type StorageEngine struct {
 	primaryIndex     *mpt.MPT // mpt类型的主键索引
 	primaryIndexHash []byte   // 主键索引的哈希值，由主键索引根哈希计算得到
 
-	secondaryIndexMode string // 标识当前采用的非主键索引的类型，mpt或meht
+	secondaryIndexMode string // 标识当前采用的非主键索引的类型，mpt或meht或mbt
 
-	secondaryIndex_mpt     *mpt.MPT // mpt类型的非主键索引
-	secondaryIndexHash_mpt []byte   //mpt类型的非主键索引根哈希
-
-	secondaryIndex_meht *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
+	secondaryIndex_mpt     *mpt.MPT   // mpt类型的非主键索引
+	secondaryIndexHash_mpt []byte     //mpt类型的非主键索引根哈希
+	secondaryIndex_meht    *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
+	secondaryIndex_mbt     *mbt.MBT
+	secondaryIndexHash_mbt []byte
 
 	mehtName             string //meht的参数，meht的名字，用于区分不同的meht
 	rdx                  int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
@@ -53,7 +55,7 @@ type StorageEngine struct {
 func NewStorageEngine(siMode string, mehtName string, rdx int, bc int, bs int,
 	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
-		nil, nil, mehtName, rdx, bc, bs,
+		nil, nil, nil, nil, mehtName, rdx, bc, bs,
 		cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
 		sync.Mutex{}, sync.Mutex{}}
 }
@@ -73,6 +75,8 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 		seHashs = append(seHashs, se.secondaryIndexHash_mpt...)
 	} else if se.secondaryIndexMode == "meht" {
 		seHashs = append(seHashs, se.mehtName+"meht"...)
+	} else if se.secondaryIndexMode == "mbt" {
+		seHashs = append(seHashs, se.secondaryIndexHash_mbt...)
 	} else {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 	}
@@ -95,7 +99,7 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 			return se.primaryIndex
 		}
 		if primaryIndexString, error_ := db.Get(se.primaryIndexHash, nil); error_ == nil {
-			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+			shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			primaryIndex, _ := mpt.DeserializeMPT(primaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.primaryIndex = primaryIndex
 		} else {
@@ -117,7 +121,7 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 			return se.secondaryIndex_mpt
 		}
 		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mpt, nil); len(secondaryIndexString) != 0 {
-			shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+			shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.secondaryIndex_mpt = secondaryIndex
 		}
@@ -125,12 +129,29 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 	return se.secondaryIndex_mpt
 }
 
+// 返回mbt类型的辅助索引指针，如果内存中不存在，则从数据库中查询，都不在则返回nil
+func (se *StorageEngine) GetSecondaryIndex_mbt(db *leveldb.DB) *mbt.MBT {
+	//如果当前secondaryIndex_mbt为空，则从数据库中查询
+	if se.secondaryIndex_mbt == nil && len(se.secondaryIndexHash_mbt) != 0 && se.secondaryLatch.TryLock() {
+		if se.secondaryIndex_mbt != nil {
+			se.secondaryLatch.Unlock()
+			return se.secondaryIndex_mbt
+		}
+		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mbt, nil); len(secondaryIndexString) != 0 {
+			_, _, mbtNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+			secondaryIndex, _ := mbt.DeserializeMBT(secondaryIndexString, db, se.cacheEnable, mbtNodeCC)
+			se.secondaryIndex_mbt = secondaryIndex
+		}
+	}
+	return se.secondaryIndex_mbt
+}
+
 // 返回meht类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 	//如果当前secondaryIndex_meht为空，则从数据库中查询，如果数据库中也找不到，则在纯查询空meht场景下会有大问题
 	if se.secondaryIndex_meht == nil {
 		if secondaryIndexString, _ := db.Get([]byte(se.mehtName+"meht"), nil); len(secondaryIndexString) != 0 {
-			_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
+			_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndex_meht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
 				bucketCC, segmentCC, merkleTreeCC)
 			se.secondaryIndex_meht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
@@ -149,7 +170,7 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 	//如果是第一次插入
 	if se.GetPrimaryIndex(primaryDb) == nil && se.primaryLatch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
 		//创建一个新的主键索引
-		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+		shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		se.primaryIndex = mpt.NewMPT(primaryDb, se.cacheEnable, shortNodeCC, fullNodeCC)
 		se.primaryLatch.Unlock()
 	}
@@ -218,7 +239,7 @@ func (se *StorageEngine) InsertIntoMPT(kvpair util.KVPair, db *leveldb.DB) (stri
 	//如果是第一次插入
 	if se.GetSecondaryIndex_mpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
-		shortNodeCC, fullNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+		shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		se.secondaryIndex_mpt = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
 		se.secondaryLatch.Unlock()
 	}
@@ -251,7 +272,7 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair util.KVPair, db *leveldb.DB) (str
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
-		_, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
+		_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
 		se.secondaryLatch.Unlock()
 	}
@@ -276,9 +297,10 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair util.KVPair, db *leveldb.DB) (str
 	return values, se.secondaryIndex_meht.GetQueryProof(bucket, segkey, isSegExist, index, db)
 }
 
-func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
+func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int, mbtNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
 	shortNodeCC = int(DefaultShortNodeCacheCapacity)
 	fullNodeCC = int(DefaultFullNodeCacheCapacity)
+	mbtNodeCC = int(DefaultMBTNodeCacheCapacity)
 	mgtNodeCC = int(DefaultMgtNodeCacheCapacity)
 	bucketCC = int(DefaultBucketCacheCapacity)
 	segmentCC = int(DefaultSegmentCacheCapacity)
@@ -290,6 +312,8 @@ func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int,
 			shortNodeCC = int(capacity.(ShortNodeCacheCapacity))
 		case FullNodeCacheCapacity:
 			fullNodeCC = int(capacity.(FullNodeCacheCapacity))
+		case MBTNodeCacheCapacity:
+			mbtNodeCC = int(capacity.(MBTNodeCacheCapacity))
 		case MgtNodeCacheCapacity:
 			mgtNodeCC = int(capacity.(MgtNodeCacheCapacity))
 		case BucketCacheCapacity:
@@ -337,6 +361,7 @@ type SeStorageEngine struct {
 
 	SecondaryIndexMode         string // 标识当前采用的非主键索引的类型，mpt或meht
 	SecondaryIndexRootHash_mpt []byte //mpt类型的非主键索引根哈希
+	SecondaryIndexRootHash_mbt []byte
 
 	MEHTName string //meht的参数，meht的名字，用于区分不同的meht
 	Rdx      int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
@@ -353,7 +378,7 @@ type SeStorageEngine struct {
 func SerializeStorageEngine(se *StorageEngine) []byte {
 	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash,
 		se.secondaryIndexMode, se.secondaryIndexHash_mpt,
-		se.mehtName, se.rdx, se.bc, se.bs}
+		se.secondaryIndexHash_mbt, se.mehtName, se.rdx, se.bc, se.bs}
 	jsonSE, err := json.Marshal(sese)
 	if err != nil {
 		fmt.Printf("SerializeStorageEngine error: %v\n", err)
@@ -371,7 +396,8 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 		return nil, err
 	}
 	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
-		nil, sese.SecondaryIndexRootHash_mpt, nil, sese.MEHTName,
+		nil, sese.SecondaryIndexRootHash_mpt, nil, nil,
+		sese.SecondaryIndexRootHash_mbt, sese.MEHTName,
 		sese.Rdx, sese.Bc, sese.Bs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
 		sync.Mutex{}, sync.Mutex{}}
 	return se, nil

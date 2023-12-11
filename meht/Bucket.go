@@ -24,8 +24,7 @@ import (
 //ComputSegHashRoot(value string, segProof []mht.ProofPair) []byte {}: 给定value和segProof，返回由它们计算得到的segHashRoot
 
 type Bucket struct {
-	name      string //name of meht
-	BucketKey []int  // bucket key, initial nil, related to ld and kvpair.key
+	BucketKey []int // bucket key, initial nil, related to ld and kvpair.key
 
 	ld  int // local depth, initial zero
 	rdx int // rdx, initial 2
@@ -48,11 +47,11 @@ type Bucket struct {
 	DelegationLatch sync.Mutex // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
 }
 
-var dummyBucket = &Bucket{name: "name", ld: -1, rdx: -1, capacity: -1, segNum: -1}
+var dummyBucket = &Bucket{ld: -1, rdx: -1, capacity: -1, segNum: -1}
 
 // 新建一个Bucket
-func NewBucket(name string, ld int, rdx int, capacity int, segNum int) *Bucket {
-	return &Bucket{name, nil, ld, rdx, capacity, 0, segNum,
+func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
+	return &Bucket{nil, ld, rdx, capacity, 0, segNum,
 		make(map[string][]util.KVPair), make(map[string]map[string]int), make(map[string]*mht.MerkleTree), 0,
 		make(map[string]util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
 		sync.RWMutex{}, sync.Mutex{}}
@@ -63,11 +62,11 @@ func (b *Bucket) UpdateBucketToDB(db *leveldb.DB, cache *[]interface{}) {
 	//跳转到此函数时bucket已加写锁
 	if cache != nil {
 		targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
-		targetCache.Add(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx), b)
+		targetCache.Add("bucket"+util.IntArrayToString(b.BucketKey, b.rdx), b)
 	} else {
 		seBucket := SerializeBucket(b)
 		//fmt.Printf("write bucket %s to DB.\n", b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx))
-		if err := db.Put([]byte(b.name+"bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
+		if err := db.Put([]byte("bucket"+util.IntArrayToString(b.BucketKey, b.rdx)), seBucket, nil); err != nil {
 			panic(err)
 		}
 	}
@@ -86,7 +85,7 @@ func (b *Bucket) GetSegment(segkey string, db *leveldb.DB, cache *[]interface{})
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
 		var ok bool
 		var kvs_ *[]util.KVPair
-		key_ := b.name + util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segkey
+		key_ := util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segkey
 		b.segIdxMaps[segkey] = nil
 		if cache != nil {
 			targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
@@ -118,19 +117,14 @@ func (b *Bucket) UpdateSegmentToDB(segkey string, db *leveldb.DB, cache *[]inter
 	if cache != nil {
 		targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
 		v := b.segments[segkey]
-		targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey, &v)
+		targetCache.Add(util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey, &v)
 	} else {
 		seSeg := SerializeSegment(b.segments[segkey])
 		//fmt.Printf("write segment %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segkey)
-		if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
+		if err := db.Put([]byte(util.IntArrayToString(b.BucketKey, b.rdx)+"segment"+segkey), seSeg, nil); err != nil {
 			panic(err)
 		}
 	}
-}
-
-// GetName returns the name of the meht
-func (b *Bucket) GetName() string {
-	return b.name
 }
 
 // GetBucketKey returns the bucket key of the Bucket
@@ -180,7 +174,7 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{
 		//fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
 		var ok bool
 		var mt *mht.MerkleTree
-		key_ := b.name + util.IntArrayToString(b.BucketKey, b.rdx) + "mht" + index
+		key_ := util.IntArrayToString(b.BucketKey, b.rdx) + "mht" + index
 		if cache != nil {
 			targetCache, _ := (*cache)[3].(*lru.Cache[string, *mht.MerkleTree])
 			if mt, ok = targetCache.Get(key_); ok {
@@ -206,11 +200,11 @@ func (b *Bucket) UpdateMerkleTreeToDB(index string, db *leveldb.DB, cache *[]int
 	mt := b.GetMerkleTrees()[index]
 	if cache != nil {
 		targetCache, _ := (*cache)[3].(*lru.Cache[string, *mht.MerkleTree])
-		targetCache.Add(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index, mt)
+		targetCache.Add(util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index, mt)
 	} else {
 		seMHT := mht.SerializeMHT(mt)
 		//fmt.Printf("write mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"mht"+index)
-		if err := db.Put([]byte(b.name+util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
+		if err := db.Put([]byte(util.IntArrayToString(b.BucketKey, b.rdx)+"mht"+index), seMHT, nil); err != nil {
 			panic(err)
 		}
 	}
@@ -386,7 +380,7 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	buckets = append(buckets, b)
 	//创建rdx-1个新bucket
 	for i := 0; i < b.rdx-1; i++ {
-		newBucket := NewBucket(b.name, b.ld, b.rdx, b.capacity, b.segNum)
+		newBucket := NewBucket(b.ld, b.rdx, b.capacity, b.segNum)
 		newBucket.SetBucketKey(append([]int{i + 1}, originBkey...))
 		//将新bucket插入到db中
 		newBucket.UpdateBucketToDB(db, cache)
@@ -573,8 +567,7 @@ func DeserializeSegment(data []byte) ([]util.KVPair, map[string]int, error) {
 }
 
 type SeBucket struct {
-	Name      string // seh name
-	BucketKey []int  // bucket key, initial nil, related to ld and kvpair.key
+	BucketKey []int // bucket key, initial nil, related to ld and kvpair.key
 
 	Ld  int // local depth, initial zero
 	Rdx int // rdx, initial 2
@@ -589,7 +582,7 @@ type SeBucket struct {
 // 序列化Bucket
 func SerializeBucket(b *Bucket) []byte {
 	//跳转到此函数时bucket已加锁或者没有后续插入
-	seBucket := &SeBucket{b.name, b.BucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
+	seBucket := &SeBucket{b.BucketKey, b.ld, b.rdx, b.capacity, b.number, b.segNum, make([]string, 0)}
 	for k := range b.segments {
 		seBucket.SegKeys = append(seBucket.SegKeys, k)
 	}
@@ -615,7 +608,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		segments[seBucket.SegKeys[i]] = nil
 		mhts[seBucket.SegKeys[i]] = nil
 	}
-	bucket := &Bucket{seBucket.Name, seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
+	bucket := &Bucket{seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
 		seBucket.SegNum, segments, make(map[string]map[string]int), mhts, 0,
 		make(map[string]util.KVPair), false, sync.RWMutex{}, sync.RWMutex{},
 		sync.RWMutex{}, sync.Mutex{}}

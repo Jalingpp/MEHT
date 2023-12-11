@@ -358,7 +358,7 @@ func UpdateNodeHash(node *MGTNode) {
 }
 
 // 打印MGT
-func (mgt *MGT) PrintMGT(mehtName string, db *leveldb.DB, cache *[]interface{}) {
+func (mgt *MGT) PrintMGT(db *leveldb.DB, cache *[]interface{}) {
 	fmt.Printf("打印MGT-------------------------------------------------------------------------------------------\n")
 	if mgt == nil {
 		return
@@ -366,12 +366,12 @@ func (mgt *MGT) PrintMGT(mehtName string, db *leveldb.DB, cache *[]interface{}) 
 	//递归打印MGT
 	mgt.latch.RLock() //mgt结构将不会更新，只会将未从磁盘中完全加载的结构从磁盘更新到内存结构中
 	fmt.Printf("MGTRootHash: %x\n", mgt.mgtRootHash)
-	mgt.PrintMGTNode(mehtName, mgt.GetRoot(db), 0, db, cache)
+	mgt.PrintMGTNode(mgt.GetRoot(db), 0, db, cache)
 	mgt.latch.RUnlock()
 }
 
 // 递归打印MGT
-func (mgt *MGT) PrintMGTNode(mehtName string, node *MGTNode, level int, db *leveldb.DB, cache *[]interface{}) {
+func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB, cache *[]interface{}) {
 	//跳转到此函数时mgt已经加写锁
 	if node == nil {
 		return
@@ -391,7 +391,7 @@ func (mgt *MGT) PrintMGTNode(mehtName string, node *MGTNode, level int, db *leve
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
-			mgt.PrintMGTNode(mehtName, node.GetSubnode(i, db, mgt.rdx, cache), level+1, db, cache)
+			mgt.PrintMGTNode(node.GetSubnode(i, db, mgt.rdx, cache), level+1, db, cache)
 		}
 	}
 }

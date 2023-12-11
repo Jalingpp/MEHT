@@ -16,7 +16,7 @@ import (
 
 func main() {
 	//测试辅助索引查询
-	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan *util.KVPair, phi int) {
+	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair, phi int) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
 		wG := sync.WaitGroup{}
@@ -43,7 +43,7 @@ func main() {
 		wG.Wait()
 		close(kvPairCh)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan *util.KVPair, durationCh chan time.Duration) {
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {
 		for kvPair := range kvPairCh {
 			st := time.Now()
 			seDB.InsertKVPair(kvPair)
@@ -69,7 +69,7 @@ func main() {
 		wG.Wait()
 		done <- true
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan *util.KVPair, durationChList *[]chan time.Duration) {
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationChList *[]chan time.Duration) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
@@ -133,37 +133,43 @@ func main() {
 				util.WriteStringToFile(filePath, ",data/levelDB/PrimaryDB"+strconv.Itoa(num)+siMode+
 					",data/levelDB/SecondaryDB"+strconv.Itoa(num)+siMode+"\n")
 			}
-			rdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-			bc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
-			bs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			mbtBucketNum := 1280
+			mbtAggregation := 16
+			mbtArgs := make([]interface{}, 0)
+			mbtArgs = append(mbtArgs, sedb.MBTBucketNum(mbtBucketNum), sedb.MBTAggregation(mbtAggregation))
+			mehtRdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+			mehtBc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
+			mehtBs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			mehtArgs := make([]interface{}, 0)
+			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs))
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := rdx * num / 12 * 7
-				fullNodeCacheCapacity := rdx * num / 12 * 7
+				shortNodeCacheCapacity := mehtRdx * num / 12 * 7
+				fullNodeCacheCapacity := mehtRdx * num / 12 * 7
 				mgtNodeCacheCapacity := 100000000
 				bucketCacheCapacity := 128000000
-				segmentCacheCapacity := bs * bucketCacheCapacity
-				merkleTreeCacheCapacity := bs * bucketCacheCapacity
-				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, "test", rdx, bc, bs, cacheEnable,
+				segmentCacheCapacity := mehtBs * bucketCacheCapacity
+				merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
+				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
 					sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
 					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
-				argsString = serializeArgs(siMode, rdx, bc, bs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
+				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
 					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, phi)
 			} else {
-				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, "test", rdx, bc, bs, cacheEnable)
-				argsString = serializeArgs(siMode, rdx, bc, bs, cacheEnable, 0, 0,
+				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
+				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
 					0, 0, 0, 0,
 					numOfWorker, phi)
 			}
 
 			var duration time.Duration = 0
 			var latencyDuration time.Duration = 0
-			kvPairCh := make(chan *util.KVPair)
+			kvPairCh := make(chan util.KVPair)
 			latencyDurationChList := make([]chan time.Duration, numOfWorker)
 			for i := 0; i < numOfWorker; i++ {
 				latencyDurationChList[i] = make(chan time.Duration)

@@ -20,8 +20,6 @@ import (
 // PrintSEH() {}: 打印SEH
 
 type SEH struct {
-	name string //equals to the name of MEHT, is used to distinguish different SEH in leveldb
-
 	gd  int // global depth, initial zero
 	rdx int // rdx, initial  given
 
@@ -35,14 +33,14 @@ type SEH struct {
 }
 
 // newSEH returns a new SEH
-func NewSEH(name string, rdx int, bc int, bs int) *SEH {
-	return &SEH{name, 0, rdx, bc, bs, make(map[string]*Bucket), 0, sync.RWMutex{}, sync.Mutex{}}
+func NewSEH(rdx int, bc int, bs int) *SEH {
+	return &SEH{0, rdx, bc, bs, make(map[string]*Bucket), 0, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // 更新SEH到db
 func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 	seSEH := SerializeSEH(seh)
-	if err := db.Put([]byte(seh.name+"seh"), seSEH, nil); err != nil {
+	if err := db.Put([]byte("seh"), seSEH, nil); err != nil {
 		panic(err)
 	}
 }
@@ -61,7 +59,7 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 		return ret
 	}
 	var ok bool
-	key_ := seh.name + "bucket" + bucketKey
+	key_ := "bucket" + bucketKey
 	if cache != nil {
 		targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
 		ret, ok = targetCache.Get(key_)
@@ -131,7 +129,7 @@ func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{},
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
-		bucket := NewBucket(seh.name, 0, seh.rdx, seh.bucketCapacity, seh.bucketSegNum)
+		bucket := NewBucket(0, seh.rdx, seh.bucketCapacity, seh.bucketSegNum)
 		bucket.Insert(kvpair, db, cache)
 		seh.ht[""] = bucket
 		//更新bucket到db
@@ -278,9 +276,8 @@ func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 }
 
 type SeSEH struct {
-	Name string // seh name
-	Gd   int    // global depth, initial zero
-	Rdx  int    // rdx, initial  given
+	Gd  int // global depth, initial zero
+	Rdx int // rdx, initial  given
 
 	BucketCapacity int // capacity of the bucket, initial given
 	BucketSegNum   int // number of segment bits in the bucket, initial given
@@ -296,7 +293,7 @@ func SerializeSEH(seh *SEH) []byte {
 		hashTableKeys += k + ","
 	}
 	seh.updateLatch.Unlock()
-	seSEH := &SeSEH{seh.name, seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
+	seSEH := &SeSEH{seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
 		hashTableKeys, seh.bucketsNumber}
 	if jsonSEH, err := json.Marshal(seSEH); err != nil {
 		fmt.Printf("SerializeSEH error: %v\n", err)
@@ -312,7 +309,7 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		fmt.Printf("DeserializeSEH error: %v\n", err)
 		return nil, err
 	}
-	seh := &SEH{seSEH.Name, seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
+	seh := &SEH{seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
 		make(map[string]*Bucket), seSEH.BucketsNumber, sync.RWMutex{}, sync.Mutex{}}
 	htKeys := strings.Split(seSEH.HashTableKeys, ",")
 	for i := 0; i < len(htKeys); i++ {

@@ -18,7 +18,7 @@ import (
 
 type MBT struct {
 	bucketNum   int
-	aggr        int
+	aggregation int
 	offset      int
 	rootHash    []byte
 	Root        *MBTNode
@@ -28,7 +28,7 @@ type MBT struct {
 	updateLatch sync.Mutex
 }
 
-func NewMBT(bucketNum int, aggr int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
+func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
 	//此处就应该将全部的结构都初始化一遍
 	var root *MBTNode
 	var offset = 0
@@ -63,14 +63,14 @@ func NewMBT(bucketNum int, aggr int, db *leveldb.DB, cacheEnable bool, mbtNodeCC
 				db.Delete(oldHash, nil)
 				break
 			}
-			parSize := s / aggr
-			if s%aggr != 0 {
+			parSize := s / aggregation
+			if s%aggregation != 0 {
 				parSize++
 			}
 			for i := 0; i < parSize; i++ {
 				ssubNodes := make([]*MBTNode, 0)
 				ddataHashes := make([][]byte, 0)
-				for j := 0; j < aggr && !queue.Empty(); j++ {
+				for j := 0; j < aggregation && !queue.Empty(); j++ {
 					cnode_, _ := queue.Dequeue()
 					cnode := cnode_.(*MBTNode)
 					ssubNodes = append(ssubNodes, cnode)
@@ -81,7 +81,7 @@ func NewMBT(bucketNum int, aggr int, db *leveldb.DB, cacheEnable bool, mbtNodeCC
 			offset += parSize
 		}
 	}
-	return &MBT{bucketNum, aggr, offset, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+	return &MBT{bucketNum, aggregation, offset, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 }
 
 func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
@@ -107,8 +107,8 @@ func (mbt *MBT) GetBucketNum() int {
 	return mbt.bucketNum
 }
 
-func (mbt *MBT) GetAggr() int {
-	return mbt.aggr
+func (mbt *MBT) GetAggregation() int {
+	return mbt.aggregation
 }
 
 func (mbt *MBT) GetOffset() int {
@@ -118,7 +118,7 @@ func (mbt *MBT) GetOffset() int {
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
 	mbt.GetRoot(db)
 	oldValueAddedFlag := false
-	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.offset, mbt.aggr, kvPair.GetKey()), 0, &kvPair, mbt.Root, db, &oldValueAddedFlag)
+	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.offset, mbt.aggregation, kvPair.GetKey()), 0, &kvPair, mbt.Root, db, &oldValueAddedFlag)
 	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
 
@@ -264,7 +264,7 @@ type SeMBT struct {
 }
 
 func SerializeMBT(mbt *MBT) []byte {
-	seMBT := &SeMBT{mbt.bucketNum, mbt.aggr, mbt.offset, mbt.rootHash}
+	seMBT := &SeMBT{mbt.bucketNum, mbt.aggregation, mbt.offset, mbt.rootHash}
 	if jsonMBT, err := json.Marshal(seMBT); err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
 		return nil

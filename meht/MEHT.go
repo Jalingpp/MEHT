@@ -23,8 +23,6 @@ import (
 //PrintMEHTProof(mehtProof MEHTProof) {}: 打印MEHTProof
 
 type MEHT struct {
-	name string // name of the MEHT, is used to distinguish different MEHTs in leveldb
-
 	rdx int // radix of one bit, initial  given，key编码的进制数（基数）
 	bc  int // bucket capacity, initial given，每个bucket的容量
 	bs  int // bucket segment number, initial given，key中区分segment的位数
@@ -61,10 +59,10 @@ func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int
 		})
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
-		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
+		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), nil,
 			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	} else {
-		return &MEHT{name, rdx, bc, bs, NewSEH(name, rdx, bc, bs), NewMGT(rdx), nil,
+		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), nil,
 			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	}
 }
@@ -74,7 +72,7 @@ func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
 	meht.latch.RLock()
 	meMEHT := SerializeMEHT(meht)
 	meht.latch.RUnlock()
-	if err := db.Put([]byte(meht.name+"meht"), meMEHT, nil); err != nil {
+	if err := db.Put([]byte("meht"), meMEHT, nil); err != nil {
 		panic(err)
 	}
 }
@@ -88,7 +86,7 @@ func (meht *MEHT) GetSEH(db *leveldb.DB) *SEH {
 			meht.sehUpdateLatch.Unlock()
 			return meht.seh
 		}
-		if sehString, err := db.Get([]byte(meht.name+"seh"), nil); err == nil {
+		if sehString, err := db.Get([]byte("seh"), nil); err == nil {
 			seh, _ := DeserializeSEH(sehString)
 			meht.seh = seh
 		}
@@ -197,7 +195,7 @@ func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
 	meht.GetSEH(db).PrintSEH(db, meht.cache)
-	meht.GetMGT(db).PrintMGT(meht.name, db, meht.cache)
+	meht.GetMGT(db).PrintMGT(db, meht.cache)
 }
 
 type MEHTProof struct {
@@ -358,8 +356,6 @@ func PrintMEHTProof(mehtProof *MEHTProof) {
 }
 
 type SeMEHT struct {
-	Name string //name of meht
-
 	Rdx int // radix of one bit, initial  given，key编码的进制数（基数）
 	Bc  int // bucket capacity, initial given，每个bucket的容量
 	Bs  int // bucket segment number, initial given，key中区分segment的位数
@@ -369,7 +365,7 @@ type SeMEHT struct {
 
 // 序列化MEHT
 func SerializeMEHT(meht *MEHT) []byte {
-	seMEHT := &SeMEHT{meht.name, meht.rdx, meht.bc, meht.bs, meht.mgtHash}
+	seMEHT := &SeMEHT{meht.rdx, meht.bc, meht.bs, meht.mgtHash}
 	if jsonSSN, err := json.Marshal(seMEHT); err != nil {
 		fmt.Printf("SerializeMEHT error: %v\n", err)
 		return nil
@@ -402,10 +398,10 @@ func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 		//var c []interface{}
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
-		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
+		meht = &MEHT{seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
 			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	} else {
-		meht = &MEHT{seMEHT.Name, seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
+		meht = &MEHT{seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,
 			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	}
 	return

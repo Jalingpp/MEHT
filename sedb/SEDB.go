@@ -34,11 +34,11 @@ var DefaultShortNodeCacheCapacity = ShortNodeCacheCapacity(128)
 // MBT Args
 type MBTNodeCacheCapacity int
 type MBTBucketNum int
-type MBTAggr int
+type MBTAggregation int
 
 var DefaultMBTNodeCacheCapacity = MBTNodeCacheCapacity(128)
 var DefaultMBTBucketNum = MBTBucketNum(128)
-var DefaultMBTAggr = MBTAggr(16)
+var DefaultMBTAggregation = MBTAggregation(16)
 
 // MEHT Cache
 type MgtNodeCacheCapacity int
@@ -67,11 +67,9 @@ type SEDB struct {
 	primaryDbPath   string //底层存储的文件路径
 	secondaryDbPath string
 
-	siMode        string //se的参数，辅助索引类型，meht或mpt
-	mehtName      string //se的参数，meht的名字
-	rdx           int    //se的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc            int    //se的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs            int    //se的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	siMode        string //se的参数，辅助索引类型，meht或mpt或mbt
+	mbtArgs		  []interface{}
+	mehtArgs	  []interface{}
 	cacheEnable   bool
 	cacheCapacity []interface{}
 	latch         sync.RWMutex
@@ -79,7 +77,7 @@ type SEDB struct {
 }
 
 // NewSEDB() *SEDB: 返回一个新的SEDB
-func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode string, mehtName string, rdx int, bc int, bs int, cacheEnabled bool, cacheCapacity ...interface{}) *SEDB {
+func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode string, mbtArgs []interface{}, mehtArgs []interface{}, cacheEnabled bool, cacheCapacity ...interface{}) *SEDB {
 	//打开或创建数据库
 	primaryDb, err := leveldb.OpenFile(primaryDbPath, nil)
 	if err != nil {
@@ -90,7 +88,7 @@ func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode st
 		log.Fatal(err)
 	}
 	return &SEDB{nil, seh, primaryDb, secondaryDb, primaryDbPath, secondaryDbPath,
-		siMode, mehtName, rdx, bc, bs,
+		siMode, mbtArgs, mehtArgs,
 		cacheEnabled, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
 }
 
@@ -122,7 +120,7 @@ func (sedb *SEDB) InsertKVPair(kvpair util.KVPair) *SEDBProof {
 			break
 		}
 		//创建一个新的StorageEngine
-		sedb.se = NewStorageEngine(sedb.siMode, sedb.mehtName, sedb.rdx, sedb.bc, sedb.bs, sedb.cacheEnable,
+		sedb.se = NewStorageEngine(sedb.siMode, sedb.mbtArgs, sedb.mehtArgs, sedb.cacheEnable,
 			sedb.cacheCapacity)
 		sedb.latch.Unlock()
 	}
@@ -240,7 +238,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "mbt" {
 		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndex_mbt(sedb.secondaryDb)
-		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetOffset(), mbtIndex.GetAggr(), Hexkeyword)
+		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetOffset(), mbtIndex.GetAggregation(), Hexkeyword)
 		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(Hexkeyword, path, sedb.secondaryDb, false)
 		//fmt.Println("secondMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		secondaryMEHTProof = nil

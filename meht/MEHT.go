@@ -95,11 +95,6 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	//获取当前KV插入的bucket和插入证明
 	kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db)
 	mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db)
-
-	//TODO:
-	//统计桶访问频次
-	//调整桶的位置
-
 	//更新mgt的根节点哈希并更新到db
 	meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
@@ -127,6 +122,8 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 	if bucket != nil {
 		//根据key找到value
 		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db)
+		//统计访问频次
+		meht.GetMGT(db).UpdateHotnessList("add", util.IntArrayToString(bucket.GetBucketKey(), meht.rdx), 1, nil)
 		return value, bucket, segkey, isSegExist, index
 	}
 	return "", nil, "", false, -1

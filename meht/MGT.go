@@ -32,6 +32,11 @@ type MGTNode struct {
 	subNodes   []*MGTNode // sub-nodes in the tree, original given
 	dataHashes [][]byte   // hashes of data elements, computed from subNodes
 
+	cachedNodes      []*MGTNode // cached nodes
+	cachedDataHashes [][]byte   //datahashes of cached nodes
+
+	//NOTE：如果cached node是中间节点（isLeaf是false），则表明发生了分裂
+
 	isLeaf    bool    // whether this node is a leaf node
 	bucket    *Bucket // bucket related to this leaf node
 	bucketKey []int   // bucket key
@@ -41,11 +46,13 @@ type MGT struct {
 	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
+
+	hotnessList map[string]int //被访问过的叶子节点bucketKey及其被访频次
 }
 
 // NewMGT creates a empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil}
+	return &MGT{rdx, nil, nil, make(map[string]int)}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
@@ -131,9 +138,9 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, nil, nil}
+		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, nil, nil}
 	} else {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, isLeaf, bucket, bucket.bucketKey}
+		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, nil, nil, isLeaf, bucket, bucket.bucketKey}
 	}
 	//将mgtNode存入leveldb
 	nodeString := SerializeMGTNode(mgtNode)
@@ -198,6 +205,8 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 	if mgt.GetRoot(db) == nil {
 		mgt.Root = NewMGTNode(nil, true, newBuckets[0], db, newBuckets[0].rdx)
 		mgt.Root.UpdateMGTNodeToDB(db)
+		//统计访问频次
+		mgt.UpdateHotnessList("new", util.IntArrayToString(mgt.Root.bucketKey, mgt.rdx), 1, nil)
 		return mgt
 	}
 	var nodePath []*MGTNode
@@ -211,6 +220,8 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
 		nodePath[0].UpdateMGTNodeToDB(db)
+		//更新叶子节点的访问频次
+		mgt.UpdateHotnessList("add", util.IntArrayToString(nodePath[0].bucketKey, mgt.rdx), 1, nil)
 		//更新所有父节点的nodeHashs,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
 			nodePath[i].dataHashes[newBuckets[0].bucketKey[i-1]] = nodePath[i-1].nodeHash
@@ -237,6 +248,10 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 		subNodes = append(subNodes, newNode)
 		newNode.UpdateMGTNodeToDB(db)
 	}
+
+	//更新hotnesslist，更新叶子节点的访问频次
+	mgt.UpdateHotnessList("split", util.IntArrayToString(oldBucketKey, mgt.rdx), 1, subNodes)
+
 	//创建新的父节点
 	newFatherNode := NewMGTNode(subNodes, false, nil, db, newBuckets[0].rdx)
 	newFatherNode.UpdateMGTNodeToDB(db)
@@ -273,6 +288,32 @@ func UpdateNodeHash(node *MGTNode) {
 	}
 	hash := sha256.Sum256(nodeHash)
 	node.nodeHash = hash[:]
+}
+
+// 访问频次统计
+// 更新频次列表
+func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subnodes []*MGTNode) {
+	if op == "new" {
+		mgt.hotnessList[bk] = hn
+	} else if op == "add" {
+		mgt.hotnessList[bk] = mgt.hotnessList[bk] + hn
+	} else if op == "split" {
+		originhot := mgt.hotnessList[bk] + hn
+		record_sum := 0
+		for _, node := range subnodes {
+			record_sum += node.bucket.number
+		}
+		for _, node := range subnodes {
+			mgt.hotnessList[util.IntArrayToString(node.bucketKey, mgt.rdx)] = originhot * (node.bucket.number / record_sum)
+		}
+		delete(mgt.hotnessList, bk)
+	} else {
+		fmt.Println("Error: no op!")
+	}
+}
+
+func (mgt *MGT) GetHotnessList() *map[string]int {
+	return &mgt.hotnessList
 }
 
 // 打印MGT
@@ -400,13 +441,15 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
-	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, make(map[string]int)}
 	return mgt, nil
 }
 
 type SeMGTNode struct {
 	NodeHash   []byte // hash of this node, consisting of the hash of its children
 	DataHashes string // hashes of data elements, computed from subNodes, is used for indexing children nodes in leveldb
+
+	CachedDataHashes string // hash of cached data elements, computed from cached subNodes
 
 	IsLeaf    bool  // whether this node is a leaf node
 	BucketKey []int // bucketkey related to this leaf node,is used for indexing bucket in leveldb
@@ -421,7 +464,14 @@ func SerializeMGTNode(node *MGTNode) []byte {
 		}
 	}
 	// fmt.Printf("dataHashString is %s\n", dataHashString)
-	seMGTNode := &SeMGTNode{node.nodeHash, dataHashString, node.isLeaf, node.bucketKey}
+	cachedDataHashString := ""
+	for i := 0; i < len(node.cachedDataHashes); i++ {
+		cachedDataHashString += hex.EncodeToString(node.cachedDataHashes[i])
+		if i != len(node.cachedDataHashes)-1 {
+			cachedDataHashString += ","
+		}
+	}
+	seMGTNode := &SeMGTNode{node.nodeHash, dataHashString, cachedDataHashString, node.isLeaf, node.bucketKey}
 	jsonMGTNode, err := json.Marshal(seMGTNode)
 	if err != nil {
 		fmt.Printf("SerializeMGTNode error: %v\n", err)
@@ -445,53 +495,13 @@ func DeserializeMGTNode(data []byte, rdx int) (*MGTNode, error) {
 	}
 	//subnodes := make([]*MGTNode, len(dataHashes))
 	subnodes := make([]*MGTNode, rdx)
-	mgtNode := &MGTNode{seMGTNode.NodeHash, subnodes, dataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey}
+	cachedDataHashes := make([][]byte, 0)
+	cachedDataHasheStrings := strings.Split(seMGTNode.CachedDataHashes, ",")
+	for i := 0; i < len(cachedDataHasheStrings); i++ {
+		cachedDataHash, _ := hex.DecodeString(cachedDataHasheStrings[i])
+		cachedDataHashes = append(cachedDataHashes, cachedDataHash)
+	}
+	cachedNodes := make([]*MGTNode, rdx)
+	mgtNode := &MGTNode{seMGTNode.NodeHash, subnodes, dataHashes, cachedNodes, cachedDataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey}
 	return mgtNode, nil
 }
-
-// func main() {
-// //测试MGT
-// mgt := meht.NewMGT() //branch
-
-// kvpair1 := util.NewKVPair("0000", "value1")
-// kvpair2 := util.NewKVPair("0001", "value2")
-// kvpair3 := util.NewKVPair("1010", "value3")
-
-// //创建bucket0
-// bucket0 := meht.NewBucket(mehtName, 0, 2, 2, 1) //ld,rdx,capacity,segNum
-
-// //插入kvpair1
-// buckets := bucket0.Insert(kvpair1, db)
-// bucket0.PrintBucket(db)
-
-// //更新MGT
-// mgt = mgt.MGTUpdate(buckets, db)
-
-// //打印MGT
-// mgt.PrintMGT(db)
-
-// //插入kvpair2
-// buckets = bucket0.Insert(kvpair2, db)
-// bucket0.PrintBucket(db)
-
-// //更新MGT
-// mgt = mgt.MGTUpdate(buckets, db)
-
-// //打印MGT
-// mgt.PrintMGT(db)
-
-// //插入kvpair3
-// buckets = bucket0.Insert(kvpair3, db)
-// for i := 0; i < len(buckets); i++ {
-// 	buckets[i].PrintBucket(db)
-// }
-
-// // //更新MGT
-// mgt = mgt.MGTUpdate(buckets, db)
-
-// // //打印MGT
-// mgt.PrintMGT(db)
-
-// mgt.UpdateMGTToDB(db)
-
-// }

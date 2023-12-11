@@ -43,14 +43,15 @@ func main() {
 	// seDB.InsertKVPair(util.NewKVPair(key3, value3))
 
 	// 读文件创建一个KVPair数组
-	// kvdataPath := "data/testdata.txt"
-	kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
+	kvdataPath := "data/testdata.txt"
+	// kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
+	// kvdataPath := "G://Data//NFT-ETH//nft-owner"
 	kvPairs := util.ReadKVPairFromFile(kvdataPath)
 
 	startTime := time.Now()
 
 	//插入KVPair数组
-	for i := 0; i < 300000; i++ {
+	for i := 0; i < 10; i++ {
 		//把KV转化为十六进制
 		kvPairs[i].SetKey(kvPairs[i].GetKey())
 		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
@@ -69,8 +70,15 @@ func main() {
 	// 打印运行时间
 	fmt.Printf("程序运行时间: %s\n", elapsedTime)
 
-	//打印SEDB中SEH的GD
-	fmt.Println("GD = ", seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetGD())
+	//打印访问频次列表
+	hotnessList := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetHotnessList()
+	hotnessSlice := util.SortStringIntMapByInt(hotnessList)
+	for i := 0; i < len(hotnessSlice); i++ {
+		hotnessSlice[i].PrintKV()
+	}
+
+	// //打印SEDB中SEH的GD
+	// fmt.Println("GD = ", seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetGD())
 
 	// // 打印SEDB
 	// seDB.PrintSEDB()

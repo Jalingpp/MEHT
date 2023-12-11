@@ -85,8 +85,9 @@ func (sedbProof *SEDBProof) PrintSEDBProof() {
 	if len(sedbProof.primaryIndexProof) == 0 {
 		fmt.Printf("primaryIndexProof为空\n")
 	} else {
-		for i := 0; i < len(sedbProof.primaryIndexProof); i++ {
-			sedbProof.primaryIndexProof[i].PrintMPTProof()
+		proofs := sedbProof.primaryIndexProof
+		for _, proof := range proofs {
+			proof.PrintMPTProof()
 		}
 	}
 	//打印secondaryMPTIndexProof
@@ -105,6 +106,6 @@ func (sedbProof *SEDBProof) PrintSEDBProof() {
 	if sedbProof.secondaryMEHTIndexProof == nil {
 		fmt.Printf("secondaryMEHTIndexProof为空\n")
 	} else {
-		meht.PrintMEHTProof(sedbProof.secondaryMEHTIndexProof)
+		sedbProof.secondaryMEHTIndexProof.PrintMEHTProof()
 	}
 }

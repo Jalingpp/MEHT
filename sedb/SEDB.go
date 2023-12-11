@@ -68,8 +68,8 @@ type SEDB struct {
 	secondaryDbPath string
 
 	siMode        string //se的参数，辅助索引类型，meht或mpt或mbt
-	mbtArgs		  []interface{}
-	mehtArgs	  []interface{}
+	mbtArgs       []interface{}
+	mehtArgs      []interface{}
 	cacheEnable   bool
 	cacheCapacity []interface{}
 	latch         sync.RWMutex
@@ -195,9 +195,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var lock sync.Mutex
 	primaryKeyCh := make(chan string)
 	if sedb.siMode == "mpt" {
-		//now := time.Now()
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb, false)
-		//fmt.Println("secondMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			//sum++
@@ -205,22 +203,16 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")
-		//now = time.Now()
 		go generatePrimaryKey(primaryKeys, primaryKeyCh)
 		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
-		//fmt.Println("primaryMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
-		//now := time.Now()
 		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).QueryValueByKey(Hexkeyword, sedb.secondaryDb)
-		//fmt.Println("getQkeyProof cost ", time.Since(now).Milliseconds()*100, " .")
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
 		go func(ch chan *meht.MEHTProof) {
-			//now := time.Now()
 			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.secondaryDb)
-			//fmt.Println("mehtProof cost ", time.Since(now).Milliseconds(), " .")
 			ch <- seMEHTProof
 		}(ch)
 		//根据primaryKey在主键索引中查询
@@ -229,10 +221,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 			//fmt.Println("No such key in meht!", "     ", sum)
 		} else {
 			primaryKeys := strings.Split(primaryKey, ",")
-			//now := time.Now()
 			go generatePrimaryKey(primaryKeys, primaryKeyCh)
 			createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
-			//fmt.Println("primaryProof cost ", time.Since(now).Milliseconds()*100, " .")
 		}
 		secondaryMEHTProof = <-ch
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
@@ -240,17 +230,13 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndex_mbt(sedb.secondaryDb)
 		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetOffset(), mbtIndex.GetAggregation(), Hexkeyword)
 		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(Hexkeyword, path, sedb.secondaryDb, false)
-		//fmt.Println("secondMptProof cost ", time.Since(now).Milliseconds()*100, " .")
-		secondaryMEHTProof = nil
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")
-		//now = time.Now()
 		go generatePrimaryKey(primaryKeys, primaryKeyCh)
 		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
-		//fmt.Println("primaryMptProof cost ", time.Since(now).Milliseconds()*100, " .")
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else {
 		fmt.Println("siMode is wrong!")
@@ -284,6 +270,8 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 		r = sedb.se.GetSecondaryIndex_mpt(sedb.secondaryDb).VerifyQueryResult(pk, sedbProof.GetSecondaryMPTIndexProof())
 	} else if sedb.siMode == "meht" {
 		r = meht.VerifyQueryResult(pk, sedbProof.GetSecondaryMEHTIndexProof())
+	} else if sedb.siMode == "mbt" {
+		r = sedb.se.GetSecondaryIndex_mbt(sedb.secondaryDb).VerifyQueryResult(pk, sedbProof.GetSecondaryMBTIndexProof())
 	} else {
 		fmt.Println("siMode is wrong!")
 		return false
@@ -333,7 +321,7 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 		case "mbt":
 			sedb.GetStorageEngine().GetSecondaryIndex_mbt(sedb.secondaryDb).PurgeCache()
 		default:
-			panic("Unknown siMode when purge cache.")
+			log.Fatal("Unknown siMode when purge cache.")
 		}
 	}
 	data := hex.EncodeToString(sedb.seHash) + "," + sedb.primaryDbPath + "," + sedb.secondaryDbPath + "\n"

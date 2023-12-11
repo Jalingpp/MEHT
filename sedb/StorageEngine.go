@@ -78,8 +78,7 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 	if se.secondaryIndexMode == "mpt" {
 		seHashs = append(seHashs, se.secondaryIndexHash_mpt...)
 	} else if se.secondaryIndexMode == "meht" {
-		mehtName, _, _, _ := GetMEHTArgs(&se.mehtArgs)
-		seHashs = append(seHashs, mehtName+"meht"...)
+		seHashs = append(seHashs, se.secondaryIndexHash_meht...)
 	} else if se.secondaryIndexMode == "mbt" {
 		seHashs = append(seHashs, se.secondaryIndexHash_mbt...)
 	} else {
@@ -171,7 +170,7 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 
 // 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
 func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
-	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" {
+	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" || se.secondaryIndexMode != "mbt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return nil, nil, nil
 	}
@@ -225,7 +224,7 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, mptProof, nil
-	} else { //插入meht
+	} else if se.secondaryIndexMode == "meht" { //插入meht
 		//var mehtProof *meht.MEHTProof
 		//_, mehtProof  = se.InsertIntoMEHT(reversedKV, db)
 		go func() { //实际应该为返回值mehtProof构建一个chan并等待输出
@@ -238,13 +237,18 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, nil, mehtProof
+	} else {
+		go func() {
+			defer wG.Done()
+			//se.In
+		}()
 	}
 	wG.Wait()
 	return nil, nil, nil
 }
 
 // 插入非主键索引
-func (se *StorageEngine) InsertIntoMPT(kvpair util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
+func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndex_mpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
@@ -255,14 +259,12 @@ func (se *StorageEngine) InsertIntoMPT(kvpair util.KVPair, db *leveldb.DB) (stri
 	for se.secondaryIndex_mpt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvpair.GetKey(), db, false)
-	//用原有values构建待插入的kvpair
-	insertedKV := util.NewKVPair(kvpair.GetKey(), values)
-	//将新的value插入到kvpair中
-	isChange := insertedKV.AddValue(kvpair.GetValue())
+	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvPair.GetKey(), db, false)
+	//将原有values插入到kvPair中
+	isChange := kvPair.AddValue(values)
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
-		se.secondaryIndex_mpt.Insert(kvpair, db)
+		se.secondaryIndex_mpt.Insert(kvPair, db)
 		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
 		se.secondaryIndex_mpt.GetUpdateLatch().Lock()
 		seHash := sha256.Sum256(se.secondaryIndex_mpt.GetRootHash())
@@ -276,30 +278,62 @@ func (se *StorageEngine) InsertIntoMPT(kvpair util.KVPair, db *leveldb.DB) (stri
 	return values, mptProof
 }
 
+func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (string, *mbt.MBTProof) {
+	//如果是第一次插入
+	if se.GetSecondaryIndex_mbt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
+		//创建一个新的非主键索引
+		_, _, mbtNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+		bucketNum, aggregation := GetMBTArgs(&se.mbtArgs)
+		se.secondaryIndex_mbt = mbt.NewMBT(bucketNum, aggregation, db, se.cacheEnable, mbtNodeCC)
+		se.secondaryLatch.Unlock()
+	}
+	for se.secondaryIndex_mbt == nil { // 其余线程等待非主键索引创建
+	}
+	//先查询得到原有value与待插入value合并
+	path := mbt.ComputePath(se.secondaryIndex_mbt.GetBucketNum(), se.secondaryIndex_mbt.GetOffset(), se.secondaryIndex_mbt.GetAggregation(), kvPair.GetKey())
+	values, mbtProof := se.secondaryIndex_mbt.QueryByKey(kvPair.GetKey(), path, db, false)
+	//用原有values插入到kvPair中
+	isChange := kvPair.AddValue(values)
+	//如果原有values中没有此value，则插入到mpt中
+	if isChange {
+		se.secondaryIndex_mbt.Insert(kvPair, db)
+		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
+		se.secondaryIndex_mbt.GetUpdateLatch().Lock()
+		seHash := sha256.Sum256(se.secondaryIndex_mbt.GetRootHash())
+		se.secondaryIndexHash_mbt = seHash[:]
+		se.secondaryIndex_mbt.GetUpdateLatch().Unlock()
+		se.updateSecondaryLatch.Unlock()
+		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
+		//return newValues, newProof
+		return "", nil
+	}
+	return values, mbtProof
+}
+
 // 插入非主键索引
-func (se *StorageEngine) InsertIntoMEHT(kvpair util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
+func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndex_meht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
-		mehtName, mehtRdx, mehtBc, mehtBs := GetMEHTArgs(&se.mehtArgs)
-		se.secondaryIndex_meht = meht.NewMEHT(mehtName, mehtRdx, mehtBc, mehtBs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
+		mehtRdx, mehtBc, mehtBs := GetMEHTArgs(&se.mehtArgs)
+		se.secondaryIndex_meht = meht.NewMEHT(mehtRdx, mehtBc, mehtBs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
 		se.secondaryLatch.Unlock()
 	}
 	for se.GetSecondaryIndex_meht(db) == nil { // 其余线程等待meht创建成功
 	}
 	//先查询得到原有value与待插入value合并
-	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvpair.GetKey(), db)
+	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvPair.GetKey(), db)
 	//用原有values构建待插入的kvpair
-	insertedKV := util.NewKVPair(kvpair.GetKey(), values)
+	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
 	//将新的value插入到kvpair中
-	isChange := insertedKV.AddValue(kvpair.GetValue())
+	isChange := insertedKV.AddValue(kvPair.GetValue())
 	//如果原有values中没有此value，则插入到meht中
 	if isChange {
 		// 这里逻辑也需要转变，因为并发插入的时候可能很多键都相同但被阻塞了一直没写进去，那更新就会有非常多初始值的重复
 		// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
 		//_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
-		_, newValues, newProof := se.secondaryIndex_meht.Insert(kvpair, db)
+		_, newValues, newProof := se.secondaryIndex_meht.Insert(kvPair, db)
 		//更新meht到db
 		se.secondaryIndex_meht.UpdateMEHTToDB(db)
 		return newValues, newProof
@@ -323,15 +357,12 @@ func GetMBTArgs(mbtArgs *[]interface{}) (mbtBucketNum int, mbtAggregation int) {
 	return
 }
 
-func GetMEHTArgs(mehtArgs *[]interface{}) (mehtName string, mehtRdx int, mehtBc int, mehtBs int) {
-	mehtName = DefaultMEHTName
+func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int) {
 	mehtRdx = int(DefaultMEHTRdx)
 	mehtBc = int(DefaultMEHTBc)
 	mehtBs = int(DefaultMEHTBs)
 	for _, arg := range *mehtArgs {
 		switch arg.(type) {
-		case MEHTName:
-			mehtName = string(arg.(MEHTName))
 		case MEHTRdx:
 			mehtRdx = int(arg.(MEHTRdx))
 		case MEHTBc:
@@ -399,6 +430,9 @@ func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {
 	} else if se.secondaryIndexMode == "meht" {
 		fmt.Printf("secondaryIndexRootHash(meht):%s\n", se.secondaryIndexHash_meht)
 		se.GetSecondaryIndex_meht(db).PrintMEHT(db)
+	} else if se.secondaryIndexMode == "mbt" {
+		fmt.Printf("secondaryIndexRootHash(mbt):%s\n", se.secondaryIndexHash_mbt)
+		se.GetSecondaryIndex_mbt(db).PrintMBT(db)
 	}
 }
 
@@ -445,73 +479,3 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 		sync.Mutex{}, sync.Mutex{}}
 	return se, nil
 }
-
-// //说明：每一个读进来的kv对都是一个KVPair，包含key和value，key和value都是string类型。
-// //需要先将key和value转化为十六进制，再插入StorageEngine中。在StorageEngine内部，key和value都是[]byte类型。
-// //对于查询得到的结果，直接将key由十六进制转化为字符串，value需要split后，再由十六进制转化为字符串。
-
-// func main() {
-// 	//测试StorageEngine
-
-// 	//参数设置
-// 	// siMode := "meht" //辅助索引类型，meht或mpt
-// 	siMode := "mpt"
-// 	rdx := 16 //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-// 	bc := 4   //meht中bucket的容量，即每个bucket中最多存储的KVPair数
-// 	bs := 1   //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-
-// 	//创建一个StorageEngine
-// 	storageEngine := db.NewStorageEngine(siMode, rdx, bc, bs)
-
-// 	//读文件创建一个KVPair数组
-// 	kvPairs := util.ReadKVPairFromFile("/home/jaling/Storage/index/meht/data/testdata.txt")
-
-// 	//插入KVPair数组
-// 	for i := 0; i < len(kvPairs); i++ {
-// 		//把KV转化为十六进制
-// 		kvPairs[i].SetKey(util.StringToHex(kvPairs[i].GetKey()))
-// 		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
-// 		//插入StorageEngine
-// 		storageEngine.Insert(kvPairs[i])
-// 	}
-
-// 	// fmt.Printf("len(kvPairs)=%d\n", len(kvPairs))
-
-// 	// //打印主索引
-// 	// fmt.Printf("打印主索引-------------------------------------------------------------------------------------------\n")
-// 	// storageEngine.GetPrimaryIndex().PrintMPT()
-// 	// //打印辅助索引
-// 	// fmt.Printf("打印辅助索引-------------------------------------------------------------------------------------------\n")
-// 	// storageEngine.GetSecondaryIndex_mpt().PrintMPT()
-// 	// storageEngine.GetSecondaryIndex_meht().PrintMEHT()
-
-// 	// //测试查询（MEHT）
-// 	// fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
-// 	// qk_meht := "Bob"
-// 	// qv_meht, qvProof_meht := storageEngine.GetSecondaryIndex_meht().QueryByKey(util.StringToHex(qk_meht)) //需要将qk先转换为十六进制
-// 	// qvs_meht := strings.Split(qv_meht, ",")                                                               //将查询结果qv按逗号分隔
-// 	// fmt.Printf("key=%s查询结果：\n", qk_meht)
-// 	// for i := 0; i < len(qvs_meht); i++ {
-// 	// 	fmt.Printf("value=%s\n", util.HexToString(qvs_meht[i])) //将分裂后的查询结果转换为字符串输出
-// 	// }
-// 	// //打印查询结果（MEHT）
-// 	// meht.PrintQueryResult(qk_meht, qv_meht, qvProof_meht)
-// 	// //验证查询结果（MEHT）
-// 	// // storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qvBob, qvBobProof)
-// 	// meht.VerifyQueryResult(qv_meht, qvProof_meht)
-
-// 	//测试查询（MPT）
-// 	fmt.Printf("测试查询-------------------------------------------------------------------------------------------\n")
-// 	qk_mpt := "Alice"
-// 	qv_mpt, qvProof_mpt := storageEngine.GetSecondaryIndex_mpt().QueryByKey(util.StringToHex(qk_mpt)) //需要将qk先转换为十六进制
-// 	qvs_mpt := strings.Split(qv_mpt, ",")                                                             //将查询结果qv按逗号分隔
-// 	fmt.Printf("key=%s查询结果：\n", qk_mpt)
-// 	for i := 0; i < len(qvs_mpt); i++ {
-// 		fmt.Printf("value=%s\n", util.HexToString(qvs_mpt[i])) //将分裂后的查询结果转换为字符串输出
-// 	}
-// 	//打印查询结果（MPT）
-// 	storageEngine.GetSecondaryIndex_mpt().PrintQueryResult(qk_mpt, qv_mpt, qvProof_mpt)
-// 	//验证查询结果（MPT）
-// 	storageEngine.GetSecondaryIndex_mpt().VerifyQueryResult(qv_mpt, qvProof_mpt)
-
-// }

@@ -43,7 +43,7 @@ type MEHT struct {
 }
 
 // NewMEHT returns a new MEHT
-func NewMEHT(name string, rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int, cacheEnable bool) *MEHT {
+func NewMEHT(rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int, cacheEnable bool) *MEHT {
 	if cacheEnable {
 		lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCC, func(k string, v *MGTNode) {
 			callBackFoo[string, *MGTNode](k, v, db)
@@ -277,7 +277,7 @@ func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
 	} else {
 		fmt.Printf("value=%s\n", value)
 	}
-	PrintMEHTProof(mehtProof)
+	mehtProof.PrintMEHTProof()
 }
 
 // 验证查询结果
@@ -345,7 +345,7 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 }
 
 // 打印MEHTProof
-func PrintMEHTProof(mehtProof *MEHTProof) {
+func (mehtProof *MEHTProof) PrintMEHTProof() {
 	fmt.Printf("打印MEHTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("segRootHash=%s\n", hex.EncodeToString(mehtProof.segRootHash))
 	fmt.Printf("mhtProof:\n")

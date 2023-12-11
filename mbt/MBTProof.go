@@ -6,15 +6,16 @@ import (
 )
 
 type ProofElement struct {
-	level          int      // level of proof
-	proofType      int      // 0:Leaf node, 2:branch node
+	level          int // level of proof
+	proofType      int // 0:Leaf node, 1:branch node
+	name           []byte
 	value          []byte   // value of leaf node or branch node
 	nextNodeHash   []byte   // hash of next node
 	childrenHashes [][]byte // children hashes of branch node
 }
 
-func NewProofElement(level int, proofType int, value []byte, nextNodeHash []byte, childrenHash [][]byte) *ProofElement {
-	return &ProofElement{level, proofType, value, nextNodeHash, childrenHash}
+func NewProofElement(level int, proofType int, name []byte, value []byte, nextNodeHash []byte, childrenHash [][]byte) *ProofElement {
+	return &ProofElement{level, proofType, name, value, nextNodeHash, childrenHash}
 }
 
 func (proofElement *ProofElement) GetSizeOf() uint {

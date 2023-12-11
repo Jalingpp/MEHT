@@ -2,6 +2,7 @@ package mbt
 
 import (
 	"MEHT/util"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"github.com/emirpasic/gods/queues/arrayqueue"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
+	"log"
 	"reflect"
 	"sort"
 	"strconv"
@@ -115,6 +117,10 @@ func (mbt *MBT) GetOffset() int {
 	return mbt.offset
 }
 
+func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
+	return &mbt.updateLatch
+}
+
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
 	mbt.GetRoot(db)
 	oldValueAddedFlag := false
@@ -173,7 +179,7 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cnode
 		defer cnode.latch.RUnlock()
 	}
 	if level == len(path)-1 { //当前节点是叶节点
-		proofElement := NewProofElement(level, 0, cnode.nodeHash, nil, nil)
+		proofElement := NewProofElement(level, 0, cnode.name, cnode.nodeHash, nil, nil)
 		for _, kv := range cnode.bucket {
 			if kv.GetKey() == key {
 				return kv.GetValue(), &MBTProof{true, []*ProofElement{proofElement}}
@@ -181,11 +187,69 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cnode
 		}
 		return "", &MBTProof{false, []*ProofElement{proofElement}}
 	} else {
-		proofElement := NewProofElement(level, 1, cnode.nodeHash, cnode.subNodes[path[level+1]].nodeHash, cnode.dataHashes)
+		proofElement := NewProofElement(level, 1, cnode.name, cnode.nodeHash, cnode.subNodes[path[level+1]].nodeHash, cnode.dataHashes)
 		valueStr, mbtProof := mbt.RecursivelyQueryMBTNode(key, path, level+1, cnode.subNodes[path[level+1]], db, isLockFree)
 		proofElements := append(mbtProof.GetProofs(), proofElement)
 		return valueStr, &MBTProof{mbtProof.GetExist(), proofElements}
 	}
+}
+
+// 打印查询结果
+func (mbt *MBT) PrintQueryResult(key string, value string, mbtProof *MBTProof) {
+	fmt.Printf("查询结果-------------------------------------------------------------------------------------------\n")
+	fmt.Printf("key=%s\n", key)
+	if value == "" {
+		fmt.Printf("value不存在\n")
+	} else {
+		fmt.Printf("value=%s\n", value)
+	}
+	mbtProof.PrintMBTProof()
+}
+
+// 验证查询结果
+func (mbt *MBT) VerifyQueryResult(value string, mbtProof *MBTProof) bool {
+	computedMBTRoot := ComputeMBTRoot(value, mbtProof)
+	if !bytes.Equal(computedMBTRoot, mbt.Root.nodeHash) {
+		fmt.Printf("根哈希值%x计算错误,验证不通过\n", computedMBTRoot)
+		return false
+	}
+	fmt.Printf("根哈希值%x计算正确,验证通过\n", computedMBTRoot)
+	return true
+}
+
+func ComputeMBTRoot(value string, mbtProof *MBTProof) []byte {
+	proofs := mbtProof.GetProofs()
+	nodeHash0 := []byte(value)
+	nodeHash1 := make([]byte, 0)
+	for _, proof := range proofs {
+		switch proof.proofType {
+		case 0:
+			nodeHash1 = append(nodeHash1, proof.name...)
+			if mbtProof.isExist {
+				nodeHash1 = append(nodeHash1, []byte(value)...)
+			} else { // 为减少字段，LeafNode的Value是childrenHashes的0号元素
+				nodeHash1 = append(nodeHash1, proof.childrenHashes[0]...)
+			}
+			hash := sha256.Sum256(nodeHash1)
+			nodeHash0 = hash[:]
+			nodeHash1 = nil
+		case 1:
+			if !bytes.Equal(nodeHash0, proof.nextNodeHash) {
+				fmt.Printf("level %d nextNodeHash=%x计算错误,验证不通过\n", proof.level, nodeHash0)
+				return nil
+			}
+			nodeHash1 = append(nodeHash1, proof.name...)
+			for _, childrenHash := range proof.childrenHashes {
+				nodeHash1 = append(nodeHash1, childrenHash...)
+			}
+			hash := sha256.Sum256(nodeHash1)
+			nodeHash0 = hash[:]
+			nodeHash1 = nil
+		default:
+			log.Fatal("Unknown proofType " + strconv.Itoa(proof.proofType) + " in ComputeMBTRoot")
+		}
+	}
+	return nodeHash0
 }
 
 func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
@@ -221,7 +285,7 @@ func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
 	}
 }
 
-func (mbt *MBT) PrintMGT(mehtName string, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
+func (mbt *MBT) PrintMBT(db *leveldb.DB) {
 	fmt.Printf("打印MBT-------------------------------------------------------------------------------------------\n")
 	if mbt == nil {
 		return
@@ -229,12 +293,12 @@ func (mbt *MBT) PrintMGT(mehtName string, db *leveldb.DB, cache *lru.Cache[strin
 	//递归打印MGT
 	mbt.latch.RLock() //mgt结构将不会更新，只会将未从磁盘中完全加载的结构从磁盘更新到内存结构中
 	fmt.Printf("MBTRootHash: %x\n", mbt.rootHash)
-	mbt.PrintMBTNode(mehtName, mbt.GetRoot(db), 0, db, cache)
+	mbt.RecursivePrintMBTNode(mbt.GetRoot(db), 0, db)
 	mbt.latch.RUnlock()
 }
 
 // 递归打印MGT
-func (mbt *MBT) PrintMBTNode(mehtName string, node *MBTNode, level int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
+func (mbt *MBT) RecursivePrintMBTNode(node *MBTNode, level int, db *leveldb.DB) {
 	if node == nil {
 		return
 	}
@@ -250,7 +314,7 @@ func (mbt *MBT) PrintMBTNode(mehtName string, node *MBTNode, level int, db *leve
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
-			mbt.PrintMBTNode(mehtName, node.GetSubnode(i, db, cache), level+1, db, cache)
+			mbt.RecursivePrintMBTNode(node.GetSubnode(i, db, mbt.cache), level+1, db)
 		}
 	}
 }

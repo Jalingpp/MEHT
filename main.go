@@ -13,7 +13,8 @@ func main() {
 
 	// //参数设置
 	// // filePath := "data/levelDB/testMPT/config.txt" //存储seHash和dbPath的文件路径
-	filePath := "data/levelDB/testNFTETH/config.txt" //存储seHash和dbPath的文件路径
+	// filePath := "data/levelDB/testNFTETH/config.txt" //存储seHash和dbPath的文件路径
+	filePath := "data/levelDB/testMEHT/config.txt" //存储seHash和dbPath的文件路径
 	// // siMode := "meht" //辅助索引类型，meht或mpt
 	siMode := "meht"
 	mehtName := "OwnerIndex" //meht的名字
@@ -72,6 +73,7 @@ func main() {
 
 	//打印访问频次列表
 	hotnessList := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetHotnessList()
+	// fmt.Println(*hotnessList)
 	hotnessSlice := util.SortStringIntMapByInt(hotnessList)
 	for i := 0; i < len(hotnessSlice); i++ {
 		hotnessSlice[i].PrintKV()

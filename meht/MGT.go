@@ -295,16 +295,24 @@ func UpdateNodeHash(node *MGTNode) {
 func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subnodes []*MGTNode) {
 	if op == "new" {
 		mgt.hotnessList[bk] = hn
+		// fmt.Println("new hotness of bucketKey=", bk, "is", mgt.hotnessList[bk])
 	} else if op == "add" {
 		mgt.hotnessList[bk] = mgt.hotnessList[bk] + hn
+		// fmt.Println("add hotness of bucketKey=", bk, "is", mgt.hotnessList[bk])
 	} else if op == "split" {
 		originhot := mgt.hotnessList[bk] + hn
 		record_sum := 0
 		for _, node := range subnodes {
 			record_sum += node.bucket.number
+			// fmt.Println("subnodeNum=", node.bucket.number)
 		}
+		// fmt.Println("record_sum=", record_sum)
 		for _, node := range subnodes {
-			mgt.hotnessList[util.IntArrayToString(node.bucketKey, mgt.rdx)] = originhot * (node.bucket.number / record_sum)
+			subhotness := int(float64(originhot) * (float64(node.bucket.number) / float64(record_sum)))
+			if subhotness != 0 {
+				mgt.hotnessList[util.IntArrayToString(node.bucketKey, mgt.rdx)] = subhotness
+				// fmt.Println("add hotness of subbucketKey=", util.IntArrayToString(node.bucketKey, mgt.rdx), "is", mgt.hotnessList[util.IntArrayToString(node.bucketKey, mgt.rdx)])
+			}
 		}
 		delete(mgt.hotnessList, bk)
 	} else {

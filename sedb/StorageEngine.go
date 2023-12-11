@@ -39,10 +39,12 @@ type StorageEngine struct {
 	secondaryIndex_mbt     *mbt.MBT
 	secondaryIndexHash_mbt []byte
 
+	mbtBucketNum         int
+	mbtAggr              int
 	mehtName             string //meht的参数，meht的名字，用于区分不同的meht
-	rdx                  int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	bc                   int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	bs                   int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+	mehtRdx              int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	mehtBc               int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+	mehtBs               int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 	cacheEnable          bool
 	cacheCapacity        []interface{}
 	primaryLatch         sync.RWMutex
@@ -273,7 +275,7 @@ func (se *StorageEngine) InsertIntoMEHT(kvpair util.KVPair, db *leveldb.DB) (str
 	if se.GetSecondaryIndex_meht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
-		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.rdx, se.bc, se.bs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
+		se.secondaryIndex_meht = meht.NewMEHT(se.mehtName, se.mehtRdx, se.mehtBc, se.mehtBs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
 		se.secondaryLatch.Unlock()
 	}
 	for se.GetSecondaryIndex_meht(db) == nil { // 其余线程等待meht创建成功
@@ -378,7 +380,7 @@ type SeStorageEngine struct {
 func SerializeStorageEngine(se *StorageEngine) []byte {
 	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash,
 		se.secondaryIndexMode, se.secondaryIndexHash_mpt,
-		se.secondaryIndexHash_mbt, se.mehtName, se.rdx, se.bc, se.bs}
+		se.secondaryIndexHash_mbt, se.mehtName, se.mehtRdx, se.mehtBc, se.mehtBs}
 	jsonSE, err := json.Marshal(sese)
 	if err != nil {
 		fmt.Printf("SerializeStorageEngine error: %v\n", err)

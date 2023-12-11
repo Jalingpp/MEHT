@@ -1,6 +1,7 @@
 package sedb
 
 import (
+	"MEHT/mbt"
 	"MEHT/meht"
 	"MEHT/mpt"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 type SEDBProof struct {
 	primaryIndexProof       []*mpt.MPTProof //mpt类型的主索引的证明
 	secondaryMPTIndexProof  *mpt.MPTProof   //mpt类型的辅助索引的证明
+	secondaryMBTIndexProof  *mbt.MBTProof   //mbt类型的辅助索引的证明
 	secondaryMEHTIndexProof *meht.MEHTProof //meht类型的辅助索引的证明
 }
 
@@ -17,6 +19,8 @@ func (sedbProof *SEDBProof) GetSizeOf() (ret uint) {
 		ret += sedbProof.secondaryMPTIndexProof.GetSizeOf()
 	} else if sedbProof.secondaryMEHTIndexProof != nil {
 		ret += sedbProof.secondaryMEHTIndexProof.GetSizeOf()
+	} else if sedbProof.secondaryMBTIndexProof != nil {
+		ret += sedbProof.secondaryMBTIndexProof.GetSizeOf()
 	}
 	for _, proof := range sedbProof.primaryIndexProof {
 		ret += proof.GetSizeOf()
@@ -25,8 +29,8 @@ func (sedbProof *SEDBProof) GetSizeOf() (ret uint) {
 }
 
 // NewSEDBProof() *SEDBProof: 返回一个新的SEDBProof
-func NewSEDBProof(pProof []*mpt.MPTProof, sMPTProof *mpt.MPTProof, sMEHTProof *meht.MEHTProof) *SEDBProof {
-	return &SEDBProof{pProof, sMPTProof, sMEHTProof}
+func NewSEDBProof(pProof []*mpt.MPTProof, sMPTProof *mpt.MPTProof, sMBTProof *mbt.MBTProof, sMEHTProof *meht.MEHTProof) *SEDBProof {
+	return &SEDBProof{pProof, sMPTProof, sMBTProof, sMEHTProof}
 }
 
 // GetPrimaryIndexProof() *mpt.MPTProof: 返回primaryIndexProof
@@ -37,6 +41,11 @@ func (sedbProof *SEDBProof) GetPrimaryIndexProof() []*mpt.MPTProof {
 // GetSecondaryMPTIndexProof() *mpt.MPTProof: 返回secondaryMPTIndexProof
 func (sedbProof *SEDBProof) GetSecondaryMPTIndexProof() *mpt.MPTProof {
 	return sedbProof.secondaryMPTIndexProof
+}
+
+// GetSecondaryMBTIndexProof() *mbt.MBTProof: 返回secondaryMBTIndexProof
+func (sedbProof *SEDBProof) GetSecondaryMBTIndexProof() *mbt.MBTProof {
+	return sedbProof.secondaryMBTIndexProof
 }
 
 // GetSecondaryMEHTIndexProof() *meht.MEHTProof: 返回secondaryMEHTIndexProof
@@ -52,6 +61,11 @@ func (sedbProof *SEDBProof) SetPrimaryIndexProof(proof []*mpt.MPTProof) {
 // SetSecondaryMPTIndexProof(proof *mpt.MPTProof) {} : 设置secondaryMPTIndexProof
 func (sedbProof *SEDBProof) SetSecondaryMPTIndexProof(proof *mpt.MPTProof) {
 	sedbProof.secondaryMPTIndexProof = proof
+}
+
+// SetSecondaryMBTIndexProof(proof *mbt.MBTProof) {} : 设置secondaryMBTIndexProof
+func (sedbProof *SEDBProof) SetSecondaryMBTIndexProof(proof *mbt.MBTProof) {
+	sedbProof.secondaryMBTIndexProof = proof
 }
 
 // SetSecondaryMEHTIndexProof(proof *meht.MEHTProof) {} : 设置secondaryMEHTIndexProof
@@ -80,6 +94,12 @@ func (sedbProof *SEDBProof) PrintSEDBProof() {
 		fmt.Printf("secondaryMPTIndexProof为空\n")
 	} else {
 		sedbProof.secondaryMPTIndexProof.PrintMPTProof()
+	}
+	//打印secondaryMBTIndexProof
+	if sedbProof.secondaryMBTIndexProof == nil {
+		fmt.Printf("secondaryMBTIndexProof为空\n")
+	} else {
+		sedbProof.secondaryMBTIndexProof.PrintMBTProof()
 	}
 	//打印secondaryMEHTIndexProof
 	if sedbProof.secondaryMEHTIndexProof == nil {

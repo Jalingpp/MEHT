@@ -17,7 +17,6 @@ import (
 )
 
 type MBT struct {
-	name        string
 	bucketNum   int
 	aggr        int
 	offset      int
@@ -29,7 +28,7 @@ type MBT struct {
 	updateLatch sync.Mutex
 }
 
-func NewMBT(name string, bucketNum int, aggr int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
+func NewMBT(bucketNum int, aggr int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
 	//此处就应该将全部的结构都初始化一遍
 	var root *MBTNode
 	var offset = 0
@@ -82,7 +81,7 @@ func NewMBT(name string, bucketNum int, aggr int, db *leveldb.DB, cacheEnable bo
 			offset += parSize
 		}
 	}
-	return &MBT{name, bucketNum, aggr, offset, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+	return &MBT{bucketNum, aggr, offset, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 }
 
 func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
@@ -102,6 +101,18 @@ func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
 
 func (mbt *MBT) GetRootHash() []byte {
 	return mbt.rootHash
+}
+
+func (mbt *MBT) GetBucketNum() int {
+	return mbt.bucketNum
+}
+
+func (mbt *MBT) GetAggr() int {
+	return mbt.aggr
+}
+
+func (mbt *MBT) GetOffset() int {
+	return mbt.offset
 }
 
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
@@ -245,8 +256,6 @@ func (mbt *MBT) PrintMBTNode(mehtName string, node *MBTNode, level int, db *leve
 }
 
 type SeMBT struct {
-	Name string
-
 	BucketNum int
 	aggr      int
 	offset    int
@@ -255,7 +264,7 @@ type SeMBT struct {
 }
 
 func SerializeMBT(mbt *MBT) []byte {
-	seMBT := &SeMBT{mbt.name, mbt.bucketNum, mbt.aggr, mbt.offset, mbt.rootHash}
+	seMBT := &SeMBT{mbt.bucketNum, mbt.aggr, mbt.offset, mbt.rootHash}
 	if jsonMBT, err := json.Marshal(seMBT); err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
 		return nil
@@ -274,9 +283,9 @@ func DeserializeMBT(data []byte, db *leveldb.DB, cacheEnable bool, mbtNodeCC int
 		c, _ := lru.NewWithEvict[string, *MBTNode](mbtNodeCC, func(k string, v *MBTNode) {
 			callBackFoo[string, *MBTNode](k, v, db)
 		})
-		mbt = &MBT{seMBT.Name, seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mbt = &MBT{seMBT.Name, seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 	return
 }

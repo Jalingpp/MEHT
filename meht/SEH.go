@@ -125,12 +125,12 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, *int64, int64) {
+func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, *int64, int64) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
 		bucket := NewBucket(0, seh.rdx, seh.bucketCapacity, seh.bucketSegNum)
-		bucket.Insert(kvpair, db, cache)
+		bucket.Insert(kvPair, db, cache)
 		seh.ht[""] = bucket
 		//更新bucket到db
 		bucket.UpdateBucketToDB(db, cache)
@@ -141,11 +141,11 @@ func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{},
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
+	bucket := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 	seh.latch.RUnlock()
 	if bucket.latch.TryLock() {
 		seh.latch.RLock()
-		bucket_ := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
+		bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 		seh.latch.RUnlock()
 		if bucket_ != bucket {
 			bucket.latch.Unlock()
@@ -154,13 +154,15 @@ func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		var bucketss [][]*Bucket
 		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
 		bucket.DelegationLatch.Lock()
-		if kvp, ok := bucket.DelegationList[kvpair.GetKey()]; ok {
-			kvpair.AddValue(kvp.GetValue())
-			bucket.DelegationList[kvpair.GetKey()] = kvpair
+		if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
+			newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
+			newValKvp.AddValue(kvPair.GetValue())
+			bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 		} else {
-			value, _, _, _ := bucket.GetValueByKey(kvpair.GetKey(), db, cache, true) //连带旧值一并更新
-			kvpair.AddValue(value)
-			bucket.DelegationList[kvpair.GetKey()] = kvpair
+			value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
+			newValKvp := util.NewKVPair(kvPair.GetKey(), value)
+			newValKvp.AddValue(kvPair.GetValue())
+			bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 		}
 		bucket.latchTimestamp = time.Now().Unix()
 		bucket.DelegationLatch.Unlock()      // 允许其他线程委托自己插入
@@ -174,7 +176,7 @@ func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			bucket.UpdateBucketToDB(db, cache) // 更新桶
 			bucketss = [][]*Bucket{{bucket}}
 		} else { // 否则一定只插入了一个，如果不是更新则引发桶的分裂
-			bucketss = bucket.Insert(kvpair, db, cache)
+			bucketss = bucket.Insert(kvPair, db, cache)
 			if len(bucketss[0]) == 1 {
 				bucketss[0][0].UpdateBucketToDB(db, cache) // 更新桶
 				bucketss = [][]*Bucket{{bucket}}
@@ -235,17 +237,21 @@ func (seh *SEH) Insert(kvpair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			if bucket.DelegationLatch.TryLock() {
 				defer bucket.DelegationLatch.Unlock()
 				seh.latch.RLock()
-				bucket_ := seh.GetBucketByKey(kvpair.GetKey(), db, cache)
+				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 				seh.latch.RUnlock()
 				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					return nil, FAILED, nil, 0
 				}
-				if kvp, ok := bucket.DelegationList[kvpair.GetKey()]; ok {
-					kvpair.AddValue(kvp.GetValue())
-					bucket.DelegationList[kvpair.GetKey()] = kvpair
+				if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
+					newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
+					newValKvp.AddValue(kvPair.GetValue())
+					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 				} else {
-					bucket.DelegationList[kvpair.GetKey()] = kvpair
+					value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
+					newValKvp := util.NewKVPair(kvPair.GetKey(), value)
+					newValKvp.AddValue(kvPair.GetValue())
+					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 				}
 				// 成功委托
 				//fmt.Println("Client with timestamp " + strconv.Itoa(int(bucket.latchTimestamp)))

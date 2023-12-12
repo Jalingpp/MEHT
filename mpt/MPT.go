@@ -72,7 +72,7 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 }
 
 // 插入一个KVPair到MPT中，返回新的根节点的哈希值
-func (mpt *MPT) Insert(kvpair util.KVPair, db *leveldb.DB) {
+func (mpt *MPT) Insert(kvPair util.KVPair, db *leveldb.DB) {
 	//判断是否为第一次插入
 	for mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
 		if mpt.root != nil {
@@ -80,7 +80,7 @@ func (mpt *MPT) Insert(kvpair util.KVPair, db *leveldb.DB) {
 			break
 		}
 		//创建一个ShortNode
-		mpt.root = NewShortNode("", true, kvpair.GetKey(), nil, []byte(kvpair.GetValue()), db, mpt.cache)
+		mpt.root = NewShortNode("", true, kvPair.GetKey(), nil, []byte(kvPair.GetValue()), db, mpt.cache)
 		//更新mpt根哈希并更新到数据库
 		mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
 		mpt.latch.Unlock()
@@ -90,7 +90,7 @@ func (mpt *MPT) Insert(kvpair util.KVPair, db *leveldb.DB) {
 	} // 等待最先拿到mpt锁的线程新建一个树根
 	//如果不是第一次插入，递归插入
 	oldValueAddedFlag := false
-	mpt.root = mpt.RecursiveInsertShortNode("", kvpair.GetKey(), []byte(kvpair.GetValue()), mpt.GetRoot(db), db, &oldValueAddedFlag)
+	mpt.root = mpt.RecursiveInsertShortNode("", kvPair.GetKey(), []byte(kvPair.GetValue()), mpt.GetRoot(db), db, &oldValueAddedFlag)
 	//更新mpt根哈希并更新到数据库
 	mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
 }

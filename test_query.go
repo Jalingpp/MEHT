@@ -118,7 +118,7 @@ func main() {
 	}
 	var queryNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
-	var numOfWorker = 2
+	var numOfWorker = 1
 	args := os.Args
 	for _, arg := range args[1:] {
 		if arg == "meht" || arg == "mpt" || arg == "mbt" {

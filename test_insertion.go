@@ -112,7 +112,7 @@ func main() {
 	}
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
-	var numOfWorker = 2
+	var numOfWorker = 1
 	//var phi = 1
 	args := os.Args
 	for _, arg := range args[1:] {
@@ -142,6 +142,7 @@ func main() {
 	}
 	for _, siMode := range siModeOptions {
 		for _, num := range insertNum {
+			num = 1
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
 			dirs := strings.Split(filePath, "/")
 			if _, err := os.Stat(strings.Join(dirs[:len(dirs)-1], "/")); os.IsNotExist(err) {
@@ -168,8 +169,8 @@ func main() {
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := mehtRdx * num / 12 * 7
-				fullNodeCacheCapacity := mehtRdx * num / 12 * 7
+				shortNodeCacheCapacity := 1000
+				fullNodeCacheCapacity := 1000
 				mgtNodeCacheCapacity := 100000000
 				bucketCacheCapacity := 128000000
 				segmentCacheCapacity := mehtBs * bucketCacheCapacity

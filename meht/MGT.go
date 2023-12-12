@@ -504,7 +504,7 @@ func SerializeMGTNode(node *MGTNode) []byte {
 	if len(node.dataHashes) > 0 {
 		dataHashString += hex.EncodeToString(node.dataHashes[0])
 		for _, hash := range node.dataHashes[1:] {
-			dataHashString += hex.EncodeToString(hash) + ","
+			dataHashString += "," + hex.EncodeToString(hash)
 		}
 	}
 	// fmt.Printf("dataHashString is %s\n", dataHashString)

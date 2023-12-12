@@ -48,7 +48,9 @@ func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bo
 }
 
 func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
-	if mbtNode.subNodes[index] == nil && mbtNode.updateLatch.TryLock() {
+	mbtNode.updateLatch.Lock()
+	defer mbtNode.updateLatch.Unlock()
+	if mbtNode.subNodes[index] == nil {
 		var node *MBTNode
 		var ok bool
 		if cache != nil {
@@ -62,9 +64,6 @@ func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, cache *lru.Cache[s
 				mbtNode.subNodes[index] = node
 			}
 		}
-		mbtNode.updateLatch.Unlock()
-	}
-	for mbtNode.subNodes[index] == nil {
 	}
 	return mbtNode.subNodes[index]
 }
@@ -113,8 +112,14 @@ func SerializeMBTNode(node *MBTNode) []byte {
 	if len(node.dataHashes) > 0 {
 		dataHashString += hex.EncodeToString(node.dataHashes[0])
 		for _, hash := range node.dataHashes[1:] {
-			dataHashString += hex.EncodeToString(hash) + ","
+			dataHashString += "," + hex.EncodeToString(hash)
 		}
+	}
+	if len(strings.Split(dataHashString, ",")) == 5 {
+		fmt.Println("QQQQ")
+	}
+	if string(node.name) == "Root" {
+		fmt.Println("ZZZ")
 	}
 	seMBTNode := &SeMBTNode{node.nodeHash, node.name, dataHashString, node.isLeaf, node.bucket}
 	if jsonMBTNode, err := json.Marshal(seMBTNode); err != nil {
@@ -131,6 +136,9 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		fmt.Printf("DeserializeMBTNode error: %v\n", err)
 		return nil, err
 	}
+	if string(seMBTNode.Name) == "Root" {
+		fmt.Println("YYY")
+	}
 	dataHashes := make([][]byte, 0)
 	dataHashStrings := strings.Split(seMBTNode.DataHashes, ",")
 	for i := 0; i < len(dataHashStrings); i++ {
@@ -140,6 +148,6 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 	if seMBTNode.IsLeaf {
 		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, dataHashes, true, seMBTNode.Bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, make([]*MBTNode, len(dataHashStrings)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, make([]*MBTNode, len(dataHashes)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }

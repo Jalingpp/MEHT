@@ -125,6 +125,7 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
 			se.secondaryIndex_mpt = secondaryIndex
 		}
+		se.secondaryLatch.Unlock()
 	}
 	for se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 {
 	}
@@ -144,6 +145,7 @@ func (se *StorageEngine) GetSecondaryIndex_mbt(db *leveldb.DB) *mbt.MBT {
 			secondaryIndex, _ := mbt.DeserializeMBT(secondaryIndexString, db, se.cacheEnable, mbtNodeCC)
 			se.secondaryIndex_mbt = secondaryIndex
 		}
+		se.secondaryLatch.Unlock()
 	}
 	for se.secondaryIndex_mbt == nil && len(se.secondaryIndexHash_mbt) != 0 {
 	}
@@ -164,6 +166,7 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 				bucketCC, segmentCC, merkleTreeCC)
 			se.secondaryIndex_meht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
 		}
+		se.secondaryLatch.Unlock()
 	}
 	for se.secondaryIndex_meht == nil && len(se.secondaryIndexHash_meht) != 0 {
 	}
@@ -264,7 +267,8 @@ func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (stri
 	//先查询得到原有value与待插入value合并
 	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvPair.GetKey(), db, false)
 	//将原有values插入到kvPair中
-	isChange := kvPair.AddValue(values)
+	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
+	isChange := insertedKV.AddValue(kvPair.GetValue())
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
 		se.secondaryIndex_mpt.Insert(kvPair, db)
@@ -293,10 +297,11 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (stri
 	for se.secondaryIndex_mbt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	path := mbt.ComputePath(se.secondaryIndex_mbt.GetBucketNum(), se.secondaryIndex_mbt.GetAggregation(), kvPair.GetKey())
+	path := mbt.ComputePath(se.secondaryIndex_mbt.GetBucketNum(), se.secondaryIndex_mbt.GetAggregation(), se.secondaryIndex_mbt.GetGd(), kvPair.GetKey())
 	values, mbtProof := se.secondaryIndex_mbt.QueryByKey(kvPair.GetKey(), path, db, false)
 	//用原有values插入到kvPair中
-	isChange := kvPair.AddValue(values)
+	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
+	isChange := insertedKV.AddValue(kvPair.GetValue())
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
 		se.secondaryIndex_mbt.Insert(kvPair, db)

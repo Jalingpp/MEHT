@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 )
 
@@ -71,10 +70,11 @@ func ReadQueryOwnerFromFile(filepath string, num int) (ret []string) {
 }
 
 func ReadQueryFromFile(dirPath string, num int) (ret []string) {
-	if dirPath[len(dirPath)-1] != '/' || dirPath[len(dirPath)-1] != '\\' {
-		dirPath = (" " + dirPath[:len(dirPath)-1])[1:] + string(os.PathSeparator)
-	}
-	content, err := os.ReadFile(dirPath + "query-" + strconv.Itoa(num/10000) + "W")
+	//if dirPath[len(dirPath)-1] != '/' || dirPath[len(dirPath)-1] != '\\' {
+	//	dirPath = (" " + dirPath[:len(dirPath)-1])[1:] + string(os.PathSeparator)
+	//}
+	//content, err := os.ReadFile(dirPath + "query-" + strconv.Itoa(num/10000) + "W")
+	content, err := os.ReadFile(dirPath + "query-1")
 	if err != nil {
 		panic(err)
 	}

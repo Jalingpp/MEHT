@@ -21,7 +21,7 @@ import (
 type MBT struct {
 	bucketNum   int
 	aggregation int
-	offset      int
+	offsets     []int
 	rootHash    []byte
 	Root        *MBTNode
 	cache       *lru.Cache[string, *MBTNode]
@@ -33,8 +33,8 @@ type MBT struct {
 func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mbtNodeCC int) *MBT {
 	//此处就应该将全部的结构都初始化一遍
 	var root *MBTNode
-	var offset = 0
 	var c *lru.Cache[string, *MBTNode]
+	offsets := make([]int, 0)
 	if cacheEnable {
 		c, _ = lru.NewWithEvict[string, *MBTNode](mbtNodeCC, func(k string, v *MBTNode) {
 			callBackFoo[string, *MBTNode](k, v, db)
@@ -43,13 +43,14 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 	if bucketNum <= 0 {
 		panic("BucketNum of MBT must exceed 0.")
 	} else if bucketNum == 1 {
-		offset++
+		offsets = append(offsets, 1)
 		root = NewMBTNode([]byte("Root"), nil, make([][]byte, 1), true, db, c)
 	} else {
 		queue := arrayqueue.New()
 		for i := 0; i < bucketNum; i++ {
 			queue.Enqueue(NewMBTNode([]byte("LeafNode"+strconv.Itoa(i)), nil, make([][]byte, 1), true, db, c))
 		}
+		offset := 0
 		for !queue.Empty() {
 			s := queue.Size()
 			if s == 1 {
@@ -81,9 +82,13 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 				queue.Enqueue(NewMBTNode([]byte("Branch"+strconv.Itoa(offset+i)), ssubNodes, ddataHashes, false, db, c))
 			}
 			offset += parSize
+			offsets = append(offsets, parSize)
+		}
+		for i := len(offsets) - 2; i >= 0; i-- {
+			offsets[i] += offsets[i+1]
 		}
 	}
-	return &MBT{bucketNum, aggregation, offset, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+	return &MBT{bucketNum, aggregation, offsets, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 }
 
 func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
@@ -113,8 +118,8 @@ func (mbt *MBT) GetAggregation() int {
 	return mbt.aggregation
 }
 
-func (mbt *MBT) GetOffset() int {
-	return mbt.offset
+func (mbt *MBT) GetOffsets() []int {
+	return mbt.offsets
 }
 
 func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
@@ -124,7 +129,7 @@ func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
 	mbt.GetRoot(db)
 	oldValueAddedFlag := false
-	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.offset, mbt.aggregation, kvPair.GetKey()), 0, &kvPair, mbt.Root, db, &oldValueAddedFlag)
+	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, kvPair.GetKey()), 0, &kvPair, mbt.Root, db, &oldValueAddedFlag)
 	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
 
@@ -187,7 +192,7 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cnode
 		}
 		return "", &MBTProof{false, []*ProofElement{proofElement}}
 	} else {
-		proofElement := NewProofElement(level, 1, cnode.name, cnode.nodeHash, cnode.subNodes[path[level+1]].nodeHash, cnode.dataHashes)
+		proofElement := NewProofElement(level, 1, cnode.name, cnode.nodeHash, cnode.GetSubnode(path[level+1], db, mbt.cache).nodeHash, cnode.dataHashes)
 		valueStr, mbtProof := mbt.RecursivelyQueryMBTNode(key, path, level+1, cnode.subNodes[path[level+1]], db, isLockFree)
 		proofElements := append(mbtProof.GetProofs(), proofElement)
 		return valueStr, &MBTProof{mbtProof.GetExist(), proofElements}
@@ -321,14 +326,14 @@ func (mbt *MBT) RecursivePrintMBTNode(node *MBTNode, level int, db *leveldb.DB) 
 
 type SeMBT struct {
 	BucketNum int
-	aggr      int
-	offset    int
+	Aggr      int
+	Offset    []int
 
 	MBTRootHash []byte
 }
 
 func SerializeMBT(mbt *MBT) []byte {
-	seMBT := &SeMBT{mbt.bucketNum, mbt.aggregation, mbt.offset, mbt.rootHash}
+	seMBT := &SeMBT{mbt.bucketNum, mbt.aggregation, mbt.offsets, mbt.rootHash}
 	if jsonMBT, err := json.Marshal(seMBT); err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
 		return nil
@@ -347,26 +352,26 @@ func DeserializeMBT(data []byte, db *leveldb.DB, cacheEnable bool, mbtNodeCC int
 		c, _ := lru.NewWithEvict[string, *MBTNode](mbtNodeCC, func(k string, v *MBTNode) {
 			callBackFoo[string, *MBTNode](k, v, db)
 		})
-		mbt = &MBT{seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.BucketNum, seMBT.Aggr, seMBT.Offset, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mbt = &MBT{seMBT.BucketNum, seMBT.aggr, seMBT.offset, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.BucketNum, seMBT.Aggr, seMBT.Offset, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 	return
 }
 
-func ComputePath(bucketNum int, offset int, aggr int, key string) []int {
-	var key_ = key
+func ComputePath(bucketNum int, aggr int, gd int, key string) []int {
+	key_ := key
 	if len(key_) > 5 {
-		key_ = key_[:5]
+		key_ = key_[len(key_)-10:]
 	}
 	key__, _ := strconv.ParseInt(key_, 16, 64)
 	cur := int(key__) % bucketNum
-	return ComputePathFoo(aggr, cur+offset)
+	return ComputePathFoo(aggr, gd, cur, 0)
 }
 
-func ComputePathFoo(aggr int, cur int) []int {
-	if cur == 0 {
+func ComputePathFoo(aggr int, gd int, cur int, ld int) []int {
+	if ld == gd-1 {
 		return []int{-1}
 	}
-	return append(ComputePathFoo(aggr, (cur-1)/aggr), []int{(cur - 1) % aggr}...)
+	return append(ComputePathFoo(aggr, gd, cur/aggr, ld+1), []int{cur % aggr}...)
 }

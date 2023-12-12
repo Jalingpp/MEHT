@@ -45,16 +45,14 @@ type MgtNodeCacheCapacity int
 type BucketCacheCapacity int
 type SegmentCacheCapacity int
 type MerkleTreeCacheCapacity int
-type MEHTName string //meht的参数，meht的名字，用于区分不同的meht
-type MEHTRdx int     //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-type MEHTBc int      //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+type MEHTRdx int //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+type MEHTBc int  //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
 type MEHTBs int
 
 var DefaultMgtNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)
 var DefaultBucketCacheCapacity = BucketCacheCapacity(128)
 var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)
 var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128)
-var DefaultMEHTName = "test"
 var DefaultMEHTRdx = MEHTRdx(16)
 var DefaultMEHTBc = MEHTBc(1280)
 var DefaultMEHTBs = MEHTBs(1)
@@ -177,7 +175,7 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 	wg.Done()
 }
 
-//var sum = 0
+var sum = 0
 
 // QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
@@ -228,10 +226,12 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "mbt" {
 		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndex_mbt(sedb.secondaryDb)
-		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetOffset(), mbtIndex.GetAggregation(), Hexkeyword)
+		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetAggregation(), Hexkeyword)
 		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(Hexkeyword, path, sedb.secondaryDb, false)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
+			sum++
+			fmt.Println("No such key in mbt!", "     ", sum)
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")

@@ -42,11 +42,7 @@ type StorageEngine struct {
 
 	mbtArgs  []interface{}
 	mehtArgs []interface{}
-	//mbtBucketNum         int
-	//mbtAggr              int
-	//mehtRdx              int    //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-	//mehtBc               int    //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-	//mehtBs               int    //meht的参数，meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+
 	cacheEnable          bool
 	cacheCapacity        []interface{}
 	primaryLatch         sync.RWMutex
@@ -130,6 +126,8 @@ func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
 			se.secondaryIndex_mpt = secondaryIndex
 		}
 	}
+	for se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 {
+	}
 	return se.secondaryIndex_mpt
 }
 
@@ -146,6 +144,8 @@ func (se *StorageEngine) GetSecondaryIndex_mbt(db *leveldb.DB) *mbt.MBT {
 			secondaryIndex, _ := mbt.DeserializeMBT(secondaryIndexString, db, se.cacheEnable, mbtNodeCC)
 			se.secondaryIndex_mbt = secondaryIndex
 		}
+	}
+	for se.secondaryIndex_mbt == nil && len(se.secondaryIndexHash_mbt) != 0 {
 	}
 	return se.secondaryIndex_mbt
 }
@@ -165,12 +165,14 @@ func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
 			se.secondaryIndex_meht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
 		}
 	}
+	for se.secondaryIndex_meht == nil && len(se.secondaryIndexHash_meht) != 0 {
+	}
 	return se.secondaryIndex_meht
 }
 
 // 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
 func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
-	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" || se.secondaryIndexMode != "mbt" {
+	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return nil, nil, nil
 	}
@@ -240,6 +242,7 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 	} else {
 		go func() {
 			defer wG.Done()
+			se.InsertIntoMBT(reversedKV, secondaryDb)
 			//se.In
 		}()
 	}
@@ -290,7 +293,7 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (stri
 	for se.secondaryIndex_mbt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	path := mbt.ComputePath(se.secondaryIndex_mbt.GetBucketNum(), se.secondaryIndex_mbt.GetOffset(), se.secondaryIndex_mbt.GetAggregation(), kvPair.GetKey())
+	path := mbt.ComputePath(se.secondaryIndex_mbt.GetBucketNum(), se.secondaryIndex_mbt.GetAggregation(), kvPair.GetKey())
 	values, mbtProof := se.secondaryIndex_mbt.QueryByKey(kvPair.GetKey(), path, db, false)
 	//用原有values插入到kvPair中
 	isChange := kvPair.AddValue(values)

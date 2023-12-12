@@ -505,6 +505,8 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB) {
 		bk_INode, _ := util.StringToIntArray(INode, mgt.rdx)
 		nodePath := mgt.GetInternalNodeAndPath(bk_INode, db)
 		//将其所在的缓存父节点(nodePath[1])相应的缓存位置空
+		fmt.Println(bk_INode)
+		mgt.PrintCachedPath(nodePath)
 		tempBK := bk_INode[:len(bk_INode)-len(nodePath[1].bucketKey)]
 		nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
 		nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil

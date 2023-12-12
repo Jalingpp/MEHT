@@ -113,6 +113,10 @@ func main() {
 	IsNeedCacheAdjust := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).IsNeedCacheAdjust(bucketNum, 0.9, 0.1)
 	fmt.Println("是否需要?", IsNeedCacheAdjust)
 
+	if IsNeedCacheAdjust {
+		seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).CacheAdjust(seDB.GetDB())
+	}
+
 	//写seHash和dbPath到文件
 	seDB.WriteSEDBInfoToFile(filePath)
 

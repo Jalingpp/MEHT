@@ -122,8 +122,6 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 	if bucket != nil {
 		//根据key找到value
 		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db)
-		//统计访问频次
-		meht.GetMGT(db).UpdateHotnessList("add", util.IntArrayToString(bucket.GetBucketKey(), meht.rdx), 1, nil)
 		return value, bucket, segkey, isSegExist, index
 	}
 	return "", nil, "", false, -1

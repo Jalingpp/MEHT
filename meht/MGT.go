@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 
@@ -47,12 +48,15 @@ type MGT struct {
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
 
-	hotnessList map[string]int //被访问过的叶子节点bucketKey及其被访频次
+	hotnessList  map[string]int  //被访问过的叶子节点bucketKey及其被访频次
+	cachedLNMap  map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
+	cachedINMap  map[string]bool //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来
+	accessLength int             //统计MGT中被访问过的所有叶子节点路径长度总和
 }
 
 // NewMGT creates a empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil, make(map[string]int)}
+	return &MGT{rdx, nil, nil, make(map[string]int), make(map[string]bool), make(map[string]bool), 0}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
@@ -77,6 +81,18 @@ func (mgtNode *MGTNode) GetSubnode(index int, db *leveldb.DB, rdx int) *MGTNode 
 		}
 	}
 	return mgtNode.subNodes[index]
+}
+
+// 获取cachedNode,如果cachedNode为空,则从leveldb中读取
+func (mgtNode *MGTNode) GetCachedNode(index int, db *leveldb.DB, rdx int) *MGTNode {
+	if mgtNode.cachedNodes[index] == nil {
+		nodeString, error := db.Get(mgtNode.cachedDataHashes[index], nil)
+		if error == nil {
+			node, _ := DeserializeMGTNode(nodeString, rdx)
+			mgtNode.cachedNodes[index] = node
+		}
+	}
+	return mgtNode.cachedNodes[index]
 }
 
 // 获取bucket,如果bucket为空,则从leveldb中读取
@@ -138,7 +154,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, nil, nil}
+		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, nil, subNodes[0].bucketKey[1:]}
 	} else {
 		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, nil, nil, isLeaf, bucket, bucket.bucketKey}
 	}
@@ -167,20 +183,138 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 	p := mgt.GetRoot(db)
 	//将p插入到result的第0个位置
 	result = append(result, p)
+	if len(bucketKey) == 0 {
+		//更新叶子节点的访问频次
+		mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
+		//更新LN访问路径总长度
+		mgt.UpdateAccessLengthSum(len(result))
+		return result
+	}
 	//从根节点开始,逐层向下遍历,直到找到叶子节点
+	//如果该bucketKey对应的叶子节点未被缓存，则一直在subNodes下找，否则需要去cachedNodes里找
+	if !mgt.cachedLNMap[util.IntArrayToString(bucketKey, mgt.rdx)] {
+		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
+			if p == nil {
+				return nil
+			}
+			if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
+				return nil
+			}
+			p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+			//将p插入到result的第0个位置
+			result = append([]*MGTNode{p}, result...)
+		}
+		//更新叶子节点的访问频次
+		mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
+		//更新LN访问路径总长度
+		mgt.UpdateAccessLengthSum(len(result))
+		return result
+	} else {
+		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
+			//获取当前节点的第identI号缓存子节点
+			cachedNode := p.GetCachedNode(identI, db, mgt.rdx)
+			//判断缓存子节点是否是叶子
+			if cachedNode.isLeaf {
+				// 如果是叶子则比较是否与要找的bucketKey相同：相同则返回结果；不相同则p移动到第identI个子节点，切换为下一个identI。
+				if util.IntArrayToString(cachedNode.bucketKey, mgt.rdx) == util.IntArrayToString(bucketKey, mgt.rdx) {
+					//将缓存叶子节点插入到result的第0个位置
+					result = append([]*MGTNode{cachedNode}, result...)
+					//更新叶子节点的访问频次
+					mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
+					//更新LN访问路径总长度
+					mgt.UpdateAccessLengthSum(len(result))
+					return result
+				} else {
+					p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+					//将p插入到result的第0个位置
+					result = append([]*MGTNode{p}, result...)
+				}
+			} else {
+				//如果不是叶子节点，则判断要找的bucketKey是否包含当前缓存中间节点的bucketKey
+				//包含则从当前缓存中间节点开始向下找subNode
+				if strings.HasSuffix(util.IntArrayToString(bucketKey, mgt.rdx), util.IntArrayToString(cachedNode.bucketKey, mgt.rdx)) {
+					//将cachedNode加入结果列表中
+					result = append([]*MGTNode{cachedNode}, result...)
+					//p指向cachedNode，并递归其SubNode
+					p = cachedNode
+					for identI = identI - 1; identI >= 0; identI-- {
+						p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+						//将p插入到result的第0个位置
+						result = append([]*MGTNode{p}, result...)
+					}
+					//更新叶子节点的访问频次
+					mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
+					//更新LN访问路径总长度
+					mgt.UpdateAccessLengthSum(len(result))
+					return result
+				} else { //不包含则p移动到第identI个子节点，切换为下一个identI继续查找
+					p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+					result = append([]*MGTNode{p}, result...)
+				}
+			}
+		}
+	}
+	//更新叶子节点的访问频次
+	mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
+	//更新LN访问路径总长度
+	mgt.UpdateAccessLengthSum(len(result))
+	return result
+}
+
+// 根据bucketKey,返回该中间节点及其在MGT中的访问路径,第0个是该中间节点,最后一个是根节点
+func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
+	result := make([]*MGTNode, 0)
+	//递归遍历根节点的所有子节点,找到bucketKey对应的中间节点
+	p := mgt.GetRoot(db)
+	//将p插入到result的第0个位置
+	result = append(result, p)
 	if len(bucketKey) == 0 {
 		return result
 	}
-	for identI := len(bucketKey) - 1; identI >= 0; identI-- {
-		if p == nil {
-			return nil
+	//从根节点开始,逐层向下遍历,直到找到该中间节点
+	//如果该bucketKey对应的中间节点未被缓存，则一直在subNodes下找，否则需要去cachedNodes里找
+	if !mgt.cachedINMap[util.IntArrayToString(bucketKey, mgt.rdx)] {
+		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
+			if p == nil {
+				return nil
+			}
+			if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
+				return nil
+			}
+			p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+			//将p插入到result的第0个位置
+			result = append([]*MGTNode{p}, result...)
 		}
-		if p.isLeaf { // 这里其实不该有这个问题
-			break
+		return result
+	} else {
+		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
+			//获取当前节点的第identI号缓存子节点
+			cachedNode := p.GetCachedNode(identI, db, mgt.rdx)
+			//判断缓存子节点是否是中间节点
+			if !cachedNode.isLeaf {
+				// 如果是要找的中间节点
+				if util.IntArrayToString(cachedNode.bucketKey, mgt.rdx) == util.IntArrayToString(bucketKey, mgt.rdx) {
+					result = append([]*MGTNode{cachedNode}, result...)
+					return result
+				} else if strings.HasSuffix(util.IntArrayToString(bucketKey, mgt.rdx), util.IntArrayToString(cachedNode.bucketKey, mgt.rdx)) {
+					//如果要找的中间节点的bucketKey以该缓存中间节点的bucketKey为后缀,则继续搜索其子节点
+					//将cachedNode加入结果列表中
+					result = append([]*MGTNode{cachedNode}, result...)
+					//p指向cachedNode，并递归其SubNode
+					p = cachedNode
+					for identI = identI - 1; identI >= 0; identI-- {
+						p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+						//将p插入到result的第0个位置
+						result = append([]*MGTNode{p}, result...)
+					}
+					return result
+				} else {
+					//如果不在该缓存目录下,则p移动到第identI个子节点，切换为下一个identI继续查找
+					p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
+					result = append([]*MGTNode{p}, result...)
+				}
+			}
 		}
-		p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
-		//将p插入到result的第0个位置
-		result = append([]*MGTNode{p}, result...)
 	}
 	return result
 }
@@ -220,8 +354,6 @@ func (mgt *MGT) MGTUpdate(newBuckets []*Bucket, db *leveldb.DB) *MGT {
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
 		nodePath[0].UpdateMGTNodeToDB(db)
-		//更新叶子节点的访问频次
-		mgt.UpdateHotnessList("add", util.IntArrayToString(nodePath[0].bucketKey, mgt.rdx), 1, nil)
 		//更新所有父节点的nodeHashs,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
 			nodePath[i].dataHashes[newBuckets[0].bucketKey[i-1]] = nodePath[i-1].nodeHash
@@ -250,11 +382,20 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	}
 
 	//更新hotnesslist，更新叶子节点的访问频次
-	mgt.UpdateHotnessList("split", util.IntArrayToString(oldBucketKey, mgt.rdx), 1, subNodes)
+	mgt.UpdateHotnessList("split", util.IntArrayToString(oldBucketKey, mgt.rdx), 0, subNodes)
 
 	//创建新的父节点
 	newFatherNode := NewMGTNode(subNodes, false, nil, db, newBuckets[0].rdx)
 	newFatherNode.UpdateMGTNodeToDB(db)
+
+	//如果当前分裂的节点是缓存节点,则需要将其分裂出的子节点放入缓存叶子节点列表中,该节点放入缓存中间节点列表中
+	if len(oldBucketKey)+1 > len(nodePath) {
+		delete(mgt.cachedLNMap, util.IntArrayToString(oldBucketKey, mgt.rdx))
+		mgt.cachedINMap[util.IntArrayToString(oldBucketKey, mgt.rdx)] = true
+		for _, node := range subNodes {
+			mgt.cachedLNMap[util.IntArrayToString(node.bucketKey, mgt.rdx)] = true
+		}
+	}
 
 	//更新父节点的chid为新的父节点
 	if len(nodePath) == 1 {
@@ -273,7 +414,7 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	return mgt
 }
 
-// 根据子节点哈希计算当前节点哈希
+// 根据子节点哈希和缓存子节点哈希计算当前节点哈希
 func UpdateNodeHash(node *MGTNode) {
 	var nodeHash []byte
 	var keys []int
@@ -286,12 +427,26 @@ func UpdateNodeHash(node *MGTNode) {
 	for _, key := range keys {
 		nodeHash = append(nodeHash, node.dataHashes[key]...)
 	}
+
+	var keys2 []int
+	for key := range node.cachedDataHashes {
+		keys2 = append(keys2, key)
+	}
+	sort.Slice(keys2, func(i int, j int) bool {
+		return i < j
+	})
+	for _, key := range keys2 {
+		nodeHash = append(nodeHash, node.cachedDataHashes[key]...)
+	}
 	hash := sha256.Sum256(nodeHash)
 	node.nodeHash = hash[:]
 }
 
 // 访问频次统计
-// 更新频次列表
+// 更新频次列表:
+// op是操作类型，包括new,add,split，
+// bk是待操作的叶节点bucketKey的string形式,hn是对应要增加的热度,一般为1
+// 当op为split时，bk是旧叶子节点的bucketKey，subnodes是新生成的子叶子节点列表
 func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subnodes []*MGTNode) {
 	if op == "new" {
 		mgt.hotnessList[bk] = hn
@@ -320,8 +475,169 @@ func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subnodes []*MGTN
 	}
 }
 
+// 更新叶子节点访问路径总长度
+func (mgt *MGT) UpdateAccessLengthSum(accessPath int) {
+	mgt.accessLength = mgt.accessLength + accessPath
+}
+
+// 计算是否需要调整缓存
+// a和b是计算阈值的两个参数
+func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
+	//计算总访问频次
+	accessNum := 0
+	hotnessSlice := util.SortStringIntMapByInt(&mgt.hotnessList)
+	for i := 0; i < len(hotnessSlice); i++ {
+		accessNum = accessNum + hotnessSlice[i].GetValue()
+	}
+	//计算访问长度阈值
+	threshold := (a*math.Log(float64(bucketNum)/float64(10))/math.Log(float64(mgt.rdx)) + b*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
+
+	fmt.Println("threshold =", threshold)
+
+	return float64(mgt.accessLength) > threshold
+}
+
+// 调整缓存
+func (mgt *MGT) CacheAdjust(db *leveldb.DB) {
+	//第一步: 先将所有非叶子节点放回原处
+	for INode, _ := range mgt.cachedINMap {
+		//找到其所在的路径
+		bk_INode, _ := util.StringToIntArray(INode, mgt.rdx)
+		nodePath := mgt.GetInternalNodeAndPath(bk_INode, db)
+		//将其所在的缓存父节点(nodePath[1])相应的缓存位置空
+		tempBK := bk_INode[:len(bk_INode)-len(nodePath[1].bucketKey)]
+		nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
+		nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
+		//将该INode在cachedINMap中删除
+		delete(mgt.cachedINMap, INode)
+		//将以INode为后缀的所有cachedLNMap中删除
+		for key, _ := range mgt.cachedLNMap {
+			if strings.HasSuffix(key, INode) {
+				delete(mgt.cachedLNMap, key)
+			}
+		}
+		//获取其父节点
+		nodePath_father := mgt.GetInternalNodeAndPath(bk_INode[1:], db)
+		//将其父节点的相应孩子位置为该节点
+		nodePath_father[0].subNodes[bk_INode[0]] = nodePath[0]
+		nodePath_father[0].dataHashes[bk_INode[0]] = nodePath[0].nodeHash
+		//更新nodePath_father中所有节点的nodeHash(nodePath_father一定包含nodePath中的所有节点,因此无须再更新nodePath)
+		for i := 0; i < len(nodePath_father); i++ {
+			nodePath_father[i].UpdateMGTNodeToDB(db)
+		}
+	}
+	//将缓存的中间节点清空
+	mgt.cachedINMap = make(map[string]bool)
+
+	//第二步: 从hotnessList中依次选择最高的访问桶进行放置
+	hotnessSlice := util.SortStringIntMapByInt(&mgt.hotnessList)
+	for i := 0; i < len(hotnessSlice); i++ {
+		// hotnessSlice[i].PrintKV()
+		bucketKey, _ := util.StringToIntArray(hotnessSlice[i].GetKey(), mgt.rdx)
+		//找到当前叶子节点及其路径
+		nodePath := mgt.GetLeafNodeAndPath(bucketKey, db)
+		if len(nodePath) <= 2 {
+			//说明该叶子节点是根节点或者该叶子节点在根节点的缓存目录中,已经没有缓存优化空间
+			continue
+		}
+		newPath := make([]*MGTNode, 0)
+		//从nodePath的最后一个开始,倒着看是否能够放置
+		identI := len(bucketKey) - 1
+		for i := len(nodePath) - 1; i > 1; i-- {
+			newPath = append([]*MGTNode{nodePath[i]}, newPath...)
+			//如果当前节点的第bucketKey[identI]个缓存位为空,则放置
+			if nodePath[i].GetCachedNode(bucketKey[identI], db, mgt.rdx) == nil {
+				//1.放置当前节点(nodePath[0])
+				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
+				newPath = append([]*MGTNode{nodePath[0]}, newPath...)
+				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
+				//2.将nodePath[1]相应的缓存位置清空
+				tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
+				nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
+				nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
+				//3.更新nodePath[1]及以后的所有节点
+				for i := 1; i < len(nodePath); i++ {
+					nodePath[i].UpdateMGTNodeToDB(db)
+				}
+				//4.将该叶子节点放入缓存Map中
+				mgt.cachedLNMap[hotnessSlice[i].GetKey()] = true
+				//5.打印缓存更新结果
+				mgt.PrintCachedPath(newPath)
+				break
+			} else { //如果当前节点的第bucketKey[identI]个缓存位不为空
+				//比较缓存节点与当前叶节点的热度,如果当前节点更热,则替换,并将原缓存节点放回原处,否则继续看下一位置
+				cachedLN := nodePath[i].GetCachedNode(bucketKey[identI], db, mgt.rdx)
+				//待插入节点更热
+				if mgt.hotnessList[util.IntArrayToString(cachedLN.bucketKey, mgt.rdx)] == 0 || mgt.hotnessList[util.IntArrayToString(cachedLN.bucketKey, mgt.rdx)] < mgt.hotnessList[util.IntArrayToString(nodePath[0].bucketKey, mgt.rdx)] {
+					//1.先将cachedLN放回原处
+					delete(mgt.cachedLNMap, util.IntArrayToString(cachedLN.bucketKey, mgt.rdx))
+					//找到cachedLN的父节点
+					np_father := mgt.GetLeafNodeAndPath(cachedLN.bucketKey[1:], db)
+					//将cachedLN放入其父节点的子节点中
+					np_father[0].subNodes[cachedLN.bucketKey[0]] = cachedLN
+					np_father[0].dataHashes[cachedLN.bucketKey[0]] = cachedLN.nodeHash
+					//2.更新np_father上所有节点
+					for i := 0; i < len(np_father); i++ {
+						np_father[i].UpdateMGTNodeToDB(db)
+					}
+					//3.再将当前节点放入nodePath[i]的缓存目录中
+					nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
+					newPath = append([]*MGTNode{nodePath[0]}, newPath...)
+					//4.将nodePath[1]相应的缓存位置空
+					tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
+					nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
+					nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
+					//5.更新nodePath[1]及以后的所有节点
+					for i := 1; i < len(nodePath); i++ {
+						nodePath[i].UpdateMGTNodeToDB(db)
+					}
+					//6.将该节点放入缓存Map中
+					mgt.cachedLNMap[hotnessSlice[i].GetKey()] = true
+					//7.打印缓存更新结果
+					mgt.PrintCachedPath(newPath)
+					break
+				} else {
+					//原缓存节点更热
+					identI--
+				}
+			}
+			if i == 2 {
+				if len(bucketKey)+1 == len(nodePath) {
+					fmt.Println("该叶节点未被缓存")
+				}
+				fmt.Println("缓存路径未改变")
+				mgt.PrintCachedPath(nodePath)
+			}
+		}
+	}
+
+	//第三步: 清空统计列表
+	mgt.hotnessList = make(map[string]int)
+	mgt.accessLength = 0
+}
+
+// 打印缓存更新结果
+func (mgt *MGT) PrintCachedPath(cachedPath []*MGTNode) {
+	fmt.Println("缓存路径:")
+	for i := 0; i < len(cachedPath); i++ {
+		fmt.Print(util.IntArrayToString(cachedPath[i].bucketKey, mgt.rdx))
+		if i < len(cachedPath)-1 {
+			fmt.Print("--->")
+		}
+	}
+}
+
+// 给定MGTNode的string形式的bucketKey,将其放回原始位置
+func (mgt *MGT) MoveMGTNodeBack(bucketKey string) {
+	//获取该节点
+}
+
 func (mgt *MGT) GetHotnessList() *map[string]int {
 	return &mgt.hotnessList
+}
+
+func (mgt *MGT) GetAccessLength() int {
+	return mgt.accessLength
 }
 
 // 打印MGT
@@ -354,9 +670,18 @@ func (mgt *MGT) PrintMGTNode(mehtName string, node *MGTNode, level int, db *leve
 	for _, dataHash := range node.dataHashes {
 		fmt.Printf("%s\n", hex.EncodeToString(dataHash))
 	}
+	fmt.Printf("cachedDataHashes:\n")
+	for _, cachedDataHash := range node.cachedDataHashes {
+		fmt.Printf("%s\n", hex.EncodeToString(cachedDataHash))
+	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
 			mgt.PrintMGTNode(mehtName, node.GetSubnode(i, db, mgt.rdx), level+1, db)
+		}
+	}
+	for i := 0; i < len(node.cachedDataHashes); i++ {
+		if !node.isLeaf && node.cachedDataHashes[i] != nil {
+			mgt.PrintMGTNode(mehtName, node.GetCachedNode(i, db, mgt.rdx), level+1, db)
 		}
 	}
 }
@@ -379,6 +704,9 @@ func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB) ([]byte, []MGTProof) {
 		}
 		for j := 0; j < len(nodePath[i].dataHashes); j++ {
 			mgtProof = append(mgtProof, MGTProof{i, nodePath[i].dataHashes[j]})
+		}
+		for j := 0; j < len(nodePath[i].cachedDataHashes); j++ {
+			mgtProof = append(mgtProof, MGTProof{i, nodePath[i].cachedDataHashes[j]})
 		}
 	}
 	return mgt.Root.nodeHash, mgtProof
@@ -430,10 +758,23 @@ func PrintMGTProof(mgtProof []MGTProof) {
 type SeMGT struct {
 	Rdx         int    //radix of bucket key, decide the number of sub-nodes
 	MgtRootHash []byte // hash of this MGT, equals to the hash of the root node hash
+
+	CachedLNMapstring string //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
+	CachedINMapstring string //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
 }
 
 func SerializeMGT(mgt *MGT) []byte {
-	seMGT := &SeMGT{mgt.rdx, mgt.mgtRootHash}
+	//将cachedLNMap合并为一个string
+	cachedLNMapstring := ""
+	for k := range mgt.cachedLNMap {
+		cachedLNMapstring = cachedLNMapstring + "," + k
+	}
+	//将cachedINMap合并为一个string
+	cachedINMapstring := ""
+	for k := range mgt.cachedINMap {
+		cachedINMapstring = cachedINMapstring + "," + k
+	}
+	seMGT := &SeMGT{mgt.rdx, mgt.mgtRootHash, cachedLNMapstring, cachedINMapstring}
 	jsonMGT, err := json.Marshal(seMGT)
 	if err != nil {
 		fmt.Printf("SerializeMGT error: %v\n", err)
@@ -449,7 +790,19 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 		fmt.Printf("DeserializeMGT error: %v\n", err)
 		return nil, err
 	}
-	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, make(map[string]int)}
+	//复原缓存叶子节点Map
+	cachedLNMapstrings := strings.Split(seMGT.CachedLNMapstring, ",")
+	cachedLNMap := make(map[string]bool)
+	for _, value := range cachedLNMapstrings {
+		cachedLNMap[value] = true
+	}
+	//复原缓存非叶子节点Map
+	cachedINMapstrings := strings.Split(seMGT.CachedINMapstring, ",")
+	cachedINMap := make(map[string]bool)
+	for _, value := range cachedINMapstrings {
+		cachedINMap[value] = true
+	}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, make(map[string]int), cachedLNMap, cachedINMap, 0}
 	return mgt, nil
 }
 

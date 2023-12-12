@@ -4,7 +4,6 @@ import (
 	"MEHT/sedb"
 	"MEHT/util"
 	"fmt"
-	"time"
 	// "encoding/hex"
 )
 
@@ -43,41 +42,33 @@ func main() {
 	// seDB.InsertKVPair(util.NewKVPair(key2, value2))
 	// seDB.InsertKVPair(util.NewKVPair(key3, value3))
 
-	// 读文件创建一个KVPair数组
-	kvdataPath := "data/testdata.txt"
-	// kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
-	// kvdataPath := "G://Data//NFT-ETH//nft-owner"
-	kvPairs := util.ReadKVPairFromFile(kvdataPath)
+	// // 读文件创建一个KVPair数组
+	// kvdataPath := "data/testdata.txt"
+	// // kvdataPath := "C://Users//13219//Desktop//Data//NFT-ETH//nft-owner"
+	// // kvdataPath := "G://Data//NFT-ETH//nft-owner"
+	// kvPairs := util.ReadKVPairFromFile(kvdataPath)
 
-	startTime := time.Now()
+	// startTime := time.Now()
 
-	//插入KVPair数组
-	for i := 0; i < 10; i++ {
-		//把KV转化为十六进制
-		kvPairs[i].SetKey(kvPairs[i].GetKey())
-		kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
-		//插入SEDB
-		seDB.InsertKVPair(kvPairs[i])
-		// // 打印SEDB
-		// seDB.PrintSEDB()
-		fmt.Println("Inserted i = ", i)
-		// if i%100 == 0 {
-		// 	fmt.Println("Inserted i = ", i)
-		// }
-	}
+	// //插入KVPair数组
+	// for i := 0; i < 10; i++ {
+	// 	//把KV转化为十六进制
+	// 	kvPairs[i].SetKey(kvPairs[i].GetKey())
+	// 	kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
+	// 	//插入SEDB
+	// 	seDB.InsertKVPair(kvPairs[i])
+	// 	// // 打印SEDB
+	// 	// seDB.PrintSEDB()
+	// 	// fmt.Println("Inserted i = ", i)
+	// 	// if i%100 == 0 {
+	// 	// 	fmt.Println("Inserted i = ", i)
+	// 	// }
+	// }
 
-	endTime := time.Now()
-	elapsedTime := endTime.Sub(startTime)
-	// 打印运行时间
-	fmt.Printf("程序运行时间: %s\n", elapsedTime)
-
-	//打印访问频次列表
-	hotnessList := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetHotnessList()
-	// fmt.Println(*hotnessList)
-	hotnessSlice := util.SortStringIntMapByInt(hotnessList)
-	for i := 0; i < len(hotnessSlice); i++ {
-		hotnessSlice[i].PrintKV()
-	}
+	// endTime := time.Now()
+	// elapsedTime := endTime.Sub(startTime)
+	// // 打印运行时间
+	// fmt.Printf("插入运行时间: %s\n", elapsedTime)
 
 	// //打印SEDB中SEH的GD
 	// fmt.Println("GD = ", seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetGD())
@@ -85,12 +76,14 @@ func main() {
 	// // 打印SEDB
 	// seDB.PrintSEDB()
 
-	// //测试查询功能
-	// qkey := util.StringToHex("Alice")
-	// qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
-	// seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
-	// //验证查询结果
-	// seDB.VerifyQueryResult(qvalue, qresult, qproof)
+	//测试查询功能
+	for i := 0; i < 20; i++ {
+		qkey := util.StringToHex("Alice")
+		qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
+		seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
+		//验证查询结果
+		seDB.VerifyQueryResult(qvalue, qresult, qproof)
+	}
 
 	// //测试查询功能
 	// qkey2 := util.StringToHex("value6")
@@ -98,6 +91,27 @@ func main() {
 	// seDB.PrintKVPairsQueryResult(qkey2, qvalue2, qresult2, qproof2)
 	// //验证查询结果
 	// seDB.VerifyQueryResult(qvalue2, qresult2, qproof2)
+
+	//打印访问频次列表
+	hotnessList := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetHotnessList()
+	//统计总的访问次数
+	accessNum := 0
+	hotnessSlice := util.SortStringIntMapByInt(hotnessList)
+	for i := 0; i < len(hotnessSlice); i++ {
+		hotnessSlice[i].PrintKV()
+		accessNum = accessNum + hotnessSlice[i].GetValue()
+	}
+	fmt.Println("accessNum: ", accessNum)
+	//打印桶的总数
+	bucketNum := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetBucketsNumber()
+	fmt.Println("bucketNum =", bucketNum)
+	//打印总访问路径长度
+	accessLength := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetAccessLength()
+	fmt.Println("accessLength =", accessLength)
+
+	//判断是否需要缓存调整
+	IsNeedCacheAdjust := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).IsNeedCacheAdjust(bucketNum, 0.9, 0.1)
+	fmt.Println("是否需要?", IsNeedCacheAdjust)
 
 	//写seHash和dbPath到文件
 	seDB.WriteSEDBInfoToFile(filePath)

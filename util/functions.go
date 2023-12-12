@@ -147,6 +147,14 @@ func (kv *KV) PrintKV() {
 	fmt.Println("key = ", kv.key, ", value = ", kv.value)
 }
 
+func (kv *KV) GetValue() int {
+	return kv.value
+}
+
+func (kv *KV) GetKey() string {
+	return kv.key
+}
+
 // 对给定的map[string]int根据int排序
 func SortStringIntMapByInt(originmap *map[string]int) []*KV {
 	var mapSlice []*KV

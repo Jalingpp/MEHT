@@ -48,15 +48,16 @@ type MGT struct {
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
 
-	hotnessList  map[string]int  //被访问过的叶子节点bucketKey及其被访频次
-	cachedLNMap  map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
-	cachedINMap  map[string]bool //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来
-	accessLength int             //统计MGT中被访问过的所有叶子节点路径长度总和
+	cachedLNMap map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有，会被存入DB
+	cachedINMap map[string]bool //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来，会被存入DB
+
+	hotnessList  map[string]int //被访问过的叶子节点bucketKey及其被访频次，不会被存入DB
+	accessLength int            //统计MGT中被访问过的所有叶子节点路径长度总和，会被存入DB
 }
 
 // NewMGT creates a empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil, make(map[string]int), make(map[string]bool), make(map[string]bool), 0}
+	return &MGT{rdx, nil, nil, make(map[string]bool), make(map[string]bool), make(map[string]int), 0}
 }
 
 // 获取root,如果root为空,则从leveldb中读取
@@ -658,9 +659,15 @@ func (mgt *MGT) PrintCachedMaps() {
 	fmt.Println("cachedINMap:", mgt.cachedINMap)
 }
 
-// 给定MGTNode的string形式的bucketKey,将其放回原始位置
-func (mgt *MGT) MoveMGTNodeBack(bucketKey string) {
-	//获取该节点
+// 打印访问频次列表和总访问次数
+func (mgt *MGT) PrintHotnessList() {
+	accessNum := 0
+	hotnessSlice := util.SortStringIntMapByInt(&mgt.hotnessList)
+	for i := 0; i < len(hotnessSlice); i++ {
+		hotnessSlice[i].PrintKV()
+		accessNum = accessNum + hotnessSlice[i].GetValue()
+	}
+	fmt.Println("accessNum: ", accessNum)
 }
 
 func (mgt *MGT) GetHotnessList() *map[string]int {
@@ -837,7 +844,7 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 			cachedINMap[value] = true
 		}
 	}
-	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, make(map[string]int), cachedLNMap, cachedINMap, 0}
+	mgt := &MGT{seMGT.Rdx, nil, seMGT.MgtRootHash, cachedLNMap, cachedINMap, make(map[string]int), 0}
 	return mgt, nil
 }
 

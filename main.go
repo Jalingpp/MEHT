@@ -4,6 +4,7 @@ import (
 	"MEHT/sedb"
 	"MEHT/util"
 	"fmt"
+	"time"
 	// "encoding/hex"
 )
 
@@ -77,14 +78,19 @@ func main() {
 	// seDB.PrintSEDB()
 
 	//测试查询功能
-	for i := 0; i < 20; i++ {
-		qkey := util.StringToHex("Alice")
+	startTime_q := time.Now()
+	for i := 0; i < 400; i++ {
+		qkey := util.StringToHex("Bob")
 		// qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
 		qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
 		// seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
 		//验证查询结果
 		seDB.VerifyQueryResult(qvalue, qresult, qproof)
 	}
+	endTime_q := time.Now()
+	elapsedTime_q := endTime_q.Sub(startTime_q)
+	// 打印运行时间
+	fmt.Printf("查询运行时间: %s\n", elapsedTime_q)
 
 	// //测试查询功能
 	// qkey2 := util.StringToHex("value6")
@@ -93,33 +99,29 @@ func main() {
 	// //验证查询结果
 	// seDB.VerifyQueryResult(qvalue2, qresult2, qproof2)
 
-	//打印访问频次列表
-	hotnessList := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetHotnessList()
-	//统计总的访问次数
-	accessNum := 0
-	hotnessSlice := util.SortStringIntMapByInt(hotnessList)
-	for i := 0; i < len(hotnessSlice); i++ {
-		hotnessSlice[i].PrintKV()
-		accessNum = accessNum + hotnessSlice[i].GetValue()
-	}
-	fmt.Println("accessNum: ", accessNum)
+	//打印访问频次列表和总访问次数
+	seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).PrintHotnessList()
 	//打印桶的总数
 	bucketNum := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetSEH(seDB.GetDB()).GetBucketsNumber()
 	fmt.Println("bucketNum =", bucketNum)
 	//打印总访问路径长度
 	accessLength := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetAccessLength()
 	fmt.Println("accessLength =", accessLength)
-
 	//打印当前缓存情况
 	seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).PrintCachedMaps()
-
 	//判断是否需要缓存调整
 	IsNeedCacheAdjust := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).IsNeedCacheAdjust(bucketNum, 0.9, 0.1)
-	fmt.Println("是否需要?", IsNeedCacheAdjust)
+	fmt.Println("是否需要调整缓存?", IsNeedCacheAdjust)
 
+	// 进行负载调整
+	startTime_a := time.Now()
 	if IsNeedCacheAdjust {
 		seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).MGTCachedAdjust(seDB.GetDB())
 	}
+	endTime_a := time.Now()
+	elapsedTime_a := endTime_a.Sub(startTime_a)
+	// 打印运行时间
+	fmt.Printf("调整运行时间: %s\n", elapsedTime_a)
 
 	//打印当前缓存情况
 	seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).PrintCachedMaps()

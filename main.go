@@ -30,7 +30,7 @@ func main() {
 	// 打印SEDB
 	// seDB.PrintSEDB()
 
-	// 测试插入不同长度的key
+	// // 测试插入不同长度的key
 	// key1 := "1020"
 	// value1 := util.StringToHex("Alice")
 	// key2 := "3021"
@@ -79,8 +79,9 @@ func main() {
 	//测试查询功能
 	for i := 0; i < 20; i++ {
 		qkey := util.StringToHex("Alice")
+		// qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
 		qvalue, qresult, qproof := seDB.QueryKVPairsByHexKeyword(qkey)
-		seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
+		// seDB.PrintKVPairsQueryResult(qkey, qvalue, qresult, qproof)
 		//验证查询结果
 		seDB.VerifyQueryResult(qvalue, qresult, qproof)
 	}
@@ -109,13 +110,19 @@ func main() {
 	accessLength := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).GetAccessLength()
 	fmt.Println("accessLength =", accessLength)
 
+	//打印当前缓存情况
+	seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).PrintCachedMaps()
+
 	//判断是否需要缓存调整
 	IsNeedCacheAdjust := seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).IsNeedCacheAdjust(bucketNum, 0.9, 0.1)
 	fmt.Println("是否需要?", IsNeedCacheAdjust)
 
 	if IsNeedCacheAdjust {
-		seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).CacheAdjust(seDB.GetDB())
+		seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).MGTCachedAdjust(seDB.GetDB())
 	}
+
+	//打印当前缓存情况
+	seDB.GetStorageEngine().GetSecondaryIndex_meht(seDB.GetDB()).GetMGT(seDB.GetDB()).PrintCachedMaps()
 
 	//写seHash和dbPath到文件
 	seDB.WriteSEDBInfoToFile(filePath)

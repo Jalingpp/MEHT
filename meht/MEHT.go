@@ -100,6 +100,11 @@ func (meht *MEHT) Insert(kvpair *util.KVPair, db *leveldb.DB) (*Bucket, string, 
 	return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
+func (meht *MEHT) MGTCachedAdjust(db *leveldb.DB) {
+	meht.mgtHash = meht.mgt.CacheAdjust(db)
+	meht.UpdateMEHTToDB(db)
+}
+
 // 打印整个MEHT
 func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")

@@ -110,6 +110,10 @@ func (mbt *MBT) GetRootHash() []byte {
 	return mbt.rootHash
 }
 
+func (mbt *MBT) GetMBTHash() []byte {
+	return mbt.mbtHash
+}
+
 func (mbt *MBT) GetBucketNum() int {
 	return mbt.bucketNum
 }
@@ -132,9 +136,6 @@ func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
 	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db, &oldValueAddedFlag)
 	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
-
-// var insertedNum = 0
-var hitNum = 0
 
 func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPair, cnode *MBTNode, db *leveldb.DB, flag *bool) {
 	cnode.latch.Lock()
@@ -196,8 +197,6 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cnode
 		proofElement := NewProofElement(level, 0, cnode.name, cnode.nodeHash, nil, nil)
 		for _, kv := range cnode.bucket {
 			if kv.GetKey() == key {
-				hitNum++
-				fmt.Println("Hit in ", string(cnode.name))
 				return kv.GetValue(), &MBTProof{true, []*ProofElement{proofElement}}
 			}
 		}
@@ -275,13 +274,16 @@ func ComputeMBTRoot(value string, mbtProof *MBTProof) []byte {
 
 func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
 	hash := sha256.Sum256(newRootHash)
-	if err := db.Delete(hash[:], nil); err != nil {
+	mbt.updateLatch.Lock()
+	if err := db.Delete(mbt.mbtHash, nil); err != nil {
 		panic(err)
 	}
 	mbt.mbtHash = hash[:]
+	mbt.rootHash = newRootHash
 	if err := db.Put(mbt.mbtHash, SerializeMBT(mbt), nil); err != nil {
 		panic(err)
 	}
+	mbt.updateLatch.Unlock()
 }
 
 func (mbt *MBT) PurgeCache() {

@@ -143,6 +143,7 @@ func main() {
 	}
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
+			num = 1
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
 			mbtBucketNum := 1280
 			mbtAggregation := 16
@@ -192,7 +193,7 @@ func main() {
 			voList := make([]uint, numOfWorker)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go countVo(&voList, &voChList, doneCh)
-			go allocateQuery("data/", num, queryCh)
+			go allocateQuery("../", num, queryCh)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList)
 			duration = time.Since(start)

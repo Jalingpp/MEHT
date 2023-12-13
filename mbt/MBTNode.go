@@ -104,7 +104,7 @@ type SeMBTNode struct {
 	Name       []byte
 	DataHashes string
 	IsLeaf     bool
-	Bucket     []util.KVPair
+	Bucket     []util.SeKVPair
 }
 
 func SerializeMBTNode(node *MBTNode) []byte {
@@ -115,13 +115,11 @@ func SerializeMBTNode(node *MBTNode) []byte {
 			dataHashString += "," + hex.EncodeToString(hash)
 		}
 	}
-	if len(strings.Split(dataHashString, ",")) == 5 {
-		fmt.Println("QQQQ")
+	Bucket := make([]util.SeKVPair, 0)
+	for _, bk := range node.bucket {
+		Bucket = append(Bucket, util.SeKVPair{Key: bk.GetKey(), Value: bk.GetValue()})
 	}
-	if string(node.name) == "Root" {
-		fmt.Println("ZZZ")
-	}
-	seMBTNode := &SeMBTNode{node.nodeHash, node.name, dataHashString, node.isLeaf, node.bucket}
+	seMBTNode := &SeMBTNode{node.nodeHash, node.name, dataHashString, node.isLeaf, Bucket}
 	if jsonMBTNode, err := json.Marshal(seMBTNode); err != nil {
 		fmt.Printf("SerializeMBTNode error: %v\n", err)
 		return nil
@@ -136,17 +134,18 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		fmt.Printf("DeserializeMBTNode error: %v\n", err)
 		return nil, err
 	}
-	if string(seMBTNode.Name) == "Root" {
-		fmt.Println("YYY")
-	}
 	dataHashes := make([][]byte, 0)
 	dataHashStrings := strings.Split(seMBTNode.DataHashes, ",")
 	for i := 0; i < len(dataHashStrings); i++ {
 		dataHash, _ := hex.DecodeString(dataHashStrings[i])
 		dataHashes = append(dataHashes, dataHash)
 	}
+	bucket := make([]util.KVPair, 0)
+	for _, bk := range seMBTNode.Bucket {
+		bucket = append(bucket, *util.NewKVPair(bk.Key, bk.Value))
+	}
 	if seMBTNode.IsLeaf {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, dataHashes, true, seMBTNode.Bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, dataHashes, true, bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
 		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, make([]*MBTNode, len(dataHashes)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	}

@@ -1,3 +1,7 @@
 data/
 meht/.idea
 .idea
+test_insertion.go
+test_query.go
+test_query_without_vo.go
+test_sl_insertion.go

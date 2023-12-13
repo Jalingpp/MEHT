@@ -307,8 +307,7 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (stri
 		se.secondaryIndex_mbt.Insert(kvPair, db)
 		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
 		se.secondaryIndex_mbt.GetUpdateLatch().Lock()
-		seHash := sha256.Sum256(se.secondaryIndex_mbt.GetRootHash())
-		se.secondaryIndexHash_mbt = seHash[:]
+		se.secondaryIndexHash_mbt = se.secondaryIndex_mbt.GetMBTHash()
 		se.secondaryIndex_mbt.GetUpdateLatch().Unlock()
 		se.updateSecondaryLatch.Unlock()
 		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)

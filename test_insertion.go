@@ -198,7 +198,7 @@ func main() {
 			latencyDurationList := make([]time.Duration, numOfWorker)
 			doneCh := make(chan bool)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
+			go allocateNFTOwner("../nft-owner", num, kvPairCh)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
 			duration = time.Since(start)

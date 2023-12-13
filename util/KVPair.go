@@ -119,3 +119,8 @@ func (kv *KVPair) GreaterThan(other *KVPair) bool {
 func (kv *KVPair) PrintKVPair() {
 	fmt.Printf("key=%s , value=%s\n", kv.key, kv.value)
 }
+
+type SeKVPair struct {
+	Key   string
+	Value string
+}

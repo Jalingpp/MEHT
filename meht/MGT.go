@@ -554,7 +554,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB) []byte {
 		for i := len(nodePath) - 1; i > 1; i-- {
 			newPath = append([]*MGTNode{nodePath[i]}, newPath...)
 			//如果当前节点的第bucketKey[identI]个缓存位为空,则放置
-			if nodePath[i].GetCachedNode(bucketKey[identI], db, mgt.rdx) == nil {
+			if nodePath[i].cachedDataHashes[bucketKey[identI]] == nil {
 				//1.放置当前节点(nodePath[0])
 				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
 				newPath = append([]*MGTNode{nodePath[0]}, newPath...)

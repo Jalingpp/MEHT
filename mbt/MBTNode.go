@@ -47,7 +47,7 @@ func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bo
 	return
 }
 
-func (mbtNode *MBTNode) GetSubnode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
+func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
 	mbtNode.updateLatch.Lock()
 	defer mbtNode.updateLatch.Unlock()
 	if mbtNode.subNodes[index] == nil {
@@ -72,7 +72,9 @@ func UpdateMBTNodeHash(node *MBTNode, dirtyNodeIdx int, db *leveldb.DB, cache *l
 	if cache != nil { //删除旧值
 		cache.Remove(string(node.nodeHash))
 	}
-	db.Delete(node.nodeHash, nil)
+	if err := db.Delete(node.nodeHash, nil); err != nil {
+		fmt.Println("Error in UpdateMBTNodeHash: ", err)
+	}
 	nodeHash := make([]byte, len(node.name))
 	copy(nodeHash, node.name)
 	if node.isLeaf {

@@ -15,7 +15,7 @@ import (
 )
 
 //NewMEHT(rdx int, bc int, bs int) *MEHT {}: NewMEHT returns a new MEHT
-//Insert(kvpair util.KVPair) (*Bucket, string, *MEHTProof) {}: Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
+//Insert(kvPair util.KVPair) (*Bucket, string, *MEHTProof) {}: Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
 //PrintMEHT() {}: 打印整个MEHT
 //QueryByKey(key string) (string, MEHTProof) {}: 给定一个key，返回它的value及其证明proof，不存在，则返回nil,nil
 //PrintQueryResult(key string, value string, mehtProof MEHTProof) {}: 打印查询结果
@@ -67,7 +67,7 @@ func NewMEHT(rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC in
 	}
 }
 
-// 更新MEHT到db
+// UpdateMEHTToDB 更新MEHT到db
 func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
 	meht.latch.RLock()
 	meMEHT := SerializeMEHT(meht)
@@ -123,7 +123,7 @@ func (meht *MEHT) GetCache() *[]interface{} {
 }
 
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-func (meht *MEHT) Insert(kvpair util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
+func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
 	for meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
 		if meht.seh.bucketsNumber != 0 {
@@ -131,35 +131,36 @@ func (meht *MEHT) Insert(kvpair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 			break
 		}
 		//插入KV到SEH
-		bucketss, _, _, _ := meht.seh.Insert(kvpair, db, meht.cache, nil)
-		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketss[0][0].GetSegmentKey(kvpair.GetKey())]
+		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, nil)
+		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketSs[0][0].GetSegmentKey(kvPair.GetKey())]
 		//更新seh到db
-		//meht.seh.UpdateSEHToDB(db)
+		//meht.seh.UpdateSEHToDB
+		//(db)
 		//新建mgt的根节点
-		meht.mgt.Root = NewMGTNode(nil, true, bucketss[0][0], db, meht.rdx, meht.cache)
+		meht.mgt.Root = NewMGTNode(nil, true, bucketSs[0][0], db, meht.rdx, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		//mgtRootHash, mgtProof := meht.mgt.GetProof(bucketss[0][0].GetBucketKey(), db, meht.cache)
-		//return bucketss[0][0], kvpair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
+		//mgtRootHash, mgtProof := meht.mgt.GetProof(bucketSs[0][0].GetBucketKey(), db, meht.cache)
+		//return bucketSs[0][0], kvPair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
 		meht.seh.latch.Unlock()
-		return bucketss[0][0], kvpair.GetValue(), nil
+		return bucketSs[0][0], kvPair.GetValue(), nil
 	}
 	for meht.seh.bucketsNumber == 0 { // 等待最初的桶建成
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	var bucketDelegationCode_ bucketDelegationCode = FAILED
-	var bucketss [][]*Bucket
+	var bucketSs [][]*Bucket
 	var timestamp *int64 //特定桶当前时间戳，可能是正在执行插入的线程开始接收委托的时间戳，也可能是 0
 	//Client等待Delegate完成桶插入时桶的时间戳，在Delegate做完后waitTimestamp一定会与timestamp的值不同，
 	//即使实际的桶已经不是timestamp所在的桶了，因为非零时间戳永远是递增的，因此可以用来判断Delegate是否已经完成了插入
 	//因为无论是桶时间戳的改变还是换了一个新桶，这都意味着上一次插入已经完成了
 	var waitTimestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketss, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvpair, db, meht.cache, &meht.mgt.latch)
+		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache, &meht.mgt.latch)
 	}
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
-		meht.mgt = meht.mgt.MGTUpdate(bucketss, db, meht.cache)
+		meht.mgt = meht.mgt.MGTUpdate(bucketSs, db, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		//fmt.Println("Try to unlock mgt latch in meht insert.")
@@ -175,22 +176,27 @@ func (meht *MEHT) Insert(kvpair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 		//但这并不影响确实插入了这个东西的存在性证明，总会在某一个时刻找到一个当前时刻的位置的哈希与proof证明插入成功
 		meht.mgt.latch.RLock() //读锁住mgt树根既保证阻塞新的插入保证桶位置不变，同时保证此时bucket对应mgtNode路径不会在寻找中途更改
 		//meht.seh.latch.RLock() //这里其实可以不锁，因为只有桶插入后分裂才会引发seh更新，但是mgt锁住其实就已经不可能正式执行桶插入了
-		kvbucket := meht.seh.GetBucketByKey(kvpair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
+		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
 		//meht.seh.latch.RUnlock()
-		//kvbucket.latch.RLock() //这里其实可以不锁，因为mgt锁住其实就已经不可能有正式桶插入了，而且不锁的话可以在这部分获取proof的同时让其他插入线程继续在这个桶委托，等待一并插入
-		//kvbucket.mtLatch.RLock() //这里其实可以不锁，因为只有桶插入才会引发树更新，但是mgt锁住其实就已经不可能正式执行桶插入了
-		//merkleTree_ := kvbucket.merkleTrees[kvbucket.GetSegmentKey(kvpair.GetKey())]
+		//kvBucket.latch.RLock() //这里其实可以不锁，因为mgt锁住其实就已经不可能有正式桶插入了，而且不锁的话可以在这部分获取proof的同时让其他插入线程继续在这个桶委托，等待一并插入
+		//kvBucket.mtLatch.RLock() //这里其实可以不锁，因为只有桶插入才会引发树更新，但是mgt锁住其实就已经不可能正式执行桶插入了
+		//merkleTree_ := kvBucket.merkleTrees[kvBucket.GetSegmentKey(kvPair.GetKey())]
 		//segRootHash, mhtProof := merkleTree_.GetRootHash(), merkleTree_.GetProof(0)
-		//mgtRootHash, mgtProof := meht.mgt.GetProof(kvbucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
-		//kvbucket.mtLatch.RUnlock()
-		//kvbucket.latch.RUnlock()
+		//mgtRootHash, mgtProof := meht.mgt.GetProof(kvBucket.GetBucketKey(), db, meht.cache) // 因此即使委托了数据，只要最终返回的proof能找到这个桶就好了，也不需要是最初被插入的那个
+		//kvBucket.mtLatch.RUnlock()
+		//kvBucket.latch.RUnlock()
 		meht.mgt.latch.RUnlock()
-		//return kvbucket, kvpair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
-		return kvbucket, kvpair.GetValue(), nil
+		//return kvBucket, kvPair.GetValue(), &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
+		return kvBucket, kvPair.GetValue(), nil
 	}
 }
 
-// 打印整个MEHT
+func (meht *MEHT) MGTCachedAdjust(db *leveldb.DB) {
+	meht.mgtHash = meht.mgt.CacheAdjust(db, meht.cache)
+	meht.UpdateMEHTToDB(db)
+}
+
+// PrintMEHT 打印整个MEHT
 func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
@@ -216,7 +222,7 @@ func (mehtProof *MEHTProof) GetSizeOf() uint {
 	return ret
 }
 
-// 给定一个key，返回它的value及其用于查找证明的信息，包括segkey，seg是否存在，在seg中的index，不存在，则返回nil,nil
+// QueryValueByKey 给定一个key，返回它的value及其用于查找证明的信息，包括segKey，seg是否存在，在seg中的index，不存在，则返回nil,nil
 func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
 	//此处在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，因此死锁
@@ -227,17 +233,17 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 	if bucket := seh.GetBucketByKey(key, db, meht.cache); bucket != nil {
 		//根据key找到value
 		seh.latch.RUnlock() //防止在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，导致死锁
-		value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache, false)
-		return value, bucket, segkey, isSegExist, index
+		value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache, false)
+		return value, bucket, segKey, isSegExist, index
 	}
 	seh.latch.RUnlock()
 	return "", nil, "", false, -1
 }
 
-// 根据查询结果构建MEHTProof, mgtNode.bucket.rdx
-func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, index int, db *leveldb.DB) *MEHTProof {
+// GetQueryProof 根据查询结果构建MEHTProof, mgtNode.bucket.rdx
+func (meht *MEHT) GetQueryProof(bucket *Bucket, segKey string, isSegExist bool, index int, db *leveldb.DB) *MEHTProof {
 	//找到segRootHash和segProof
-	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, meht.cache)
+	segRootHash, mhtProof := bucket.GetProof(segKey, isSegExist, index, db, meht.cache)
 	//根据key找到mgtRootHash和mgtProof
 	meht.GetMGT(db) // 保证 mgt 不为空
 	meht.mgt.latch.RLock()
@@ -246,7 +252,7 @@ func (meht *MEHT) GetQueryProof(bucket *Bucket, segkey string, isSegExist bool, 
 	return &MEHTProof{segRootHash, mhtProof, mgtRootHash, mgtProof}
 }
 
-// 将Cache中所有数据都更新到磁盘上
+// PurgeCache 将Cache中所有数据都更新到磁盘上
 func (meht *MEHT) PurgeCache() {
 	for idx, cache_ := range *(meht.cache) {
 		switch idx {
@@ -268,7 +274,7 @@ func (meht *MEHT) PurgeCache() {
 	}
 }
 
-// 打印查询结果
+// PrintQueryResult 打印查询结果
 func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
 	fmt.Printf("查询结果-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("key=%s\n", key)
@@ -280,7 +286,7 @@ func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
 	mehtProof.PrintMEHTProof()
 }
 
-// 验证查询结果
+// VerifyQueryResult 验证查询结果
 func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	//验证segProof
 	//fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
@@ -328,14 +334,14 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 		}
 	} else {
 		//如果key存在，则根据key对应的value构建segment的默克尔树根
-		segRootHash = ComputSegHashRoot(value, mehtProof.mhtProof.GetProofPairs())
+		segRootHash = ComputeSegHashRoot(value, mehtProof.mhtProof.GetProofPairs())
 		if segRootHash == nil || !bytes.Equal(segRootHash, mehtProof.segRootHash) {
 			//fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(segRootHash))
 			return false
 		}
 	}
 	//计算mgtRootHash
-	mgtRootHash := ComputMGTRootHash(segRootHash, mehtProof.mgtProof)
+	mgtRootHash := ComputeMGTRootHash(segRootHash, mehtProof.mgtProof)
 	if mgtRootHash == nil || !bytes.Equal(mgtRootHash, mehtProof.mgtRootHash) {
 		//fmt.Printf("mgtRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mgtRootHash))
 		return false
@@ -344,7 +350,7 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	return true
 }
 
-// 打印MEHTProof
+// PrintMEHTProof 打印MEHTProof
 func (mehtProof *MEHTProof) PrintMEHTProof() {
 	fmt.Printf("打印MEHTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("segRootHash=%s\n", hex.EncodeToString(mehtProof.segRootHash))
@@ -363,7 +369,7 @@ type SeMEHT struct {
 	MgtHash []byte // hash of the mgt
 }
 
-// 序列化MEHT
+// SerializeMEHT 序列化MEHT
 func SerializeMEHT(meht *MEHT) []byte {
 	seMEHT := &SeMEHT{meht.rdx, meht.bc, meht.bs, meht.mgtHash}
 	if jsonSSN, err := json.Marshal(seMEHT); err != nil {
@@ -374,7 +380,7 @@ func SerializeMEHT(meht *MEHT) []byte {
 	}
 }
 
-// 反序列化MEHT
+// DeserializeMEHT 反序列化MEHT
 func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 	mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) (meht *MEHT, err error) {
 	var seMEHT SeMEHT

@@ -33,12 +33,12 @@ type StorageEngine struct {
 
 	secondaryIndexMode string // 标识当前采用的非主键索引的类型，mpt或meht或mbt
 
-	secondaryIndex_mpt      *mpt.MPT // mpt类型的非主键索引
-	secondaryIndexHash_mpt  []byte   //mpt类型的非主键索引根哈希
-	secondaryIndex_mbt      *mbt.MBT
-	secondaryIndexHash_mbt  []byte
-	secondaryIndex_meht     *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
-	secondaryIndexHash_meht []byte
+	secondaryIndexMpt      *mpt.MPT // mpt类型的非主键索引
+	secondaryIndexHashMpt  []byte   //mpt类型的非主键索引根哈希
+	secondaryIndexMbt      *mbt.MBT
+	secondaryIndexHashMbt  []byte
+	secondaryIndexMeht     *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
+	secondaryIndexHashMeht []byte
 
 	mbtArgs  []interface{}
 	mehtArgs []interface{}
@@ -51,7 +51,7 @@ type StorageEngine struct {
 	updateSecondaryLatch sync.Mutex
 }
 
-// NewStorageEngine() *StorageEngine: 返回一个新的StorageEngine
+// NewStorageEngine 返回一个新的StorageEngine
 func NewStorageEngine(siMode string, mbtArgs []interface{}, mehtArgs []interface{},
 	cacheEnable bool, cacheCapacity []interface{}) *StorageEngine {
 	return &StorageEngine{nil, nil, nil, siMode, nil,
@@ -60,8 +60,8 @@ func NewStorageEngine(siMode string, mbtArgs []interface{}, mehtArgs []interface
 		sync.Mutex{}, sync.Mutex{}}
 }
 
-// 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
-func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
+// UpdateStorageEngineToDB 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
+func (se *StorageEngine) UpdateStorageEngineToDB() {
 	//删除db中原有的se
 	//if err := db.Delete(se.seHash, nil); err != nil {
 	//	fmt.Println("Delete StorageEngine from DB error:", err)
@@ -72,11 +72,11 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 	se.updateSecondaryLatch.Lock() // 保证se的哈希与辅助索引根哈希是相关联的
 	seHashs = append(seHashs, se.primaryIndexHash...)
 	if se.secondaryIndexMode == "mpt" {
-		seHashs = append(seHashs, se.secondaryIndexHash_mpt...)
+		seHashs = append(seHashs, se.secondaryIndexHashMpt...)
 	} else if se.secondaryIndexMode == "meht" {
-		seHashs = append(seHashs, se.secondaryIndexHash_meht...)
+		seHashs = append(seHashs, se.secondaryIndexHashMeht...)
 	} else if se.secondaryIndexMode == "mbt" {
-		seHashs = append(seHashs, se.secondaryIndexHash_mbt...)
+		seHashs = append(seHashs, se.secondaryIndexHashMbt...)
 	} else {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 	}
@@ -90,7 +90,7 @@ func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) {
 	//}
 }
 
-// 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
+// GetPrimaryIndex 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	//如果当前primaryIndex为空，则从数据库中查询
 	if se.primaryIndex == nil && len(se.primaryIndexHash) != 0 && se.primaryLatch.TryLock() { // 只允许一个线程重构主索引
@@ -112,68 +112,68 @@ func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {
 	return se.primaryIndex
 }
 
-// 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
-func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {
+// GetSecondaryIndexMpt 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
+func (se *StorageEngine) GetSecondaryIndexMpt(db *leveldb.DB) *mpt.MPT {
 	//如果当前secondaryIndex_mpt为空，则从数据库中查询
-	if se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 && se.secondaryLatch.TryLock() {
-		if se.secondaryIndex_mpt != nil {
+	if se.secondaryIndexMpt == nil && len(se.secondaryIndexHashMpt) != 0 && se.secondaryLatch.TryLock() {
+		if se.secondaryIndexMpt != nil {
 			se.secondaryLatch.Unlock()
-			return se.secondaryIndex_mpt
+			return se.secondaryIndexMpt
 		}
-		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mpt, nil); len(secondaryIndexString) != 0 {
+		if secondaryIndexString, _ := db.Get(se.secondaryIndexHashMpt, nil); len(secondaryIndexString) != 0 {
 			shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			secondaryIndex, _ := mpt.DeserializeMPT(secondaryIndexString, db, se.cacheEnable, shortNodeCC, fullNodeCC)
-			se.secondaryIndex_mpt = secondaryIndex
+			se.secondaryIndexMpt = secondaryIndex
 		}
 		se.secondaryLatch.Unlock()
 	}
-	for se.secondaryIndex_mpt == nil && len(se.secondaryIndexHash_mpt) != 0 {
+	for se.secondaryIndexMpt == nil && len(se.secondaryIndexHashMpt) != 0 {
 	}
-	return se.secondaryIndex_mpt
+	return se.secondaryIndexMpt
 }
 
-// 返回mbt类型的辅助索引指针，如果内存中不存在，则从数据库中查询，都不在则返回nil
-func (se *StorageEngine) GetSecondaryIndex_mbt(db *leveldb.DB) *mbt.MBT {
+// GetSecondaryIndexMbt 返回mbt类型的辅助索引指针，如果内存中不存在，则从数据库中查询，都不在则返回nil
+func (se *StorageEngine) GetSecondaryIndexMbt(db *leveldb.DB) *mbt.MBT {
 	//如果当前secondaryIndex_mbt为空，则从数据库中查询
-	if se.secondaryIndex_mbt == nil && len(se.secondaryIndexHash_mbt) != 0 && se.secondaryLatch.TryLock() {
-		if se.secondaryIndex_mbt != nil {
+	if se.secondaryIndexMbt == nil && len(se.secondaryIndexHashMbt) != 0 && se.secondaryLatch.TryLock() {
+		if se.secondaryIndexMbt != nil {
 			se.secondaryLatch.Unlock()
-			return se.secondaryIndex_mbt
+			return se.secondaryIndexMbt
 		}
-		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_mbt, nil); len(secondaryIndexString) != 0 {
+		if secondaryIndexString, _ := db.Get(se.secondaryIndexHashMbt, nil); len(secondaryIndexString) != 0 {
 			_, _, mbtNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 			secondaryIndex, _ := mbt.DeserializeMBT(secondaryIndexString, db, se.cacheEnable, mbtNodeCC)
-			se.secondaryIndex_mbt = secondaryIndex
+			se.secondaryIndexMbt = secondaryIndex
 		}
 		se.secondaryLatch.Unlock()
 	}
-	for se.secondaryIndex_mbt == nil && len(se.secondaryIndexHash_mbt) != 0 {
+	for se.secondaryIndexMbt == nil && len(se.secondaryIndexHashMbt) != 0 {
 	}
-	return se.secondaryIndex_mbt
+	return se.secondaryIndexMbt
 }
 
-// 返回meht类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
-func (se *StorageEngine) GetSecondaryIndex_meht(db *leveldb.DB) *meht.MEHT {
+// GetSecondaryIndexMeht 返回meht类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
+func (se *StorageEngine) GetSecondaryIndexMeht(db *leveldb.DB) *meht.MEHT {
 	//如果当前secondaryIndex_meht为空，则从数据库中查询，如果数据库中也找不到，则在纯查询空meht场景下会有大问题
-	if se.secondaryIndex_meht == nil && len(se.secondaryIndexHash_meht) != 0 && se.secondaryLatch.TryLock() {
-		if se.secondaryIndex_meht != nil {
+	if se.secondaryIndexMeht == nil && len(se.secondaryIndexHashMeht) != 0 && se.secondaryLatch.TryLock() {
+		if se.secondaryIndexMeht != nil {
 			se.secondaryLatch.Unlock()
-			return se.secondaryIndex_meht
+			return se.secondaryIndexMeht
 		}
-		if secondaryIndexString, _ := db.Get(se.secondaryIndexHash_meht, nil); len(secondaryIndexString) != 0 {
+		if secondaryIndexString, _ := db.Get(se.secondaryIndexHashMeht, nil); len(secondaryIndexString) != 0 {
 			_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
-			se.secondaryIndex_meht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
+			se.secondaryIndexMeht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
 				bucketCC, segmentCC, merkleTreeCC)
-			se.secondaryIndex_meht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
+			se.secondaryIndexMeht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
 		}
 		se.secondaryLatch.Unlock()
 	}
-	for se.secondaryIndex_meht == nil && len(se.secondaryIndexHash_meht) != 0 {
+	for se.secondaryIndexMeht == nil && len(se.secondaryIndexHashMeht) != 0 {
 	}
-	return se.secondaryIndex_meht
+	return se.secondaryIndexMeht
 }
 
-// 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
+// Insert 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
 func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
 	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
@@ -253,30 +253,30 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 	return nil, nil, nil
 }
 
-// 插入非主键索引
+// InsertIntoMPT 插入非主键索引
 func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_mpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
+	if se.GetSecondaryIndexMpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
 		shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
-		se.secondaryIndex_mpt = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
+		se.secondaryIndexMpt = mpt.NewMPT(db, se.cacheEnable, shortNodeCC, fullNodeCC)
 		se.secondaryLatch.Unlock()
 	}
-	for se.secondaryIndex_mpt == nil { // 其余线程等待非主键索引创建
+	for se.secondaryIndexMpt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	values, mptProof := se.secondaryIndex_mpt.QueryByKey(kvPair.GetKey(), db, false)
+	values, mptProof := se.secondaryIndexMpt.QueryByKey(kvPair.GetKey(), db, false)
 	//将原有values插入到kvPair中
 	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
 	isChange := insertedKV.AddValue(kvPair.GetValue())
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
-		se.secondaryIndex_mpt.Insert(kvPair, db)
+		se.secondaryIndexMpt.Insert(kvPair, db)
 		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
-		se.secondaryIndex_mpt.GetUpdateLatch().Lock()
-		seHash := sha256.Sum256(se.secondaryIndex_mpt.GetRootHash())
-		se.secondaryIndexHash_mpt = seHash[:]
-		se.secondaryIndex_mpt.GetUpdateLatch().Unlock()
+		se.secondaryIndexMpt.GetUpdateLatch().Lock()
+		seHash := sha256.Sum256(se.secondaryIndexMpt.GetRootHash())
+		se.secondaryIndexHashMpt = seHash[:]
+		se.secondaryIndexMpt.GetUpdateLatch().Unlock()
 		se.updateSecondaryLatch.Unlock()
 		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
 		//return newValues, newProof
@@ -285,30 +285,31 @@ func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (stri
 	return values, mptProof
 }
 
+// InsertIntoMBT 插入非主键索引
 func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (string, *mbt.MBTProof) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_mbt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
+	if se.GetSecondaryIndexMbt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
 		_, _, mbtNodeCC, _, _, _, _ := GetCapacity(&se.cacheCapacity)
 		bucketNum, aggregation := GetMBTArgs(&se.mbtArgs)
-		se.secondaryIndex_mbt = mbt.NewMBT(bucketNum, aggregation, db, se.cacheEnable, mbtNodeCC)
+		se.secondaryIndexMbt = mbt.NewMBT(bucketNum, aggregation, db, se.cacheEnable, mbtNodeCC)
 		se.secondaryLatch.Unlock()
 	}
-	for se.secondaryIndex_mbt == nil { // 其余线程等待非主键索引创建
+	for se.secondaryIndexMbt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	path := mbt.ComputePath(se.secondaryIndex_mbt.GetBucketNum(), se.secondaryIndex_mbt.GetAggregation(), se.secondaryIndex_mbt.GetGd(), kvPair.GetKey())
-	values, mbtProof := se.secondaryIndex_mbt.QueryByKey(kvPair.GetKey(), path, db, false)
+	path := mbt.ComputePath(se.secondaryIndexMbt.GetBucketNum(), se.secondaryIndexMbt.GetAggregation(), se.secondaryIndexMbt.GetGd(), kvPair.GetKey())
+	values, mbtProof := se.secondaryIndexMbt.QueryByKey(kvPair.GetKey(), path, db, false)
 	//用原有values插入到kvPair中
 	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
 	isChange := insertedKV.AddValue(kvPair.GetValue())
 	//如果原有values中没有此value，则插入到mpt中
 	if isChange {
-		se.secondaryIndex_mbt.Insert(kvPair, db)
+		se.secondaryIndexMbt.Insert(kvPair, db)
 		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
-		se.secondaryIndex_mbt.GetUpdateLatch().Lock()
-		se.secondaryIndexHash_mbt = se.secondaryIndex_mbt.GetMBTHash()
-		se.secondaryIndex_mbt.GetUpdateLatch().Unlock()
+		se.secondaryIndexMbt.GetUpdateLatch().Lock()
+		se.secondaryIndexHashMbt = se.secondaryIndexMbt.GetMBTHash()
+		se.secondaryIndexMbt.GetUpdateLatch().Unlock()
 		se.updateSecondaryLatch.Unlock()
 		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
 		//return newValues, newProof
@@ -317,20 +318,20 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (stri
 	return values, mbtProof
 }
 
-// 插入非主键索引
+// InsertIntoMEHT 插入非主键索引
 func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
 	//如果是第一次插入
-	if se.GetSecondaryIndex_meht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
+	if se.GetSecondaryIndexMeht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 		mehtRdx, mehtBc, mehtBs := GetMEHTArgs(&se.mehtArgs)
-		se.secondaryIndex_meht = meht.NewMEHT(mehtRdx, mehtBc, mehtBs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
+		se.secondaryIndexMeht = meht.NewMEHT(mehtRdx, mehtBc, mehtBs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
 		se.secondaryLatch.Unlock()
 	}
-	for se.GetSecondaryIndex_meht(db) == nil { // 其余线程等待meht创建成功
+	for se.GetSecondaryIndexMeht(db) == nil { // 其余线程等待meht创建成功
 	}
 	//先查询得到原有value与待插入value合并
-	values, bucket, segkey, isSegExist, index := se.secondaryIndex_meht.QueryValueByKey(kvPair.GetKey(), db)
+	values, bucket, segkey, isSegExist, index := se.secondaryIndexMeht.QueryValueByKey(kvPair.GetKey(), db)
 	//用原有values构建待插入的kvpair
 	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
 	//将新的value插入到kvpair中
@@ -340,14 +341,15 @@ func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (str
 		// 这里逻辑也需要转变，因为并发插入的时候可能很多键都相同但被阻塞了一直没写进去，那更新就会有非常多初始值的重复
 		// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
 		//_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
-		_, newValues, newProof := se.secondaryIndex_meht.Insert(kvPair, db)
+		_, newValues, newProof := se.secondaryIndexMeht.Insert(kvPair, db)
 		//更新meht到db
-		se.secondaryIndex_meht.UpdateMEHTToDB(db)
+		se.secondaryIndexMeht.UpdateMEHTToDB(db)
 		return newValues, newProof
 	}
-	return values, se.secondaryIndex_meht.GetQueryProof(bucket, segkey, isSegExist, index, db)
+	return values, se.secondaryIndexMeht.GetQueryProof(bucket, segkey, isSegExist, index, db)
 }
 
+// GetMBTArgs 解析MBTArgs
 func GetMBTArgs(mbtArgs *[]interface{}) (mbtBucketNum int, mbtAggregation int) {
 	mbtBucketNum = int(DefaultMBTBucketNum)
 	mbtAggregation = int(DefaultMBTAggregation)
@@ -364,6 +366,7 @@ func GetMBTArgs(mbtArgs *[]interface{}) (mbtBucketNum int, mbtAggregation int) {
 	return
 }
 
+// GetMEHTArgs 解析MEHTArgs
 func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int) {
 	mehtRdx = int(DefaultMEHTRdx)
 	mehtBc = int(DefaultMEHTBc)
@@ -383,6 +386,7 @@ func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int) 
 	return
 }
 
+// GetCapacity 解析缓存大小参数
 func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int, mbtNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int) {
 	shortNodeCC = int(DefaultShortNodeCacheCapacity)
 	fullNodeCC = int(DefaultFullNodeCacheCapacity)
@@ -415,13 +419,13 @@ func GetCapacity(cacheCapacity *[]interface{}) (shortNodeCC int, fullNodeCC int,
 	return
 }
 
-// 打印查询结果
-func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {
-	fmt.Printf("key=%s , value=%s\n", key, value)
-	mptProof.PrintMPTProof()
-}
+//// PrintQueryResult 打印查询结果
+//func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {
+//	fmt.Printf("key=%s , value=%s\n", key, value)
+//	mptProof.PrintMPTProof()
+//}
 
-// 打印StorageEngine
+// PrintStorageEngine 打印StorageEngine
 func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {
 	if se == nil {
 		return
@@ -432,36 +436,36 @@ func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {
 	se.GetPrimaryIndex(db).PrintMPT(db)
 	fmt.Printf("se.secondaryIndexMode:%s\n", se.secondaryIndexMode)
 	if se.secondaryIndexMode == "mpt" {
-		fmt.Printf("secondaryIndexHash(mpt):%x\n", se.secondaryIndexHash_mpt)
-		se.GetSecondaryIndex_mpt(db).PrintMPT(db)
+		fmt.Printf("secondaryIndexHash(mpt):%x\n", se.secondaryIndexHashMpt)
+		se.GetSecondaryIndexMpt(db).PrintMPT(db)
 	} else if se.secondaryIndexMode == "meht" {
-		fmt.Printf("secondaryIndexRootHash(meht):%s\n", se.secondaryIndexHash_meht)
-		se.GetSecondaryIndex_meht(db).PrintMEHT(db)
+		fmt.Printf("secondaryIndexRootHash(meht):%s\n", se.secondaryIndexHashMeht)
+		se.GetSecondaryIndexMeht(db).PrintMEHT(db)
 	} else if se.secondaryIndexMode == "mbt" {
-		fmt.Printf("secondaryIndexRootHash(mbt):%s\n", se.secondaryIndexHash_mbt)
-		se.GetSecondaryIndex_mbt(db).PrintMBT(db)
+		fmt.Printf("secondaryIndexRootHash(mbt):%s\n", se.secondaryIndexHashMbt)
+		se.GetSecondaryIndexMbt(db).PrintMBT(db)
 	}
 }
 
-// 用于序列化StorageEngine的结构体
+// SeStorageEngine 用于序列化StorageEngine的结构体
 type SeStorageEngine struct {
 	SeHash               []byte //搜索引擎的哈希值，由主索引根哈希和辅助索引根哈希计算得到
 	PrimaryIndexRootHash []byte // 主键索引的根哈希值
 
-	SecondaryIndexMode          string // 标识当前采用的非主键索引的类型，mpt或meht
-	SecondaryIndexRootHash_mpt  []byte //mpt类型的非主键索引根哈希
-	SecondaryIndexRootHash_mbt  []byte
-	SecondaryIndexRootHash_meht []byte
+	SecondaryIndexMode         string // 标识当前采用的非主键索引的类型，mpt或meht
+	SecondaryIndexRootHashMpt  []byte //mpt类型的非主键索引根哈希
+	SecondaryIndexRootHashMbt  []byte
+	SecondaryIndexRootHashMeht []byte
 
 	MBTArgs  []interface{}
 	MEHTArgs []interface{}
 }
 
-// 序列化存储引擎
+// SerializeStorageEngine 序列化存储引擎
 func SerializeStorageEngine(se *StorageEngine) []byte {
 	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash,
-		se.secondaryIndexMode, se.secondaryIndexHash_mpt,
-		se.secondaryIndexHash_mbt, se.secondaryIndexHash_meht,
+		se.secondaryIndexMode, se.secondaryIndexHashMpt,
+		se.secondaryIndexHashMbt, se.secondaryIndexHashMeht,
 		se.mbtArgs, se.mehtArgs}
 	jsonSE, err := json.Marshal(sese)
 	if err != nil {
@@ -471,7 +475,7 @@ func SerializeStorageEngine(se *StorageEngine) []byte {
 	return jsonSE
 }
 
-// 反序列化存储引擎
+// DeserializeStorageEngine 反序列化存储引擎
 func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity []interface{}) (*StorageEngine, error) {
 	var sese SeStorageEngine
 	err := json.Unmarshal(sestring, &sese)
@@ -480,9 +484,9 @@ func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity [
 		return nil, err
 	}
 	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
-		nil, sese.SecondaryIndexRootHash_mpt, nil,
-		sese.SecondaryIndexRootHash_mbt, nil,
-		sese.SecondaryIndexRootHash_meht, sese.MBTArgs, sese.MEHTArgs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
+		nil, sese.SecondaryIndexRootHashMpt, nil,
+		sese.SecondaryIndexRootHashMbt, nil,
+		sese.SecondaryIndexRootHashMeht, sese.MBTArgs, sese.MEHTArgs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
 		sync.Mutex{}, sync.Mutex{}}
 	return se, nil
 }

@@ -288,15 +288,16 @@ type SeSEH struct {
 	BucketCapacity int // capacity of the bucket, initial given
 	BucketSegNum   int // number of segment bits in the bucket, initial given
 
-	HashTableKeys string // hash table of buckets
-	BucketsNumber int    // number of buckets, initial zero
+	HashTableKeys []string // hash table of buckets
+	BucketsNumber int      // number of buckets, initial zero
 }
 
 func SerializeSEH(seh *SEH) []byte {
-	hashTableKeys := ""
-	seh.updateLatch.Lock()
-	for k := range seh.ht {
-		hashTableKeys += k + ","
+	hashTableKeys := make([]string, len(seh.ht))
+	idx := 0
+	for key := range seh.ht {
+		hashTableKeys[idx] = key
+		idx++
 	}
 	seh.updateLatch.Unlock()
 	seSEH := &SeSEH{seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
@@ -317,12 +318,11 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 	}
 	seh := &SEH{seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
 		make(map[string]*Bucket), seSEH.BucketsNumber, sync.RWMutex{}, sync.Mutex{}}
-	htKeys := strings.Split(seSEH.HashTableKeys, ",")
-	for i := 0; i < len(htKeys); i++ {
-		if htKeys[i] == "" && seSEH.Gd > 0 {
+	for _, key := range seSEH.HashTableKeys {
+		if key == "" && seSEH.Gd > 0 {
 			continue
 		} else {
-			seh.ht[htKeys[i]] = dummyBucket
+			seh.ht[key] = dummyBucket
 		}
 	}
 	return seh, nil

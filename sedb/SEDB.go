@@ -24,57 +24,51 @@ import (
 //func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {}： 从文件中读取seHash和dbPath
 //func (sedb *SEDB) PrintSEDB() {}： 打印SEDB
 
-// MPT Args
-type FullNodeCacheCapacity int
-type ShortNodeCacheCapacity int
+type FullNodeCacheCapacity int                                  //MPT cache capacity identification for fullNode
+type ShortNodeCacheCapacity int                                 //MPT cache capacity identification for shortNode
+var DefaultFullNodeCacheCapacity = FullNodeCacheCapacity(128)   //MPT default cache capacity for shortNode
+var DefaultShortNodeCacheCapacity = ShortNodeCacheCapacity(128) //MPT default cache capacity for fullNode
 
-var DefaultFullNodeCacheCapacity = FullNodeCacheCapacity(128)
-var DefaultShortNodeCacheCapacity = ShortNodeCacheCapacity(128)
+type MBTNodeCacheCapacity int                               //MBT cache capacity identification for mbtNode
+type MBTBucketNum int                                       //MBT cache capacity identification for number of buckets
+type MBTAggregation int                                     //MBT identification for aggregation size
+var DefaultMBTNodeCacheCapacity = MBTNodeCacheCapacity(128) //MBT default cache capacity for mbtNode
+var DefaultMBTBucketNum = MBTBucketNum(128)                 //MBT default number of buckets
+var DefaultMBTAggregation = MBTAggregation(16)              //MBT default aggregation size
 
-// MBT Args
-type MBTNodeCacheCapacity int
-type MBTBucketNum int
-type MBTAggregation int
-
-var DefaultMBTNodeCacheCapacity = MBTNodeCacheCapacity(128)
-var DefaultMBTBucketNum = MBTBucketNum(128)
-var DefaultMBTAggregation = MBTAggregation(16)
-
-// MEHT Cache
-type MgtNodeCacheCapacity int
-type BucketCacheCapacity int
-type SegmentCacheCapacity int
-type MerkleTreeCacheCapacity int
-type MEHTRdx int //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-type MEHTBc int  //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
-type MEHTBs int
-
-var DefaultMgtNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)
-var DefaultBucketCacheCapacity = BucketCacheCapacity(128)
-var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)
-var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128)
-var DefaultMEHTRdx = MEHTRdx(16)
-var DefaultMEHTBc = MEHTBc(1280)
-var DefaultMEHTBs = MEHTBs(1)
+type MgtNodeCacheCapacity int                                    //MEHT cache capacity identification for mgtNode
+type BucketCacheCapacity int                                     //MEHT cache capacity identification for bucket
+type SegmentCacheCapacity int                                    //MEHT cache capacity identification for segment
+type MerkleTreeCacheCapacity int                                 //MEHT cache capacity identification for merkleTree
+type MEHTRdx int                                                 //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+type MEHTBc int                                                  //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
+type MEHTBs int                                                  //meht的参数，meht中segment划分的位数，即每个bucket中最多分割的segments数
+var DefaultMgtNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)  //MEHT default cache capacity for mgtNode
+var DefaultBucketCacheCapacity = BucketCacheCapacity(128)        //MEHT default cache capacity for bucket
+var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)  //MEHT default cache capacity for segment
+var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128) //MEHT default cache capacity for merkleTree
+var DefaultMEHTRdx = MEHTRdx(16)                                 //MEHT default Rdx
+var DefaultMEHTBc = MEHTBc(1280)                                 //MEHT dafault Bc
+var DefaultMEHTBs = MEHTBs(1)                                    //MEHT dafault Bs
 
 type SEDB struct {
 	se              *StorageEngine //搜索引擎的指针
 	seHash          []byte         //搜索引擎序列化后的哈希值
-	primaryDb       *leveldb.DB    //底层存储的指针
-	secondaryDb     *leveldb.DB
-	primaryDbPath   string //底层存储的文件路径
-	secondaryDbPath string
+	primaryDb       *leveldb.DB    //主索引底层存储的指针
+	secondaryDb     *leveldb.DB    //辅助索引底层存储的指针
+	primaryDbPath   string         //主索引底层存储的文件路径
+	secondaryDbPath string         //辅助索引底层存储的文件路径
 
-	siMode        string //se的参数，辅助索引类型，meht或mpt或mbt
-	mbtArgs       []interface{}
-	mehtArgs      []interface{}
-	cacheEnable   bool
-	cacheCapacity []interface{}
-	latch         sync.RWMutex
-	updateLatch   sync.Mutex
+	siMode        string        //se的参数，辅助索引类型，meht或mpt或mbt
+	mbtArgs       []interface{} //mbt的参数，包含mbt的桶总数与分叉数
+	mehtArgs      []interface{} //meht的参数，包含meht的分叉数、桶容量及段容量
+	cacheEnable   bool          //是否使用缓存标识
+	cacheCapacity []interface{} //缓存参数，包含各结构的缓存数目上界
+	latch         sync.RWMutex  //当前结构体实例的全局锁
+	updateLatch   sync.Mutex    //用于读锁升级为写锁
 }
 
-// NewSEDB() *SEDB: 返回一个新的SEDB
+// NewSEDB 返回一个新的SEDB
 func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode string, mbtArgs []interface{}, mehtArgs []interface{}, cacheEnabled bool, cacheCapacity ...interface{}) *SEDB {
 	//打开或创建数据库
 	primaryDb, err := leveldb.OpenFile(primaryDbPath, nil)
@@ -90,11 +84,11 @@ func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode st
 		cacheEnabled, cacheCapacity, sync.RWMutex{}, sync.Mutex{}}
 }
 
-// 获取SEDB中的StorageEngine，如果为空，从db中读取se
+// GetStorageEngine 获取SEDB中的StorageEngine，如果为空，从db中读取se
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
 	if sedb.se == nil && sedb.seHash != nil && len(sedb.seHash) != 0 && sedb.latch.TryLock() { // 只允许一个线程重构se
-		if sedb.se != nil {
+		if sedb.se != nil { //可能在在TryLock之前刚好有se已经被从磁盘中读取并重构，因此需要判断是否还需要重构se
 			sedb.latch.Unlock()
 			return sedb.se
 		}
@@ -109,11 +103,11 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	return sedb.se
 }
 
-// 向SEDB中插入一条记录,返回插入证明
+// InsertKVPair 向SEDB中插入一条记录,返回插入证明
 func (sedb *SEDB) InsertKVPair(kvpair util.KVPair) *SEDBProof {
 	//如果是第一次插入
 	for sedb.GetStorageEngine() == nil && sedb.latch.TryLock() { // 只允许一个线程新建se
-		if sedb.se != nil {
+		if sedb.se != nil { //可能在在TryLock之前刚好有se已经被实例化，因此需要判断是否还需要创建se
 			sedb.latch.Unlock()
 			break
 		}
@@ -144,6 +138,7 @@ func (sedb *SEDB) InsertKVPair(kvpair util.KVPair) *SEDBProof {
 	return nil
 }
 
+// 使用管道向工作线程分发查询工作所需key
 func generatePrimaryKey(primaryKeys []string, primaryKeyCh chan string) {
 	for _, key := range primaryKeys {
 		primaryKeyCh <- key
@@ -151,6 +146,7 @@ func generatePrimaryKey(primaryKeys []string, primaryKeyCh chan string) {
 	close(primaryKeyCh)
 }
 
+//新建工作线程池
 func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
 	wg := sync.WaitGroup{}
 	wg.Add(numOfWorker)
@@ -160,8 +156,9 @@ func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, loc
 	wg.Wait()
 }
 
+//定义工作线程的具体工作事务
 func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
-	for primaryKey := range primaryKeyCh {
+	for primaryKey := range primaryKeyCh { //等待工作分发，直至管道被关闭，线程结束
 		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb, false)
 		//用qV和primarykeys[i]构造一个kvpair
 		kvpair := util.NewKVPair(primaryKey, qV)
@@ -191,7 +188,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var lock sync.Mutex
 	primaryKeyCh := make(chan string)
 	if sedb.siMode == "mpt" {
-		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb, false)
+		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb, false)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			//sum++
@@ -203,12 +200,12 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
-		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).QueryValueByKey(Hexkeyword, sedb.secondaryDb)
+		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(Hexkeyword, sedb.secondaryDb)
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
 		go func(ch chan *meht.MEHTProof) {
-			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.secondaryDb)
+			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.secondaryDb)
 			ch <- seMEHTProof
 		}(ch)
 		//根据primaryKey在主键索引中查询
@@ -223,7 +220,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		secondaryMEHTProof = <-ch
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "mbt" {
-		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndex_mbt(sedb.secondaryDb)
+		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb)
 		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetAggregation(), mbtIndex.GetGd(), Hexkeyword)
 		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(Hexkeyword, path, sedb.secondaryDb, false)
 		//根据primaryKey在主键索引中查询
@@ -240,7 +237,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	}
 }
 
-// 打印非主键查询结果
+// PrintKVPairsQueryResult 打印非主键查询结果
 func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []*util.KVPair, qproof *SEDBProof) {
 	fmt.Printf("打印查询结果-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("查询关键字为%s的主键为:%s\n", qkey, qvalue)
@@ -255,7 +252,7 @@ func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []
 	}
 }
 
-// 验证查询结果
+// VerifyQueryResult 验证查询结果
 func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof *SEDBProof) bool {
 	r := false
 	rCh := make(chan bool)
@@ -263,11 +260,11 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 	//验证非主键查询结果
 	fmt.Printf("验证非主键查询结果:")
 	if sedb.siMode == "mpt" {
-		r = sedb.se.GetSecondaryIndex_mpt(sedb.secondaryDb).VerifyQueryResult(pk, sedbProof.GetSecondaryMPTIndexProof())
+		r = sedb.se.GetSecondaryIndexMpt(sedb.secondaryDb).VerifyQueryResult(pk, sedbProof.GetSecondaryMPTIndexProof())
 	} else if sedb.siMode == "meht" {
 		r = meht.VerifyQueryResult(pk, sedbProof.GetSecondaryMEHTIndexProof())
 	} else if sedb.siMode == "mbt" {
-		r = sedb.se.GetSecondaryIndex_mbt(sedb.secondaryDb).VerifyQueryResult(pk, sedbProof.GetSecondaryMBTIndexProof())
+		r = sedb.se.GetSecondaryIndexMbt(sedb.secondaryDb).VerifyQueryResult(pk, sedbProof.GetSecondaryMBTIndexProof())
 	} else {
 		fmt.Println("siMode is wrong!")
 		return false
@@ -298,10 +295,10 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 	return r
 }
 
-// 写seHash和dbPath到文件
+// WriteSEDBInfoToFile 写seHash和dbPath到文件
 func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	se := sedb.GetStorageEngine()
-	se.UpdateStorageEngineToDB(sedb.primaryDb)
+	se.UpdateStorageEngineToDB()
 	sedb.seHash = se.seHash
 	if err := sedb.primaryDb.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 		fmt.Println("Insert StorageEngine to DB error:", err)
@@ -310,12 +307,12 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 		sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).PurgeCache()
 		switch sedb.siMode {
 		case "meht":
-			sedb.GetStorageEngine().GetSecondaryIndex_meht(sedb.secondaryDb).PurgeCache()
-			se.GetSecondaryIndex_meht(sedb.secondaryDb).GetSEH(sedb.secondaryDb).UpdateSEHToDB(sedb.secondaryDb)
+			sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).PurgeCache()
+			se.GetSecondaryIndexMeht(sedb.secondaryDb).GetSEH(sedb.secondaryDb).UpdateSEHToDB(sedb.secondaryDb)
 		case "mpt":
-			sedb.GetStorageEngine().GetSecondaryIndex_mpt(sedb.secondaryDb).PurgeCache()
+			sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).PurgeCache()
 		case "mbt":
-			sedb.GetStorageEngine().GetSecondaryIndex_mbt(sedb.secondaryDb).PurgeCache()
+			sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb).PurgeCache()
 		default:
 			log.Fatal("Unknown siMode when purge cache.")
 		}
@@ -324,17 +321,17 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	util.WriteStringToFile(filePath, data)
 }
 
-// 从文件中读取seHash和dbPath
+// ReadSEDBInfoFromFile 从文件中读取seHash和dbPath
 func ReadSEDBInfoFromFile(filePath string) ([]byte, string, string) {
 	data, _ := util.ReadStringFromFile(filePath)
-	seh_dbPath := strings.Split(data, ",")
-	if len(seh_dbPath) != 3 {
+	sehDbpath := strings.Split(data, ",")
+	if len(sehDbpath) != 3 {
 		fmt.Println("seHash and dbPath don't exist!")
 		return nil, "", ""
 	}
-	seh, _ := hex.DecodeString(seh_dbPath[0])
-	primaryDbPath := util.Strip(seh_dbPath[1], "\n\t\r")
-	secondaryDbPath := util.Strip(seh_dbPath[2], "\n\t\r")
+	seh, _ := hex.DecodeString(sehDbpath[0])
+	primaryDbPath := util.Strip(sehDbpath[1], "\n\t\r")
+	secondaryDbPath := util.Strip(sehDbpath[2], "\n\t\r")
 	if _, err := os.Stat(primaryDbPath); os.IsNotExist(err) {
 		if err = os.MkdirAll(primaryDbPath, 0750); err != nil {
 			panic(err)
@@ -348,7 +345,7 @@ func ReadSEDBInfoFromFile(filePath string) ([]byte, string, string) {
 	return seh, primaryDbPath, secondaryDbPath
 }
 
-// 打印SEDB
+// PrintSEDB 打印SEDB
 func (sedb *SEDB) PrintSEDB() {
 	fmt.Println("打印SEDB-----------------------------------------------------------------------")
 	fmt.Printf("seHash:%s\n", hex.EncodeToString(sedb.seHash))

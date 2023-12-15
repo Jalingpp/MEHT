@@ -37,10 +37,14 @@ type MPT struct {
 	updateLatch sync.Mutex
 }
 
-// 获取MPT的根节点，如果为nil，则从数据库中查询
+// GetRoot 获取MPT的根节点，如果为nil，则从数据库中查询
 func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 	//如果当前MPT的root为nil，则从数据库中查询
 	if mpt.root == nil && mpt.rootHash != nil && mpt.latch.TryLock() { // 只允许一个线程重构mpt树根
+		if mpt.root != nil { //防止root在TryLock之前被其他线程重构完毕，导致重复重构
+			mpt.latch.Unlock()
+			return mpt.root
+		}
 		if mptRoot, _ := db.Get(mpt.rootHash, nil); len(mptRoot) != 0 {
 			mpt.root, _ = DeserializeShortNode(mptRoot)
 		}
@@ -50,6 +54,7 @@ func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 	} // 其余线程等待mpt树根重构
 	return mpt.root
 }
+
 func (mpt *MPT) GetUpdateLatch() *sync.Mutex {
 	return &mpt.updateLatch
 }
@@ -71,44 +76,46 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 	}
 }
 
-// 插入一个KVPair到MPT中，返回新的根节点的哈希值
+// Insert 插入一个KVPair到MPT中，返回新的根节点的哈希值
 func (mpt *MPT) Insert(kvPair util.KVPair, db *leveldb.DB) {
 	//判断是否为第一次插入
 	for mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
-		if mpt.root != nil {
+		if mpt.root != nil { //防止root在TryLock前已经被其他线程创建，导致重复创建
 			mpt.latch.Unlock()
 			break
 		}
 		//创建一个ShortNode
-		mpt.root = NewShortNode("", true, kvPair.GetKey(), nil, []byte(kvPair.GetValue()), db, mpt.cache)
+		newRoot := NewShortNode("", true, kvPair.GetKey(), nil, []byte(kvPair.GetValue()), db, mpt.cache)
 		//更新mpt根哈希并更新到数据库
-		mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
+		mpt.UpdateMPTInDB(newRoot, db)
 		mpt.latch.Unlock()
 		return
 	}
 	for mpt.root == nil {
 	} // 等待最先拿到mpt锁的线程新建一个树根
 	//如果不是第一次插入，递归插入
-	oldValueAddedFlag := false
-	mpt.root = mpt.RecursiveInsertShortNode("", kvPair.GetKey(), []byte(kvPair.GetValue()), mpt.GetRoot(db), db, &oldValueAddedFlag)
+	oldValueAddedFlag := false //防止读操作在已获得写锁的情况下获取锁
+	mpt.latch.Lock()
+	newRoot := mpt.RecursiveInsertShortNode("", kvPair.GetKey(), []byte(kvPair.GetValue()), mpt.GetRoot(db), db, &oldValueAddedFlag)
 	//更新mpt根哈希并更新到数据库
-	mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
+	mpt.UpdateMPTInDB(newRoot, db)
+	mpt.latch.Unlock()
 }
 
-// 递归插入当前MPT Node
+// RecursiveInsertShortNode 递归插入当前MPT Node
 func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cnode *ShortNode, db *leveldb.DB, flag *bool) *ShortNode {
 	//如果当前节点是叶子节点
 	cnode.latch.Lock()
 	defer cnode.latch.Unlock()
-	if flag != nil && !(*flag) {
+	if flag != nil && !(*flag) { //只在最上层root阶段获取当前视图下mpt存有的value，保证获取的值最新
 		val, _ := mpt.QueryByKey(prefix+suffix, db, true)
 		toAdd := util.NewKVPair(prefix+suffix, val)
 		isChange := toAdd.AddValue(string(value))
-		if !isChange {
+		if !isChange { //重复插入，直接返回
 			return mpt.root
 		}
 		value = []byte(toAdd.GetValue())
-		*flag = true
+		*flag = true //其余层节点无需查询最新值
 	}
 	if cnode.isLeaf {
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
@@ -266,24 +273,25 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 	}
 }
 
-// 用newRootHash更新mpt的哈希，并更新至DB中
-func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
+// UpdateMPTInDB 用newRootHash更新mpt的哈希，并更新至DB中
+func (mpt *MPT) UpdateMPTInDB(newRoot *ShortNode, db *leveldb.DB) {
 	//DB 中索引MPT的是其根哈希的哈希
 	mpt.updateLatch.Lock()
 	defer mpt.updateLatch.Unlock()
-	hashs := sha256.Sum256(mpt.rootHash)
-	mptHash := hashs[:]
-	//if len(mptHash) > 0 {
-	//	//删除db中原有的MPT
-	//	if err := db.Delete(mptHash, nil); err != nil {
-	//		fmt.Println("Delete MPT from DB error:", err)
-	//	}
-	//}
-	//更新mpt的rootHash
-	mpt.rootHash = newRootHash
+	hash := sha256.Sum256(mpt.rootHash)
+	mptHash := hash[:]
+	if len(mptHash) > 0 {
+		//删除db中原有的MPT
+		if err := db.Delete(mptHash, nil); err != nil {
+			fmt.Println("Delete MPT from DB error:", err)
+		}
+	}
+	//更新mpt的root与rootHash
+	mpt.root = newRoot
+	mpt.rootHash = newRoot.nodeHash
 	//计算新的mptHash
-	hashs = sha256.Sum256(mpt.rootHash)
-	mptHash = hashs[:]
+	hash = sha256.Sum256(mpt.rootHash)
+	mptHash = hash[:]
 	//将更新后的mpt写入db中
 	if err := db.Put(mptHash, SerializeMPT(mpt), nil); err != nil {
 		fmt.Println("Insert MPT to DB error:", err)

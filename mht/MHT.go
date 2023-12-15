@@ -33,6 +33,8 @@ type MerkleTree struct {
 	LeafNodes []*MerkleNode
 }
 
+var DummyMerkleTree = &MerkleTree{nil, nil, nil}
+
 // NewMerkleNode 创建一个新的默克尔树节点
 func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
 	node := new(MerkleNode)

@@ -6,7 +6,7 @@ import (
 )
 
 // NewKVPair(key string, value string) *KVPair {} : creates a new KVPair object
-// ReverseKVPair(kvpair *KVPair) *KVPair {}: 倒置KV
+// ReverseKVPair(kvPair *KVPair) *KVPair {}: 倒置KV
 // GetKey() string{} : returns the key of the KVPair
 // GetValue() string {}: returns the value of the KVPair
 // SetValue(value string) {} : sets the value of the KVPair
@@ -25,9 +25,9 @@ func NewKVPair(key string, value string) *KVPair {
 	return &KVPair{key, value}
 }
 
-// 倒置KV
-func ReverseKVPair(kvpair KVPair) KVPair {
-	return KVPair{kvpair.value, kvpair.key}
+// ReverseKVPair 倒置KV
+func ReverseKVPair(kvPair KVPair) KVPair {
+	return KVPair{kvPair.value, kvPair.key}
 }
 
 // AddValue adds a new value to the KVPair, if value is changed, returns true
@@ -123,4 +123,12 @@ func (kv *KVPair) PrintKVPair() {
 type SeKVPair struct {
 	Key   string
 	Value string
+}
+
+func (kv *SeKVPair) GetKey() string {
+	return kv.Key
+}
+
+func (kv *SeKVPair) GetValue() string {
+	return kv.Value
 }

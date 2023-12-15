@@ -19,6 +19,7 @@ type ProofElement struct {
 	childrenHashes [16][]byte // children hashes of branch node
 }
 
+// GetSizeOf 获取ProofElement大小
 func (proofElement *ProofElement) GetSizeOf() uint {
 	ret := 2*util.SIZEOFINT + uint(len(proofElement.prefix)+len(proofElement.suffix))*util.SIZEOFBYTE +
 		uint(len(proofElement.value)+len(proofElement.nextNodeHash))*util.SIZEOFBYTE
@@ -34,6 +35,7 @@ type MPTProof struct {
 	proofs  []*ProofElement //存在证明的elements
 }
 
+// GetSizeOf 获取MPTProof大小
 func (mptProof *MPTProof) GetSizeOf() uint {
 	ret := util.SIZEOFBOOL + util.SIZEOFINT
 	for _, proof := range mptProof.proofs {
@@ -61,7 +63,7 @@ func (mptProof *MPTProof) GetLevels() int {
 	return mptProof.levels
 }
 
-// 打印 MPTProof
+// PrintMPTProof 打印 MPTProof
 func (mptProof *MPTProof) PrintMPTProof() {
 	fmt.Printf("打印MPTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("isExist=%t, levels=%d\n", mptProof.isExist, mptProof.levels)

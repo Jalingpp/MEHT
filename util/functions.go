@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -35,6 +36,44 @@ func IntArrayToString(intArray []int, rdx int) string {
 		ret += strings.Repeat("0", power-len(cur)) + cur
 	}
 	return ret
+}
+
+func StringToIntArray(str string, rdx int) ([]int, error) {
+	// 计算进制的幂
+	originalRdx := rdx
+	power := 0
+	for originalRdx >= 16 {
+		if originalRdx%16 == 0 {
+			power += 1
+			originalRdx /= 16
+		} else {
+			return nil, fmt.Errorf("invalid radix for hexadecimal conversion")
+		}
+	}
+
+	// 确保字符串长度是进制的倍数
+	if len(str)%power != 0 {
+		return nil, fmt.Errorf("invalid string length for the given radix")
+	}
+
+	// 分割字符串为进制长度的片段
+	chunkSize := len(str) / power
+	chunks := make([]string, chunkSize)
+	for i := 0; i < chunkSize; i++ {
+		chunks[i] = str[i*power : (i+1)*power]
+	}
+
+	// 转换每个片段为整数
+	var result []int
+	for _, chunk := range chunks {
+		val, err := strconv.ParseInt(chunk, rdx, 64)
+		if err != nil {
+			fmt.Println("Error parsing chunk:", err)
+			return nil, err
+		}
+		result = append(result, int(val))
+	}
+	return result, nil
 }
 
 func ByteToHexIndex(b byte) int {
@@ -107,7 +146,7 @@ func HexToString(hexString string) string {
 
 func Strip(input string, args string) string {
 	s, args_ := []rune(input), []rune(args)
-	lpos, rpos := 0, len(s)
+	lPos, rPos := 0, len(s)
 	lok, rok := false, false
 	argsMap := make(map[rune]bool)
 	for i := 0; i < len(args_); i++ {
@@ -116,18 +155,18 @@ func Strip(input string, args string) string {
 	for i := 0; i < len(s) && (!lok || !rok); i++ {
 		if _, ok := argsMap[s[i]]; !ok && !lok {
 			lok = true
-			lpos = i
+			lPos = i
 		}
 		if _, ok := argsMap[s[len(s)-i-1]]; !ok && !rok {
 			rok = true
-			rpos = len(s) - i - 1
+			rPos = len(s) - i - 1
 		}
 	}
 	if !lok || !rok {
 		return ""
 	}
-	ret := make([]rune, rpos+1-lpos)
-	copy(ret, s[lpos:rpos+1])
+	ret := make([]rune, rPos+1-lPos)
+	copy(ret, s[lPos:rPos+1])
 	return string(ret)
 }
 
@@ -172,7 +211,7 @@ func ToStringE(i any) (string, error) {
 	case uint:
 		return strconv.FormatUint(uint64(s), 10), nil
 	case uint64:
-		return strconv.FormatUint(uint64(s), 10), nil
+		return strconv.FormatUint(s, 10), nil
 	case uint32:
 		return strconv.FormatUint(uint64(s), 10), nil
 	case uint16:
@@ -202,4 +241,33 @@ func ToStringE(i any) (string, error) {
 	default:
 		return "", fmt.Errorf("unable to cast %#v of type %T to string", i, i)
 	}
+}
+
+type KV struct {
+	key   string
+	value int
+}
+
+func (kv *KV) PrintKV() {
+	fmt.Println("key = ", kv.key, ", value = ", kv.value)
+}
+
+func (kv *KV) GetValue() int {
+	return kv.value
+}
+
+func (kv *KV) GetKey() string {
+	return kv.key
+}
+
+// SortStringIntMapByInt 对给定的map[string]int根据int排序
+func SortStringIntMapByInt(originMap *map[string]int) []*KV {
+	var mapSlice []*KV
+	for key, value := range *originMap {
+		mapSlice = append(mapSlice, &KV{key, value})
+	}
+	sort.Slice(mapSlice, func(i, j int) bool {
+		return mapSlice[i].value > mapSlice[j].value
+	})
+	return mapSlice
 }

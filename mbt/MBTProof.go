@@ -63,7 +63,7 @@ func (mbtProof *MBTProof) GetProofs() []*ProofElement {
 
 func (mbtProof *MBTProof) PrintMBTProof() {
 	fmt.Printf("打印MBTProof-------------------------------------------------------------------------------------------\n")
-	fmt.Printf("isExist=", mbtProof.isExist)
+	fmt.Println("isExist=", mbtProof.isExist)
 	for _, proof := range mbtProof.proofs {
 		proof.PrintProofElement()
 	}

@@ -65,3 +65,10 @@ GetFromDB函数等的添加与修改。
 ④最后将mgt更新至DB并返回。
 ⑤在MEHT.go中添加MGTCachedAdjust函数，外部必须调用此函数而不能直接调用MGT.go中的CacheAdjust，
 因为mgt更新后的根节点哈希需要告知MEHT，否则将难以从DB中找到mgt而报错。
+
+【2023-12-15】10:15
+修订了两处错误：
+1.在MGT.go的IsNeedCacheAdjust函数中修订了缓存调整触发条件中阈值的计算公式，原来的是错误的。
+2.在MGT。go的GetLeafNodeAndPath函数中修改了调用UpdateAccessLengthSum时的输入参数，即在统计
+LN访问路径总长度时，不将根节点算在内，这是为了与阈值计算公式中对访问路径的计算一致，阈值计算公
+式中对bucket总数取log得到的访问路径长度是不包含根节点的。

@@ -57,7 +57,7 @@ func main() {
 	// 	kvPairs[i].SetKey(kvPairs[i].GetKey())
 	// 	kvPairs[i].SetValue(util.StringToHex(kvPairs[i].GetValue()))
 	// 	//插入SEDB
-	// 	seDB.InsertKVPair(kvPairs[i])
+	// seDB.InsertKVPair(kvPairs[i])
 	// 	// // 打印SEDB
 	// 	// seDB.PrintSEDB()
 	// 	// fmt.Println("Inserted i = ", i)

@@ -43,3 +43,36 @@
 18:03:20.027412 version@stat F·[3] S·57KiB[57KiB] Sc·[0.75]
 18:03:20.217537 db@janitor F·5 G·0
 18:03:20.218045 db@open done T·232.461ms
+=============== Dec 15, 2023 (CST) ===============
+09:57:55.350694 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+09:57:55.369807 version@stat F·[3] S·57KiB[57KiB] Sc·[0.75]
+09:57:55.369807 db@open opening
+09:57:55.369807 journal@recovery F·1
+09:57:55.370961 journal@recovery recovering @11
+09:57:55.410968 memdb@flush created L0@13 N·3 S·383B "\x11\v\xb2..]t\xf5,v410":"Own..eht,v411"
+09:57:55.413837 version@stat F·[4] S·58KiB[58KiB] Sc·[1.00]
+09:57:55.530138 db@janitor F·6 G·0
+09:57:55.530138 db@open done T·160.3313ms
+09:57:55.530138 table@compaction L0·4 -> L1·0 S·58KiB Q·412
+=============== Dec 15, 2023 (CST) ===============
+10:10:31.374687 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+10:10:31.389447 version@stat F·[4] S·58KiB[58KiB] Sc·[1.00]
+10:10:31.389447 db@open opening
+10:10:31.389447 journal@recovery F·1
+10:10:31.390507 journal@recovery recovering @14
+10:10:31.477876 memdb@flush created L0@16 N·3 S·383B "\x11\v\xb2..]t\xf5,v414":"Own..eht,v415"
+10:10:31.479338 version@stat F·[5] S·58KiB[58KiB] Sc·[1.25]
+10:10:31.699273 db@janitor F·7 G·0
+10:10:31.699273 db@open done T·309.8256ms
+10:10:31.699550 table@compaction L0·5 -> L1·0 S·58KiB Q·416
+=============== Dec 15, 2023 (CST) ===============
+10:13:07.644068 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+10:13:07.657330 version@stat F·[5] S·58KiB[58KiB] Sc·[1.25]
+10:13:07.657330 db@open opening
+10:13:07.657330 journal@recovery F·1
+10:13:07.658995 journal@recovery recovering @17
+10:13:07.705508 memdb@flush created L0@19 N·3 S·383B "\x11\v\xb2..]t\xf5,v418":"Own..eht,v419"
+10:13:07.708451 version@stat F·[6] S·58KiB[58KiB] Sc·[1.50]
+10:13:07.825892 db@janitor F·8 G·0
+10:13:07.826431 db@open done T·169.1007ms
+10:13:07.826431 table@compaction L0·6 -> L1·0 S·58KiB Q·420

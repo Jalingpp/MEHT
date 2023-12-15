@@ -188,7 +188,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 		//更新叶子节点的访问频次
 		mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
 		//更新LN访问路径总长度
-		mgt.UpdateAccessLengthSum(len(result))
+		mgt.UpdateAccessLengthSum(len(result) - 1)
 		return result
 	}
 	//从根节点开始,逐层向下遍历,直到找到叶子节点
@@ -208,7 +208,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 		//更新叶子节点的访问频次
 		mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
 		//更新LN访问路径总长度
-		mgt.UpdateAccessLengthSum(len(result))
+		mgt.UpdateAccessLengthSum(len(result) - 1)
 		return result
 	} else {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
@@ -223,7 +223,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 					//更新叶子节点的访问频次
 					mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
 					//更新LN访问路径总长度
-					mgt.UpdateAccessLengthSum(len(result))
+					mgt.UpdateAccessLengthSum(len(result) - 1)
 					return result
 				} else {
 					p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
@@ -246,7 +246,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 					//更新叶子节点的访问频次
 					mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
 					//更新LN访问路径总长度
-					mgt.UpdateAccessLengthSum(len(result))
+					mgt.UpdateAccessLengthSum(len(result) - 1)
 					return result
 				} else { //不包含则p移动到第identI个子节点，切换为下一个identI继续查找
 					p = p.GetSubnode(bucketKey[identI], db, mgt.rdx)
@@ -258,7 +258,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB) []*MGTNode {
 	//更新叶子节点的访问频次
 	mgt.UpdateHotnessList("add", util.IntArrayToString(result[0].bucketKey, mgt.rdx), 1, nil)
 	//更新LN访问路径总长度
-	mgt.UpdateAccessLengthSum(len(result))
+	mgt.UpdateAccessLengthSum(len(result) - 1)
 	return result
 }
 
@@ -482,7 +482,8 @@ func (mgt *MGT) UpdateAccessLengthSum(accessPath int) {
 }
 
 // 计算是否需要调整缓存
-// a和b是计算阈值的两个参数
+// a和b是计算阈值的两个小于1的参数: a*log(bucketNum*b)/log(rdx) + (1-a)*log(bucketNum*(1-b))/log(rdx)
+// 若a=0.9,b=0.1，则表示90%的访问频次集中在10%的叶子节点上
 func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
 	//计算总访问频次
 	accessNum := 0
@@ -491,8 +492,7 @@ func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
 		accessNum = accessNum + hotnessSlice[i].GetValue()
 	}
 	//计算访问长度阈值
-	// threshold := (a*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx)) + b*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
-	threshold := (a*math.Log(float64(bucketNum)/float64(10))/math.Log(float64(mgt.rdx)) + b*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
+	threshold := (a*math.Log(float64(bucketNum)*b)/math.Log(float64(mgt.rdx)) + (1-a)*math.Log(float64(bucketNum)*(1-b))/math.Log(float64(mgt.rdx))) * float64(accessNum)
 
 	fmt.Println("threshold =", threshold)
 

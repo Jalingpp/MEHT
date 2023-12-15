@@ -86,38 +86,6 @@ func ReadQueryFromFile(dirPath string, num int) (ret []string) {
 	return
 }
 
-//func ReadKVPairFromJsonFile(filepath string) (kvPairs []*KVPair) {
-//	content, err := os.ReadFile(filepath)
-//	if err != nil {
-//		panic(err)
-//	}
-//	var content_ interface{}
-//	address_ := strings.Split(filepath, string(os.PathSeparator))
-//	address := strings.Split(address_[len(address_)-1], ".")[0]
-//	if err := json.Unmarshal(content, &content_); err != nil {
-//		panic(err)
-//	}
-//	if content_, ok := content_.(map[string]interface{}); ok {
-//		for k1, v1 := range content_ {
-//			var v_ []string
-//			if traits, ok := v1.(map[string]interface{}); ok {
-//				v_ = make([]string, 0)
-//				k2List := make([]string, 0)
-//				for k2 := range traits {
-//					k2List = append(k2List, k2)
-//				}
-//				sort.Strings(k2List)
-//				for _, v2 := range k2List {
-//					v_ = append(v_, traits[v2].(string))
-//				}
-//			}
-//			kvPair := NewKVPair(address+string(os.PathSeparator)+k1, strings.Join(v_, ","))
-//			kvPairs = append(kvPairs, kvPair)
-//		}
-//	}
-//	return
-//}
-
 func WriteStringToFile(filePath string, data string) {
 	//打开文件
 	file, err := os.Create(filePath)

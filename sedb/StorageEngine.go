@@ -18,12 +18,12 @@ import (
 //func NewStorageEngine(siMode string, rdx int, bc int, bs int) *StorageEngine {}： 返回一个新的StorageEngine
 //func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {}： 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
 //func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {}： 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
-//func (se *StorageEngine) Insert(kvpair *util.KVPair, db *leveldb.DB) ([]byte, *mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {}： 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
+//func (se *StorageEngine) Insert(kvPair *util.KVPair, db *leveldb.DB) ([]byte, *mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {}： 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
 //func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {}： 打印查询结果
-//func (se *StorageEngine) UpdataStorageEngineToDB(db *leveldb.DB) []byte {}： 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
+//func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {}： 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
 //func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {}： 打印StorageEngine
 //func SerializeStorageEngine(se *StorageEngine) []byte {}：序列化存储引擎
-//func DeserializeStorageEngine(sestring []byte) (*StorageEngine, error) {}： 反序列化存储引擎
+//func DeserializeStorageEngine(seString []byte) (*StorageEngine, error) {}： 反序列化存储引擎
 
 type StorageEngine struct {
 	seHash []byte //搜索引擎的哈希值，由主索引根哈希和辅助索引根哈希计算得到
@@ -67,20 +67,20 @@ func (se *StorageEngine) UpdateStorageEngineToDB() {
 	//	fmt.Println("Delete StorageEngine from DB error:", err)
 	//}
 	//更新seHash的哈希值
-	seHashs := make([]byte, 0)
+	seHashes := make([]byte, 0)
 	se.updatePrimaryLatch.Lock()
 	se.updateSecondaryLatch.Lock() // 保证se的哈希与辅助索引根哈希是相关联的
-	seHashs = append(seHashs, se.primaryIndexHash...)
+	seHashes = append(seHashes, se.primaryIndexHash...)
 	if se.secondaryIndexMode == "mpt" {
-		seHashs = append(seHashs, se.secondaryIndexHashMpt...)
+		seHashes = append(seHashes, se.secondaryIndexHashMpt...)
 	} else if se.secondaryIndexMode == "meht" {
-		seHashs = append(seHashs, se.secondaryIndexHashMeht...)
+		seHashes = append(seHashes, se.secondaryIndexHashMeht...)
 	} else if se.secondaryIndexMode == "mbt" {
-		seHashs = append(seHashs, se.secondaryIndexHashMbt...)
+		seHashes = append(seHashes, se.secondaryIndexHashMbt...)
 	} else {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 	}
-	hash := sha256.Sum256(seHashs)
+	hash := sha256.Sum256(seHashes)
 	se.seHash = hash[:]
 	se.updateSecondaryLatch.Unlock()
 	se.updatePrimaryLatch.Unlock()
@@ -174,7 +174,7 @@ func (se *StorageEngine) GetSecondaryIndexMeht(db *leveldb.DB) *meht.MEHT {
 }
 
 // Insert 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
-func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
+func (se *StorageEngine) Insert(kvPair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
 	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return nil, nil, nil
@@ -190,10 +190,10 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
-	oldvalue, oldprimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvpair.GetKey(), primaryDb, false)
-	if oldvalue == kvpair.GetValue() {
-		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
-		return oldprimaryProof, nil, nil
+	oldValue, oldPrimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvPair.GetKey(), primaryDb, false)
+	if oldValue == kvPair.GetValue() {
+		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
+		return oldPrimaryProof, nil, nil
 	}
 	runtime.GOMAXPROCS(1)
 	var wG sync.WaitGroup
@@ -201,21 +201,21 @@ func (se *StorageEngine) Insert(kvpair util.KVPair, primaryDb *leveldb.DB, secon
 	go func() {
 		defer wG.Done()
 		//将KV插入到主键索引中
-		se.primaryIndex.Insert(kvpair, primaryDb)
+		se.primaryIndex.Insert(kvPair, primaryDb)
 		se.updatePrimaryLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
 		se.primaryIndex.GetUpdateLatch().Lock()
 		piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
 		se.primaryIndexHash = piHash[:]
 		se.primaryIndex.GetUpdateLatch().Unlock()
 		se.updatePrimaryLatch.Unlock()
-		//_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvpair.GetKey(), db)
-		//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvpair.GetKey()), []byte(kvpair.GetValue()))
+		//_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvPair.GetKey(), db)
+		//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
 	}()
 	//构造倒排KV
-	reversedKV := util.ReverseKVPair(kvpair)
+	reversedKV := util.ReverseKVPair(kvPair)
 	//插入非主键索引
 	if se.secondaryIndexMode == "mpt" { //插入mpt
-		//如果oldvalue不为空，则在非主键索引中删除该value-key对
+		//如果oldValue不为空，则在非主键索引中删除该value-key对
 
 		//插入到mpt类型的非主键索引中
 		//_, mptProof := se.InsertIntoMPT(reversedKV, db)
@@ -331,10 +331,10 @@ func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (str
 	for se.GetSecondaryIndexMeht(db) == nil { // 其余线程等待meht创建成功
 	}
 	//先查询得到原有value与待插入value合并
-	values, bucket, segkey, isSegExist, index := se.secondaryIndexMeht.QueryValueByKey(kvPair.GetKey(), db)
-	//用原有values构建待插入的kvpair
+	values, bucket, segKey, isSegExist, index := se.secondaryIndexMeht.QueryValueByKey(kvPair.GetKey(), db)
+	//用原有values构建待插入的kvPair
 	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
-	//将新的value插入到kvpair中
+	//将新的value插入到kvPair中
 	isChange := insertedKV.AddValue(kvPair.GetValue())
 	//如果原有values中没有此value，则插入到meht中
 	if isChange {
@@ -346,7 +346,7 @@ func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (str
 		se.secondaryIndexMeht.UpdateMEHTToDB(db)
 		return newValues, newProof
 	}
-	return values, se.secondaryIndexMeht.GetQueryProof(bucket, segkey, isSegExist, index, db)
+	return values, se.secondaryIndexMeht.GetQueryProof(bucket, segKey, isSegExist, index, db)
 }
 
 // GetMBTArgs 解析MBTArgs
@@ -463,11 +463,11 @@ type SeStorageEngine struct {
 
 // SerializeStorageEngine 序列化存储引擎
 func SerializeStorageEngine(se *StorageEngine) []byte {
-	sese := &SeStorageEngine{se.seHash, se.primaryIndexHash,
+	seSe := &SeStorageEngine{se.seHash, se.primaryIndexHash,
 		se.secondaryIndexMode, se.secondaryIndexHashMpt,
 		se.secondaryIndexHashMbt, se.secondaryIndexHashMeht,
 		se.mbtArgs, se.mehtArgs}
-	jsonSE, err := json.Marshal(sese)
+	jsonSE, err := json.Marshal(seSe)
 	if err != nil {
 		fmt.Printf("SerializeStorageEngine error: %v\n", err)
 		return nil
@@ -476,17 +476,17 @@ func SerializeStorageEngine(se *StorageEngine) []byte {
 }
 
 // DeserializeStorageEngine 反序列化存储引擎
-func DeserializeStorageEngine(sestring []byte, cacheEnable bool, cacheCapacity []interface{}) (*StorageEngine, error) {
-	var sese SeStorageEngine
-	err := json.Unmarshal(sestring, &sese)
+func DeserializeStorageEngine(seString []byte, cacheEnable bool, cacheCapacity []interface{}) (*StorageEngine, error) {
+	var seSe SeStorageEngine
+	err := json.Unmarshal(seString, &seSe)
 	if err != nil {
 		fmt.Printf("DeserializeStorageEngine error: %v\n", err)
 		return nil, err
 	}
-	se := &StorageEngine{sese.SeHash, nil, sese.PrimaryIndexRootHash, sese.SecondaryIndexMode,
-		nil, sese.SecondaryIndexRootHashMpt, nil,
-		sese.SecondaryIndexRootHashMbt, nil,
-		sese.SecondaryIndexRootHashMeht, sese.MBTArgs, sese.MEHTArgs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
+	se := &StorageEngine{seSe.SeHash, nil, seSe.PrimaryIndexRootHash, seSe.SecondaryIndexMode,
+		nil, seSe.SecondaryIndexRootHashMpt, nil,
+		seSe.SecondaryIndexRootHashMbt, nil,
+		seSe.SecondaryIndexRootHashMeht, seSe.MBTArgs, seSe.MEHTArgs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
 		sync.Mutex{}, sync.Mutex{}}
 	return se, nil
 }

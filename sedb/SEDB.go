@@ -16,9 +16,9 @@ import (
 
 //func NewSEDB(seh []byte, dbPath string, siMode string, rdx int, bc int, bs int) *SEDB {}：新建一个SEDB
 //func (sedb *SEDB) GetStorageEngine() *StorageEngine {}： 获取SEDB中的StorageEngine，如果为空，从db中读取se
-//func (sedb *SEDB) InsertKVPair(kvpair *util.KVPair) *SEDBProof {}： 向SEDB中插入一条记录,返回插入证明
-//func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {}: 根据十六进制的非主键Hexkeyword查询完整的kvpair
-//func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []*util.KVPair, qproof *SEDBProof) {}: 打印非主键查询结果
+//func (sedb *SEDB) InsertKVPair(kvPair *util.KVPair) *SEDBProof {}： 向SEDB中插入一条记录,返回插入证明
+//func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.KVPair, *SEDBProof) {}: 根据十六进制的非主键HexKeyword查询完整的kvPair
+//func (sedb *SEDB) PrintKVPairsQueryResult(qKey string, qValue string, qResult []*util.KVPair, qProof *SEDBProof) {}: 打印非主键查询结果
 //func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof *SEDBProof) bool {}: 验证查询结果
 //func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {}： 写seHash和dbPath到文件
 //func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {}： 从文件中读取seHash和dbPath
@@ -48,8 +48,8 @@ var DefaultBucketCacheCapacity = BucketCacheCapacity(128)        //MEHT default 
 var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)  //MEHT default cache capacity for segment
 var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128) //MEHT default cache capacity for merkleTree
 var DefaultMEHTRdx = MEHTRdx(16)                                 //MEHT default Rdx
-var DefaultMEHTBc = MEHTBc(1280)                                 //MEHT dafault Bc
-var DefaultMEHTBs = MEHTBs(1)                                    //MEHT dafault Bs
+var DefaultMEHTBc = MEHTBc(1280)                                 //MEHT default Bc
+var DefaultMEHTBs = MEHTBs(1)                                    //MEHT default Bs
 
 type SEDB struct {
 	se              *StorageEngine //搜索引擎的指针
@@ -104,7 +104,7 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 }
 
 // InsertKVPair 向SEDB中插入一条记录,返回插入证明
-func (sedb *SEDB) InsertKVPair(kvpair util.KVPair) *SEDBProof {
+func (sedb *SEDB) InsertKVPair(kvPair util.KVPair) *SEDBProof {
 	//如果是第一次插入
 	for sedb.GetStorageEngine() == nil && sedb.latch.TryLock() { // 只允许一个线程新建se
 		if sedb.se != nil { //可能在在TryLock之前刚好有se已经被实例化，因此需要判断是否还需要创建se
@@ -119,8 +119,8 @@ func (sedb *SEDB) InsertKVPair(kvpair util.KVPair) *SEDBProof {
 	for sedb.se == nil {
 	} // 其余线程等待se创建
 	//向StorageEngine中插入一条记录
-	//primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvpair, sedb.db)
-	sedb.GetStorageEngine().Insert(kvpair, sedb.primaryDb, sedb.secondaryDb)
+	//primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvPair, sedb.db)
+	sedb.GetStorageEngine().Insert(kvPair, sedb.primaryDb, sedb.secondaryDb)
 	//更新seHash，并将se更新至db
 	//sedb.se.UpdateStorageEngineToDB(sedb.primaryDb) // 保证sedb留存的seHash与se实际的Hash一致
 	//sedb.updateLatch.Lock()
@@ -146,7 +146,7 @@ func generatePrimaryKey(primaryKeys []string, primaryKeyCh chan string) {
 	close(primaryKeyCh)
 }
 
-//新建工作线程池
+// 新建工作线程池
 func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
 	wg := sync.WaitGroup{}
 	wg.Add(numOfWorker)
@@ -156,15 +156,15 @@ func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, loc
 	wg.Wait()
 }
 
-//定义工作线程的具体工作事务
+// 定义工作线程的具体工作事务
 func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
 	for primaryKey := range primaryKeyCh { //等待工作分发，直至管道被关闭，线程结束
 		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb, false)
-		//用qV和primarykeys[i]构造一个kvpair
-		kvpair := util.NewKVPair(primaryKey, qV)
+		//用qV和primaryKeys[i]构造一个kvPair
+		kvPair := util.NewKVPair(primaryKey, qV)
 		lock.Lock()
-		//把kvpair加入queryResult
-		*queryResult = append(*queryResult, kvpair)
+		//把kvPair加入queryResult
+		*queryResult = append(*queryResult, kvPair)
 		//把pProof加入primaryProof
 		*primaryProof = append(*primaryProof, pProof)
 		lock.Unlock()
@@ -172,13 +172,13 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 	wg.Done()
 }
 
-// QueryKVPairsByHexKeyword 根据十六进制的非主键Hexkeyword查询完整的kvpair
-func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.KVPair, *SEDBProof) {
+// QueryKVPairsByHexKeyword 根据十六进制的非主键HexKeyword查询完整的kvPair
+func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
 		//fmt.Println("SEDB is empty!")
 		return "", nil, nil
 	}
-	//根据Hexkeyword在非主键索引中查询
+	//根据HexKeyword在非主键索引中查询
 	var primaryKey string
 	var secondaryMPTProof *mpt.MPTProof
 	var secondaryMBTProof *mbt.MBTProof
@@ -188,7 +188,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 	var lock sync.Mutex
 	primaryKeyCh := make(chan string)
 	if sedb.siMode == "mpt" {
-		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(Hexkeyword, sedb.secondaryDb, false)
+		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(HexKeyword, sedb.secondaryDb, false)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			//sum++
@@ -200,12 +200,12 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
-		pKey, qbucket, segkey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(Hexkeyword, sedb.secondaryDb)
+		pKey, qBucket, segKey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(HexKeyword, sedb.secondaryDb)
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
 		go func(ch chan *meht.MEHTProof) {
-			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).GetQueryProof(qbucket, segkey, isSegExist, index, sedb.secondaryDb)
+			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).GetQueryProof(qBucket, segKey, isSegExist, index, sedb.secondaryDb)
 			ch <- seMEHTProof
 		}(ch)
 		//根据primaryKey在主键索引中查询
@@ -221,8 +221,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "mbt" {
 		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb)
-		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetAggregation(), mbtIndex.GetGd(), Hexkeyword)
-		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(Hexkeyword, path, sedb.secondaryDb, false)
+		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetAggregation(), mbtIndex.GetGd(), HexKeyword)
+		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(HexKeyword, path, sedb.secondaryDb, false)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
@@ -238,15 +238,15 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(Hexkeyword string) (string, []*util.K
 }
 
 // PrintKVPairsQueryResult 打印非主键查询结果
-func (sedb *SEDB) PrintKVPairsQueryResult(qkey string, qvalue string, qresult []*util.KVPair, qproof *SEDBProof) {
+func (sedb *SEDB) PrintKVPairsQueryResult(qKey string, qValue string, qResult []*util.KVPair, qProof *SEDBProof) {
 	fmt.Printf("打印查询结果-------------------------------------------------------------------------------------------\n")
-	fmt.Printf("查询关键字为%s的主键为:%s\n", qkey, qvalue)
-	for i := 0; i < len(qresult); i++ {
-		fmt.Printf("查询结果[%d]:key=%s,value=%s\n", i, util.HexToString(qresult[i].GetKey()), util.HexToString(qresult[i].GetValue()))
+	fmt.Printf("查询关键字为%s的主键为:%s\n", qKey, qValue)
+	for i := 0; i < len(qResult); i++ {
+		fmt.Printf("查询结果[%d]:key=%s,value=%s\n", i, util.HexToString(qResult[i].GetKey()), util.HexToString(qResult[i].GetValue()))
 	}
 	//fmt.Printf("查询证明为:\n")
-	if qproof != nil {
-		//qproof.PrintSEDBProof()
+	if qProof != nil {
+		//qProof.PrintSEDBProof()
 	} else {
 		fmt.Printf("查询证明为空\n")
 	}

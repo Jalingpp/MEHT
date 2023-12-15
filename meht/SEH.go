@@ -16,7 +16,7 @@ import (
 // GetBucketByKey(key string) *Bucket {}: returns the bucket with the given key
 // GetValueByKey(key string) string {}: returns the value of the key-value pair with the given key
 // GetProof(key string) (string, []byte, []mht.ProofPair) {}: returns the proof of the key-value pair with the given key
-// Insert(kvpair util.KVPair) (*Bucket, string, []byte, [][]byte) {}: inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
+// Insert(kvPair util.KVPair) (*Bucket, string, []byte, [][]byte) {}: inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
 // PrintSEH() {}: 打印SEH
 
 type SEH struct {
@@ -32,12 +32,12 @@ type SEH struct {
 	updateLatch   sync.Mutex
 }
 
-// newSEH returns a new SEH
+// NewSEH returns a new SEH
 func NewSEH(rdx int, bc int, bs int) *SEH {
 	return &SEH{0, rdx, bc, bs, make(map[string]*Bucket), 0, sync.RWMutex{}, sync.Mutex{}}
 }
 
-// 更新SEH到db
+// UpdateSEHToDB 更新SEH到db
 func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 	seSEH := SerializeSEH(seh)
 	if err := db.Put([]byte("seh"), seSEH, nil); err != nil {
@@ -45,7 +45,7 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 	}
 }
 
-// 获取bucket，如果内存中没有，从db中读取
+// GetBucket 获取bucket，如果内存中没有，从db中读取
 func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret := seh.ht[bucketKey]
@@ -74,20 +74,20 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	return ret
 }
 
-// GetBucket returns the bucket with the given key
+// GetBucketByKey GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	if seh.gd == 0 {
 		return seh.GetBucket("", db, cache)
 	}
-	var bkey string
+	var bKey string
 	if len(key) >= seh.gd {
-		bkey = key[len(key)-seh.gd*util.ComputeStrideByBase(seh.rdx):]
+		bKey = key[len(key)-seh.gd*util.ComputeStrideByBase(seh.rdx):]
 	} else {
-		bkey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
+		bKey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
 	}
 	seh.updateLatch.Lock()
 	defer seh.updateLatch.Unlock()
-	return seh.GetBucket(bkey, db, cache)
+	return seh.GetBucket(bKey, db, cache)
 }
 
 // GetGD returns the global depth of the SEH
@@ -105,7 +105,7 @@ func (seh *SEH) GetBucketsNumber() int {
 	return seh.bucketsNumber
 }
 
-// GetValue returns the value of the key-value pair with the given key
+// GetValueByKey returns the value of the key-value pair with the given key
 func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) string {
 	//seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
@@ -119,13 +119,13 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 // GetProof returns the proof of the key-value pair with the given key
 func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
 	bucket := seh.GetBucketByKey(key, db, cache)
-	value, segkey, isSegExist, index := bucket.GetValueByKey(key, db, cache, false)
-	segRootHash, mhtProof := bucket.GetProof(segkey, isSegExist, index, db, cache)
+	value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, cache, false)
+	segRootHash, mhtProof := bucket.GetProof(segKey, isSegExist, index, db, cache)
 	return value, segRootHash, mhtProof
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, bucketDelegationCode, *int64, int64) {
+func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, BucketDelegationCode, *int64, int64) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -151,7 +151,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			bucket.latch.Unlock()
 			return nil, FAILED, nil, 0
 		}
-		var bucketss [][]*Bucket
+		var bucketSs [][]*Bucket
 		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
 		bucket.DelegationLatch.Lock()
 		if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
@@ -174,37 +174,37 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				bucket.Insert(kvp, db, cache)
 			}
 			bucket.UpdateBucketToDB(db, cache) // 更新桶
-			bucketss = [][]*Bucket{{bucket}}
+			bucketSs = [][]*Bucket{{bucket}}
 		} else { // 否则一定只插入了一个，如果不是更新则引发桶的分裂
-			bucketss = bucket.Insert(kvPair, db, cache)
-			if len(bucketss[0]) == 1 {
-				bucketss[0][0].UpdateBucketToDB(db, cache) // 更新桶
-				bucketss = [][]*Bucket{{bucket}}
+			bucketSs = bucket.Insert(kvPair, db, cache)
+			if len(bucketSs[0]) == 1 {
+				bucketSs[0][0].UpdateBucketToDB(db, cache) // 更新桶
+				bucketSs = [][]*Bucket{{bucket}}
 			} else {
-				var newld int
-				ld1 := bucketss[0][0].GetLD()
-				ld2 := bucketss[0][1].GetLD()
+				var newLd int
+				ld1 := bucketSs[0][0].GetLD()
+				ld2 := bucketSs[0][1].GetLD()
 				if ld1 < ld2 {
-					newld = ld1 + len(bucketss) - 1
+					newLd = ld1 + len(bucketSs) - 1
 				} else {
-					newld = ld2 + len(bucketss) - 1
+					newLd = ld2 + len(bucketSs) - 1
 				}
 				seh.latch.Lock()
-				if seh.gd < newld {
-					seh.gd = newld
+				if seh.gd < newLd {
+					seh.gd = newLd
 				}
 				//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
-				for i, buckets := range bucketss {
-					var bkey string
+				for i, buckets := range bucketSs {
+					var bKey string
 					for j := range buckets {
 						if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
 							continue
 						}
-						bkey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
-						seh.ht[bkey] = buckets[j]
+						bKey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+						seh.ht[bKey] = buckets[j]
 						buckets[j].UpdateBucketToDB(db, cache)
 					}
-					toDelKey := bkey[util.ComputeStrideByBase(buckets[0].rdx):]
+					toDelKey := bKey[util.ComputeStrideByBase(buckets[0].rdx):]
 					delete(seh.ht, toDelKey)
 				}
 				// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
@@ -218,7 +218,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		bucket.latchTimestamp = 0
 		bucket.DelegationLatch.Unlock()
 		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
-		return bucketss, DELEGATE, nil, 0
+		return bucketSs, DELEGATE, nil, 0
 	} else {
 		// 成为委托者
 		if len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
@@ -235,12 +235,12 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				continue
 			}
 			if bucket.DelegationLatch.TryLock() {
-				defer bucket.DelegationLatch.Unlock()
 				seh.latch.RLock()
 				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 				seh.latch.RUnlock()
 				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
+					bucket.DelegationLatch.Unlock()
 					return nil, FAILED, nil, 0
 				}
 				if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
@@ -254,7 +254,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 				}
 				// 成功委托
-				//fmt.Println("Client with timestamp " + strconv.Itoa(int(bucket.latchTimestamp)))
+				bucket.DelegationLatch.Unlock()
 				return nil, CLIENT, &bucket.latchTimestamp, bucket.latchTimestamp
 			}
 		}
@@ -264,7 +264,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 	}
 }
 
-// 打印SEH
+// PrintSEH 打印SEH
 func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 	fmt.Printf("打印SEH-------------------------------------------------------------------------------------------\n")
 	if seh == nil {

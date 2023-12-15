@@ -30,7 +30,6 @@ type MEHT struct {
 	seh     *SEH //the key of seh in leveldb is always name+"seh"
 	mgt     *MGT
 	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
-
 	//mgtNodeCache         *lru.Cache[string, *MGTNode]
 	//bucketCache          *lru.Cache[string, *Bucket]
 	//segmentCache         *lru.Cache[string, *[]util.KVPair]
@@ -148,7 +147,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 	for meht.seh.bucketsNumber == 0 { // 等待最初的桶建成
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
-	var bucketDelegationCode_ bucketDelegationCode = FAILED
+	var bucketDelegationCode_ BucketDelegationCode = FAILED
 	var bucketSs [][]*Bucket
 	var timestamp *int64 //特定桶当前时间戳，可能是正在执行插入的线程开始接收委托的时间戳，也可能是 0
 	//Client等待Delegate完成桶插入时桶的时间戳，在Delegate做完后waitTimestamp一定会与timestamp的值不同，

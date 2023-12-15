@@ -614,7 +614,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	return bucket, nil
 }
 
-type bucketDelegationCode int
+type BucketDelegationCode int
 
 const (
 	CLIENT = iota

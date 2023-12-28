@@ -14,6 +14,11 @@ import (
 	"MEHT/sedb"
 )
 
+type IntegerWithLock struct {
+	number int
+	lock   sync.Mutex
+}
+
 func main() {
 	//测试辅助索引查询
 	//allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair, phi int) {
@@ -43,6 +48,11 @@ func main() {
 	//	wG.Wait()
 	//	close(kvPairCh)
 	//}
+	var batchSize = 10000
+	//var batchTimeout float64 = 100
+	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
+	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
+	//var stopBatchCommitterFlag = true
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
@@ -53,11 +63,43 @@ func main() {
 		}
 		close(kvPairCh)
 	}
+	//batchCommitter := func(wG *sync.WaitGroup) {
+	//	sT := time.Now()
+	//	for stopBatchCommitterFlag {
+	//		for curStartNum.number >= batchSize || time.Since(sT).Seconds() >= batchTimeout {
+	//			curStartNum.lock.Lock()
+	//			for curStartNum.number != curFinishNum.number {
+	//			}
+	//			//DO Something
+	//			curFinishNum.number = 0
+	//			curStartNum.number = 0
+	//			curStartNum.lock.Unlock()
+	//			sT = time.Now()
+	//		}
+	//		time.Sleep(3 * time.Second)
+	//	}
+	//	// DO Something
+	//	wG.Done()
+	//}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {
 		for kvPair := range kvPairCh {
+			for {
+				if curStartNum.number < batchSize && curStartNum.lock.TryLock() {
+					if curStartNum.number == batchSize {
+						curStartNum.lock.Unlock()
+						continue
+					}
+					curStartNum.number++
+					curStartNum.lock.Unlock()
+					break
+				}
+			}
 			st := time.Now()
 			seDB.InsertKVPair(kvPair)
 			du := time.Since(st)
+			curFinishNum.lock.Lock()
+			curFinishNum.number++
+			curFinishNum.lock.Unlock()
 			durationCh <- du
 		}
 		wg.Done()
@@ -86,6 +128,7 @@ func main() {
 			go worker(&wg, seDB, kvPairCh, (*durationChList)[i])
 		}
 		wg.Wait()
+		//stopBatchCommitterFlag = false
 		for _, duCh := range *durationChList {
 			close(duCh)
 		}
@@ -110,6 +153,7 @@ func main() {
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
 			strconv.Itoa(numOfWorker) + "."
 	}
+
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
 	var numOfWorker = 1
@@ -199,6 +243,8 @@ func main() {
 			doneCh := make(chan bool)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go allocateNFTOwner("../nft-owner", num, kvPairCh)
+			//batchWg := sync.WaitGroup{}
+			//go batchCommitter(&batchWg)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
 			duration = time.Since(start)
@@ -206,6 +252,7 @@ func main() {
 			for _, du := range latencyDurationList {
 				latencyDuration += du
 			}
+			//batchWg.Wait()
 			seDB.WriteSEDBInfoToFile(filePath)
 			//duration = time.Since(start)
 			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+

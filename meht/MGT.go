@@ -31,6 +31,7 @@ import (
 type MGTNode struct {
 	nodeHash []byte // hash of this node, consisting of the hash of its children
 
+	parent     *MGTNode   // parent node of this node
 	subNodes   []*MGTNode // sub-nodes in the tree, original given
 	dataHashes [][]byte   // hashes of data elements, computed from subNodes
 
@@ -98,11 +99,13 @@ func (mgtNode *MGTNode) GetSubNode(index int, db *leveldb.DB, rdx int, cache *[]
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
 			if node, ok = targetCache.Get(string(mgtNode.dataHashes[index])); ok {
 				mgtNode.subNodes[index] = node
+				node.parent = mgtNode
 			}
 		}
 		if !ok {
 			if nodeString, error_ := db.Get(mgtNode.dataHashes[index], nil); error_ == nil {
 				node, _ = DeserializeMGTNode(nodeString, rdx)
+				node.parent = mgtNode
 				mgtNode.subNodes[index] = node
 			}
 		}
@@ -135,6 +138,7 @@ func (mgtNode *MGTNode) GetCachedNode(index int, db *leveldb.DB, rdx int, cache 
 		if !ok {
 			if nodeString, error_ := db.Get(mgtNode.cachedDataHashes[index], nil); error_ == nil {
 				node, _ = DeserializeMGTNode(nodeString, rdx)
+				node.parent = mgtNode
 				mgtNode.cachedNodes[index] = node
 			}
 		}
@@ -221,9 +225,14 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, nil, nil, sync.RWMutex{}, sync.Mutex{}}
+		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, nil, nil, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mgtNode = &MGTNode{nodeHash, subNodes, dataHashes, nil, nil, isLeaf, bucket, bucket.BucketKey, sync.RWMutex{}, sync.Mutex{}}
+		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, nil, nil, isLeaf, bucket, bucket.BucketKey, sync.RWMutex{}, sync.Mutex{}}
+	}
+	for _, node := range subNodes {
+		if node != nil {
+			node.parent = mgtNode
+		}
 	}
 	//将mgtNode存入leveldb
 	if cache != nil {
@@ -506,6 +515,7 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 		return mgt
 	}
 	nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
+	newFatherNode.parent = nodePath[1]
 	nodePath[1].UpdateMGTNodeToDB(db, cache)
 
 	//更新所有父节点的nodeHash
@@ -627,6 +637,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 		nodePathFather := mgt.GetInternalNodeAndPath(bkINode[1:], db, cache)
 		//将其父节点的相应孩子位置为该节点
 		nodePathFather[0].subNodes[bkINode[0]] = nodePath[0]
+		nodePath[0].parent = nodePathFather[0]
 		nodePathFather[0].dataHashes[bkINode[0]] = nodePath[0].nodeHash
 		//更新nodePath_father中所有节点的nodeHash(nodePath_father一定包含nodePath中的所有节点,因此无须再更新nodePath)
 		nodePathFather[0].UpdateMGTNodeToDB(db, cache)
@@ -660,6 +671,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 			if nodePath[i].cachedDataHashes[bucketKey[identI]] == nil {
 				//1.放置当前节点(nodePath[0])
 				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
+				//nodePath[0].parent = nodePath[i] ZYF DO NOT KNOW HOW
 				newPath = append([]*MGTNode{nodePath[0]}, newPath...)
 				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
 				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
@@ -691,6 +703,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 					npFather := mgt.GetLeafNodeAndPath(cachedLN.bucketKey[1:], db, cache)
 					//将cachedLN放入其父节点的子节点中
 					npFather[0].subNodes[cachedLN.bucketKey[0]] = cachedLN
+					cachedLN.parent = npFather[0]
 					npFather[0].dataHashes[cachedLN.bucketKey[0]] = cachedLN.nodeHash
 					//2.更新np_father上所有节点
 					npFather[0].UpdateMGTNodeToDB(db, cache)
@@ -960,7 +973,7 @@ func DeserializeMGTNode(data []byte, rdx int) (*MGTNode, error) {
 	}
 	subNodes := make([]*MGTNode, rdx)
 	cachedNodes := make([]*MGTNode, rdx)
-	mgtNode := &MGTNode{seMGTNode.NodeHash, subNodes, seMGTNode.DataHashes, cachedNodes, seMGTNode.CachedDataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}
+	mgtNode := &MGTNode{seMGTNode.NodeHash, nil, subNodes, seMGTNode.DataHashes, cachedNodes, seMGTNode.CachedDataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}
 	return mgtNode, nil
 
 }

@@ -133,6 +133,7 @@ func (mgtNode *MGTNode) GetCachedNode(index int, db *leveldb.DB, rdx int, cache 
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
 			if node, ok = targetCache.Get(string(mgtNode.cachedDataHashes[index])); ok {
 				mgtNode.cachedNodes[index] = node
+				node.parent = mgtNode
 			}
 		}
 		if !ok {
@@ -671,7 +672,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 			if nodePath[i].cachedDataHashes[bucketKey[identI]] == nil {
 				//1.放置当前节点(nodePath[0])
 				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
-				//nodePath[0].parent = nodePath[i] ZYF DO NOT KNOW HOW
+				nodePath[0].parent = nodePath[i]
 				newPath = append([]*MGTNode{nodePath[0]}, newPath...)
 				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
 				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
@@ -713,6 +714,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 					}
 					//3.再将当前节点放入nodePath[i]的缓存目录中
 					nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
+					nodePath[0].parent = nodePath[i]
 					nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
 					newPath = append([]*MGTNode{nodePath[0]}, newPath...)
 					//4.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空

@@ -41,8 +41,8 @@ type Bucket struct {
 	RootLatchGainFlag bool                   // 用于判断被委托线程是否已经获取到树根，如果获取到了，那么置为True，其余线程停止对DelegationLatch进行获取尝试，保证被委托线程在获取到树根以后可以尽快获取到DelegationLatch并开始不接受委托
 	latch             sync.RWMutex
 
-	//segLatch        sync.RWMutex
-	//mtLatch         sync.RWMutex
+	segLatch        sync.RWMutex
+	mtLatch         sync.RWMutex
 	DelegationLatch sync.Mutex // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
 }
 
@@ -53,7 +53,7 @@ func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{nil, ld, rdx, capacity, 0, segNum,
 		sync.Map{}, sync.Map{}, sync.Map{}, 0,
 		make(map[string]util.KVPair), false,
-		sync.RWMutex{}, sync.Mutex{}}
+		sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 }
 
 // UpdateBucketToDB 更新bucket至db中
@@ -81,6 +81,11 @@ func NewSegment() []util.KVPair {
 func (b *Bucket) GetSegment(segKey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
 	//跳转到此函数时bucket已加写锁
 	if _, ok := b.segments.Load(segKey); !ok {
+		b.segLatch.Lock()
+		if ret, ok := b.segments.Load(segKey); ok {
+			b.segLatch.Unlock()
+			return ret.([]util.KVPair)
+		}
 		//fmt.Printf("read segment %s from DB.\n", b.name+util.IntArrayToString(b.bucketKey)+"segment"+segKey)
 		var kvs_ *[]util.KVPair
 		key_ := util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segKey
@@ -103,6 +108,7 @@ func (b *Bucket) GetSegment(segKey string, db *leveldb.DB, cache *[]interface{})
 				b.segIdxMaps.Store(segKey, segIdxMap)
 			}
 		}
+		b.segLatch.Unlock()
 	}
 	ret, _ := b.segments.Load(segKey)
 	return ret.([]util.KVPair)
@@ -174,6 +180,11 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{
 	//跳转到此函数时已对树加写锁或者对桶加写锁
 	if v, ok := b.merkleTrees.Load(index); ok && v.(*mht.MerkleTree) == mht.DummyMerkleTree {
 		//fmt.Printf("read mht %s to DB.\n", b.name+util.IntArrayToString(b.bucketKey, b.rdx)+"mht"+index)
+		b.mtLatch.Lock()
+		if v, ok := b.merkleTrees.Load(index); ok && v.(*mht.MerkleTree) != mht.DummyMerkleTree {
+			b.mtLatch.Unlock()
+			return v.(*mht.MerkleTree)
+		}
 		var mt *mht.MerkleTree
 		key_ := util.IntArrayToString(b.BucketKey, b.rdx) + "mht" + index
 		if cache != nil {
@@ -188,6 +199,7 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{
 				b.merkleTrees.Store(index, mt)
 			}
 		}
+		b.mtLatch.Unlock()
 	}
 	ret, _ := b.merkleTrees.Load(index)
 	return ret.(*mht.MerkleTree)
@@ -609,7 +621,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	}
 	bucket := &Bucket{seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
 		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair), false, sync.RWMutex{}, sync.Mutex{}}
+		make(map[string]util.KVPair), false, sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 	for i := 0; i < len(seBucket.SegKeys); i++ {
 		bucket.merkleTrees.Store(seBucket.SegKeys[i], mht.DummyMerkleTree)
 	}

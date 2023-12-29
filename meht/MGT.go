@@ -1,6 +1,7 @@
 package meht
 
 import (
+	"MEHT/mht"
 	"MEHT/util"
 	"bytes"
 	"crypto/sha256"
@@ -202,10 +203,11 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 
 	//如果是叶子节点,遍历其所有segment,将每个segment的根hash加入dataHashes
 	if isLeaf {
-		for _, merkleTree := range bucket.GetMerkleTrees() {
-			dataHashes = append(dataHashes, merkleTree.GetRootHash())
-			nodeHash = append(nodeHash, merkleTree.GetRootHash()...)
-		}
+		bucket.GetMerkleTrees().Range(func(key, value interface{}) bool {
+			dataHashes = append(dataHashes, value.(*mht.MerkleTree).GetRootHash())
+			nodeHash = append(nodeHash, value.(*mht.MerkleTree).GetRootHash()...)
+			return true
+		})
 	} else {
 		if subNodes == nil {
 			//subNodes是nil说明是非叶子节点,显然非叶子节点没有bucket,因此需要额外的rdx参数
@@ -448,12 +450,14 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 		//更新叶子节点的dataHashes
 		nodePath[0].dataHashes = make([][]byte, 0)
 		segKeyInorder := make([]string, 0)
-		for segKey := range bk.GetMerkleTrees() {
-			segKeyInorder = append(segKeyInorder, segKey)
-		}
+		bk.GetMerkleTrees().Range(func(key, value interface{}) bool {
+			segKeyInorder = append(segKeyInorder, key.(string))
+			return true
+		})
 		sort.Strings(segKeyInorder)
 		for _, key := range segKeyInorder {
-			nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTrees[key].GetRootHash())
+			targetMerkleTree, _ := targetMerkleTrees.Load(key)
+			nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTree.(*mht.MerkleTree).GetRootHash())
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
 		nodePath[0].UpdateMGTNodeToDB(db, cache)

@@ -42,6 +42,7 @@ type MGTNode struct {
 	//NOTE：如果cached node是中间节点（isLeaf是false），则表明发生了分裂
 
 	isLeaf    bool    // whether this node is a leaf node
+	isDirty   bool    // whether the hash of this node needs to be updated
 	bucket    *Bucket // bucket related to this leaf node
 	bucketKey []int   // bucket key
 
@@ -228,9 +229,9 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
-		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, nil, nil, sync.RWMutex{}, sync.Mutex{}}
+		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, false, nil, nil, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, nil, nil, isLeaf, bucket, bucket.BucketKey, sync.RWMutex{}, sync.Mutex{}}
+		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, nil, nil, isLeaf, false, bucket, bucket.BucketKey, sync.RWMutex{}, sync.Mutex{}}
 	}
 	for _, node := range subNodes {
 		if node != nil {
@@ -254,15 +255,19 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) {
 	//跳转到此函数时MGT已加写锁
 	//delete the old node in leveldb
-	//if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
-	//	panic(err)
-	//}
+	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
+		panic(err)
+	}
+	var targetCache *lru.Cache[string, *MGTNode]
+	if cache != nil {
+		targetCache, _ = (*cache)[0].(*lru.Cache[string, *MGTNode])
+		targetCache.Remove(string(mgtNode.nodeHash))
+	}
 	//update nodeHash
 	UpdateNodeHash(mgtNode)
 	//insert node in leveldb
 	// fmt.Printf("When write MGTNode to DB, mgtNode.nodeHash: %x\n", mgtNode.nodeHash)
 	if cache != nil {
-		targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
 		targetCache.Add(string(mgtNode.nodeHash), mgtNode)
 	} else {
 		if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
@@ -288,6 +293,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 	}
 	//从根节点开始,逐层向下遍历,直到找到叶子节点
 	//如果该bucketKey对应的叶子节点未被缓存，则一直在subNodes下找，否则需要去cachedNodes里找
+	// ZYF Do Not know 感觉这里map会有并发读写panic，可能需要改一下
 	if !mgt.cachedLNMap[util.IntArrayToString(bucketKey, mgt.rdx)] {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			if p == nil {
@@ -425,24 +431,63 @@ func GetOldBucketKey(bucket *Bucket) []int {
 	return oldBucketKey
 }
 
+func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
+	if mgt.Root == nil || !mgt.Root.isDirty {
+		return
+	}
+	wG := sync.WaitGroup{}
+	for _, child := range mgt.Root.subNodes {
+		wG.Add(1)
+		child_ := child
+		go func() {
+			MGTBatchFixFoo(child_, db, cache)
+			wG.Done()
+		}()
+	}
+	for _, child := range mgt.Root.cachedNodes {
+		wG.Add(1)
+		child_ := child
+		go func() {
+			MGTBatchFixFoo(child_, db, cache)
+			wG.Done()
+		}()
+	}
+	wG.Wait()
+}
+
+func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
+	if mgtNode == nil || !mgtNode.isDirty {
+		return
+	}
+	for _, child := range mgtNode.subNodes {
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
+			continue
+		}
+		MGTBatchFixFoo(child, db, cache)
+	}
+	for _, child := range mgtNode.cachedNodes {
+		if child == nil || !child.isDirty {
+			continue
+		}
+		MGTBatchFixFoo(child, db, cache)
+	}
+	mgtNode.UpdateMGTNodeToDB(db, cache)
+	mgtNode.isDirty = false
+}
+
 // MGTUpdate MGT生长,给定新的buckets,返回更新后的MGT
 func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]interface{}) *MGT {
 	//跳转到此函数时mgt已经加写锁，因此任何查询、插入等操作都无需额外锁操作
-	if len(newBucketSs) == 0 {
-		//fmt.Printf("newBuckets is empty\n")
-		return mgt
-	}
-	//如果root为空,则直接为newBuckets创建叶节点(newBuckets中只有一个bucket)
-	if mgt.GetRoot(db) == nil {
-		mgt.Root = NewMGTNode(nil, true, newBucketSs[0][0], db, newBucketSs[0][0].rdx, cache)
-		mgt.Root.UpdateMGTNodeToDB(db, cache)
-		//统计访问频次
-		mgt.UpdateHotnessList("new", util.IntArrayToString(mgt.Root.bucketKey, mgt.rdx), 1, nil)
+	if mgt.Root == nil {
 		return mgt
 	}
 	var nodePath []*MGTNode
 	//如果newBuckets中只有一个bucket，则说明没有发生分裂，只更新nodePath中所有的哈希值
 	//连环分裂至少需要第一层有rdx个桶，因此只需要判断第一层是不是一个桶就知道bucketSs里是不是只有一个桶
+	if newBucketSs == nil {
+		mgt.MGTBatchFix(db, cache)
+		return mgt
+	}
 	if len(newBucketSs[0]) == 1 {
 		bk := newBucketSs[0][0]
 		nodePath = mgt.GetLeafNodeAndPath(bk.BucketKey, db, cache)
@@ -463,9 +508,19 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 		nodePath[0].UpdateMGTNodeToDB(db, cache)
 		//更新所有父节点的nodeHashes,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
-			nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
-			nodePath[i].UpdateMGTNodeToDB(db, cache)
+			//nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
+			//nodePath[i].UpdateMGTNodeToDB(db, cache)
+			// 一整条路径的值都会被修改为dirty，但是不会再重新计算哈希，因为这个操作会由batch调整的时候来做
+			// 如果发现当前路径节点已经是dirty了，那这个节点再往上也一定会是dirty
+			// 而且此函数进行时batch调整一定不会进行，因此也不会出现同一时刻batch调整将此处的dirty置为false的冲突情况
+			if nodePath[i].isDirty {
+				break
+			} else {
+				nodePath[i].isDirty = true
+			}
 		}
+		// 桶的所有与mgtNode相关修改已经完毕，真正将桶锁释放
+		bk.latch.Unlock()
 	} else {
 		//如果newBuckets中有多个bucket，则说明发生了分裂，MGT需要生长
 		//分层依次生长,这样每次都只需要在一条路径上多扩展出一层mgtLeafNodes
@@ -477,10 +532,18 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 			} else {
 				oldBucketKey = GetOldBucketKey(newBuckets[1])
 			}
-			//fmt.Printf("oldBucketKey: %s\n", util.IntArrayToString(oldBucketKey, newBuckets[0].rdx))
 			//根据旧bucketKey,找到旧bucket所在的叶子节点
 			nodePath = mgt.GetLeafNodeAndPath(oldBucketKey, db, cache)
 			mgt.MGTGrow(oldBucketKey, nodePath, newBuckets, db, cache)
+		}
+		// 分裂桶的所有与mgtNode相关修改已经完毕，真正将桶锁释放
+		for i, buckets := range newBucketSs {
+			for j, bk := range buckets {
+				if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经释放锁过了，因此跳过
+					continue
+				}
+				bk.latch.Unlock()
+			}
 		}
 	}
 	return mgt
@@ -494,10 +557,11 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	for i := 0; i < len(newBuckets); i++ {
 		newNode := NewMGTNode(nil, true, newBuckets[i], db, newBuckets[0].rdx, cache)
 		subNodes = append(subNodes, newNode)
+		// 新节点还是会去重新计算哈希的，这样就可以并发去重新计算节点，而不是等到batch调整的时候可能串行着去重新计算
 		newNode.UpdateMGTNodeToDB(db, cache)
 	}
 
-	//更新hotnessList，更新叶子节点的访问频次
+	//更新hotnessList，更新叶子节点的访问频次，这一行是串行去做的
 	mgt.UpdateHotnessList("split", util.IntArrayToString(oldBucketKey, mgt.rdx), 0, subNodes)
 
 	//创建新的父节点
@@ -514,19 +578,32 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	}
 
 	//更新父节点的child为新的父节点
-	if len(nodePath) == 1 {
+	if len(nodePath) == 1 { // 此处根节点哈希已经成功更新，因此不需要标为dirty
 		mgt.Root = newFatherNode
 		mgt.Root.UpdateMGTNodeToDB(db, cache)
 		return mgt
 	}
+	// 同一时刻一个桶只会有一个线程更新，因此对应的，这个mgtNode也只会被一个线程更新，因此此处不会被并发覆盖
 	nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
 	newFatherNode.parent = nodePath[1]
-	nodePath[1].UpdateMGTNodeToDB(db, cache)
+	// 即使同一时刻有nodePath[1]的多个孩子节点都在更新，dirty也只会被置为true，不会有任何问题
+	nodePath[1].isDirty = true
+	// 原先下面一行nodePath[1]哈希重计算就省去了，由MGTBatchFix来做
+	//nodePath[1].UpdateMGTNodeToDB(db, cache)
 
 	//更新所有父节点的nodeHash
 	for i := 2; i < len(nodePath); i++ {
-		nodePath[i].dataHashes[oldBucketKey[i-1]] = nodePath[i-1].nodeHash
-		nodePath[i].UpdateMGTNodeToDB(db, cache)
+		// 同样的，一整条路径的值都会被修改为dirty，但是不会再重新计算哈希，因为这个操作会由batch调整的时候来做
+		// 如果发现当前路径节点已经是dirty了，那这个节点再往上也一定会是dirty
+		// 而且此函数进行时batch调整一定不会进行，因此也不会出现同一时刻batch调整将此处的dirty置为false的冲突情况
+		if nodePath[i].isDirty {
+			break
+		} else {
+			// 总有一个线程会将这个节点确实需要后续调整的脏节点的脏标识位置为true
+			nodePath[i].isDirty = true
+		}
+		//nodePath[i].dataHashes[oldBucketKey[i-1]] = nodePath[i-1].nodeHash
+		//nodePath[i].UpdateMGTNodeToDB(db, cache)
 	}
 	return mgt
 }
@@ -574,6 +651,7 @@ func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subNodes []*MGTN
 		mgt.hotnessList[bk] = mgt.hotnessList[bk] + hn
 		// fmt.Println("add hotness of bucketKey=", bk, "is", mgt.hotnessList[bk])
 	} else if op == "split" {
+		// 此处所有mgtNode对应桶已经上写锁，因此mgtNode本身不会有任何新增修改，bucket.number的读取不会有任何因并发产生的问题
 		originHot := mgt.hotnessList[bk] + hn
 		recordSum := 0
 		for _, node := range subNodes {
@@ -979,7 +1057,7 @@ func DeserializeMGTNode(data []byte, rdx int) (*MGTNode, error) {
 	}
 	subNodes := make([]*MGTNode, rdx)
 	cachedNodes := make([]*MGTNode, rdx)
-	mgtNode := &MGTNode{seMGTNode.NodeHash, nil, subNodes, seMGTNode.DataHashes, cachedNodes, seMGTNode.CachedDataHashes, seMGTNode.IsLeaf, nil, seMGTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}
+	mgtNode := &MGTNode{seMGTNode.NodeHash, nil, subNodes, seMGTNode.DataHashes, cachedNodes, seMGTNode.CachedDataHashes, seMGTNode.IsLeaf, false, nil, seMGTNode.BucketKey, sync.RWMutex{}, sync.Mutex{}}
 	return mgtNode, nil
 
 }

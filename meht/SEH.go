@@ -125,7 +125,7 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}, mgtLatch *sync.RWMutex) ([][]*Bucket, BucketDelegationCode, *int64, int64) {
+func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}) ([][]*Bucket, BucketDelegationCode, *int64, int64) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 {
 		//创建新的bucket
@@ -165,9 +165,10 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 		}
 		bucket.latchTimestamp = time.Now().Unix()
-		bucket.DelegationLatch.Unlock()      // 允许其他线程委托自己插入
-		mgtLatch.Lock()                      // 阻塞一直等到获得mgt锁，用以一次性更新并更改mgt树
-		bucket.RootLatchGainFlag = true      // 告知其他线程准备开始整体更新，让其他线程不要再尝试委托自己
+		bucket.DelegationLatch.Unlock() // 允许其他线程委托自己插入
+		//mgtLatch.Lock()                 // 阻塞一直等到获得mgt锁，用以一次性更新并更改mgt树
+		//bucket.RootLatchGainFlag = true      // 告知其他线程准备开始整体更新，让其他线程不要再尝试委托自己
+		time.Sleep(time.Millisecond * 50)
 		bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
 		if bucket.number < bucket.capacity { // 由于插入数目一定不引起桶分裂，顶多插满，因此最后插完的桶就是当前桶
 			for _, kvp := range bucket.DelegationList {
@@ -193,6 +194,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				if seh.gd < newLd {
 					seh.gd = newLd
 				}
+				seh.latch.Unlock() //不同桶对ht的修改不会产生交集，因此尝试将seh锁释放提前，让sync.map本身特性保证ht修改的并发安全
 				//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
 				for i, buckets := range bucketSs {
 					var bKey string
@@ -201,6 +203,11 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 							continue
 						}
 						bKey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+						// 在更新ht之前需要先把桶都给锁上，因为在此之后mgt还需要grow
+						// 如果不锁的话，mgt在grow完成前可能桶就已经通过ht被找到，然后进行桶更新，就会出问题
+						if buckets[j] != bucket { //将新分裂出来的桶给锁上，bucket本身已经被锁上了，因此不需要重复上锁
+							buckets[j].latch.Lock()
+						}
 						seh.ht.Store(bKey, buckets[j])
 						buckets[j].UpdateBucketToDB(db, cache)
 					}
@@ -209,15 +216,16 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				}
 				// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
 				//seh.UpdateSEHToDB(db)
-				seh.latch.Unlock()
+				//seh.latch.Unlock()
 			}
 		}
-		bucket.RootLatchGainFlag = false // 重置状态
+		//bucket.RootLatchGainFlag = false // 重置状态
 		bucket.DelegationList = nil
 		bucket.DelegationList = make(map[string]util.KVPair)
 		bucket.latchTimestamp = 0
 		bucket.DelegationLatch.Unlock()
-		bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
+		// 此处桶锁不释放，会在MGTGrow的地方
+		//bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
 		return bucketSs, DELEGATE, nil, 0
 	} else {
 		// 成为委托者
@@ -225,7 +233,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			return nil, FAILED, nil, 0
 		}
 		for !bucket.latch.TryLock() { // 重复查看是否存在可以委托的对象
-			if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag {
+			if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity {
 				// 发现一定无法再委托则退出函数并重做，直到这个桶因一个线程的插入而分裂，产生新的空间
 				// 说不定重做以后这就是新的被委托者，毕竟桶已满就说明一定有一个获得了桶锁的线程在工作中
 				// 而这个工作线程在不久的将来就会更新完桶并释放锁，说不定你就在上一个if代码块里工作了
@@ -238,7 +246,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				seh.latch.RLock()
 				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 				seh.latch.RUnlock()
-				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.RootLatchGainFlag || bucket.latchTimestamp == 0 {
+				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					bucket.DelegationLatch.Unlock()
 					return nil, FAILED, nil, 0

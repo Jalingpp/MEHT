@@ -130,7 +130,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 			break
 		}
 		//插入KV到SEH
-		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, nil)
+		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache)
 		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketSs[0][0].GetSegmentKey(kvPair.GetKey())]
 		//更新seh到db
 		//meht.seh.UpdateSEHToDB
@@ -139,6 +139,8 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 		meht.mgt.Root = NewMGTNode(nil, true, bucketSs[0][0], db, meht.rdx, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+		//统计访问频次
+		meht.mgt.UpdateHotnessList("new", util.IntArrayToString(meht.mgt.Root.bucketKey, meht.rdx), 1, nil)
 		//mgtRootHash, mgtProof := meht.mgt.GetProof(bucketSs[0][0].GetBucketKey(), db, meht.cache)
 		//return bucketSs[0][0], kvPair.GetValue(), &MEHTProof{merkleTree_.GetRootHash(), merkleTree_.GetProof(0), mgtRootHash, mgtProof}
 		meht.seh.latch.Unlock()
@@ -155,16 +157,15 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 	//因为无论是桶时间戳的改变还是换了一个新桶，这都意味着上一次插入已经完成了
 	var waitTimestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache, &meht.mgt.latch)
+		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache)
 	}
+	// 要不返回需要上锁的那个桶，然后延迟释放桶锁，直到mgt更新完毕，这样子就可以从mgt粒度锁缩小至桶粒度
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
 		meht.mgt = meht.mgt.MGTUpdate(bucketSs, db, meht.cache)
 		//更新mgt的根节点哈希并更新到db
-		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		//fmt.Println("Try to unlock mgt latch in meht insert.")
-		meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
-		//fmt.Println("Unlock successfully in meht insert.")
+		//meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
+		//meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
 	}
 	//获取当前KV插入的bucket
 	for {

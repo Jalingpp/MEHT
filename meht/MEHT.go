@@ -274,17 +274,17 @@ func (meht *MEHT) PurgeCache() {
 	}
 }
 
-// PrintQueryResult 打印查询结果
-func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
-	fmt.Printf("查询结果-------------------------------------------------------------------------------------------\n")
-	fmt.Printf("key=%s\n", key)
-	if value == "" {
-		fmt.Printf("value不存在\n")
-	} else {
-		fmt.Printf("value=%s\n", value)
-	}
-	mehtProof.PrintMEHTProof()
-}
+//// PrintQueryResult 打印查询结果
+//func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
+//	fmt.Printf("查询结果-------------------------------------------------------------------------------------------\n")
+//	fmt.Printf("key=%s\n", key)
+//	if value == "" {
+//		fmt.Printf("value不存在\n")
+//	} else {
+//		fmt.Printf("value=%s\n", value)
+//	}
+//	mehtProof.PrintMEHTProof()
+//}
 
 // VerifyQueryResult 验证查询结果
 func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {

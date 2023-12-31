@@ -29,7 +29,6 @@ type SEH struct {
 	ht            sync.Map // hash table of buckets
 	bucketsNumber int      // number of buckets, initial zero
 	latch         sync.RWMutex
-	//updateLatch   sync.Mutex
 }
 
 // NewSEH returns a new SEH
@@ -76,6 +75,7 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 
 // GetBucketByKey GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	if seh.gd == 0 {
 		return seh.GetBucket("", db, cache)
 	}
@@ -85,8 +85,6 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{})
 	} else {
 		bKey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
 	}
-	//seh.updateLatch.Lock()
-	//defer seh.updateLatch.Unlock()
 	return seh.GetBucket(bKey, db, cache)
 }
 
@@ -107,9 +105,9 @@ func (seh *SEH) GetBucketsNumber() int {
 
 // GetValueByKey returns the value of the key-value pair with the given key
 func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) string {
-	//seh.latch.RLock()
+	seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
-	//seh.latch.RUnlock()
+	seh.latch.RUnlock()
 	if bucket == nil {
 		return ""
 	}
@@ -118,7 +116,9 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 
 // GetProof returns the proof of the key-value pair with the given key
 func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
+	seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
+	seh.latch.RUnlock()
 	value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, cache, false)
 	segRootHash, mhtProof := bucket.GetProof(segKey, isSegExist, index, db, cache)
 	return value, segRootHash, mhtProof
@@ -214,18 +214,13 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{})
 					toDelKey := bKey[util.ComputeStrideByBase(buckets[0].rdx):]
 					seh.ht.Delete(toDelKey)
 				}
-				// 只在 seh 变动的位置将 seh 写入 db 可以省去很多重复写
-				//seh.UpdateSEHToDB(db)
-				//seh.latch.Unlock()
 			}
 		}
-		//bucket.RootLatchGainFlag = false // 重置状态
 		bucket.DelegationList = nil
 		bucket.DelegationList = make(map[string]util.KVPair)
 		bucket.latchTimestamp = 0
 		bucket.DelegationLatch.Unlock()
-		// 此处桶锁不释放，会在MGTGrow的地方
-		//bucket.latch.Unlock() // 此时即使释放了桶锁也不会影响后续mgt对于根哈希的更新，因为mgt的锁还没有释放，因此当前桶不可能被任何其他线程修改
+		// 此处桶锁不释放，会在MGTGrow的地方释放，因为此处桶锁释放后，其他线程就可以插入了，而此时mgt若需要分裂则还没有更新，因此可能会出现桶插入了但是相应mgtNode不存在的问题
 		return bucketSs, DELEGATE, nil, 0
 	} else {
 		// 成为委托者
@@ -244,6 +239,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{})
 			}
 			if bucket.DelegationLatch.TryLock() {
 				seh.latch.RLock()
+				//需要检查是否因为桶的分裂而导致自己的桶已经不是当前桶了，如果不是则重做
 				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 				seh.latch.RUnlock()
 				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.latchTimestamp == 0 {
@@ -280,13 +276,11 @@ func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 	}
 	fmt.Printf("SEH: gd=%d, rdx=%d, bucketCapacity=%d, bucketSegNum=%d, bucketsNumber=%d\n", seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum, seh.bucketsNumber)
 	seh.latch.RLock()
-	//seh.updateLatch.Lock()
 	seh.ht.Range(func(key, value interface{}) bool {
 		fmt.Printf("bucketKey=%s\n", key.(string))
 		seh.GetBucket(key.(string), db, cache).PrintBucket(db, cache)
 		return true
 	})
-	//seh.updateLatch.Unlock()
 	seh.latch.RUnlock()
 }
 
@@ -303,12 +297,10 @@ type SeSEH struct {
 
 func SerializeSEH(seh *SEH) []byte {
 	hashTableKeys := make([]string, 0)
-	//seh.updateLatch.Lock()
 	seh.ht.Range(func(key, value interface{}) bool {
 		hashTableKeys = append(hashTableKeys, key.(string))
 		return true
 	})
-	//seh.updateLatch.Unlock()
 	seSEH := &SeSEH{seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
 		hashTableKeys, seh.bucketsNumber}
 	if jsonSEH, err := json.Marshal(seSEH); err != nil {

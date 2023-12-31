@@ -55,9 +55,9 @@ type MGT struct {
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
 
-	//cachedLNMap map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有，会被存入DB
+	//cachedLNMap map[string]bool
 	cachedLNMap sync.Map //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有，会被存入DB
-	//cachedINMap map[string]bool //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来，会被存入DB
+	//cachedINMap map[string]bool
 	cachedINMap sync.Map //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来，会被存入DB
 
 	hotnessList  map[string]int //被访问过的叶子节点bucketKey及其被访频次，不会被存入DB
@@ -91,7 +91,6 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 
 // GetSubNode 获取subNode,如果subNode为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetSubNode(index int, db *leveldb.DB, rdx int, cache *[]interface{}) *MGTNode {
-	//跳转到此函数时mgt已经加写锁
 	if mgtNode.subNodes[index] == nil && mgtNode.updateLatch.TryLock() { // 既然进入这个函数那么是一定能找到节点的
 		if mgtNode.subNodes[index] != nil {
 			mgtNode.updateLatch.Unlock()
@@ -280,7 +279,8 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) 
 
 // GetLeafNodeAndPath 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点
 func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]interface{}) []*MGTNode {
-	//跳转到此函数时mgt已加锁
+	// 这个函数会被多个线程同时调用，但是每个线程的完整path一定是不同的，这是因为不同的线程修改的桶一定是不同的，
+	// 因此影响到的mgtNode也是不同的，而这些node都会是叶子节点而不是中间节点，因此一个操作自始至终path应该都是不变的，因此mgt的遍历不需要加锁
 	result := make([]*MGTNode, 0)
 	//递归遍历根节点的所有子节点,找到bucketKey对应的叶子节点
 	p := mgt.GetRoot(db)
@@ -295,7 +295,6 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 	}
 	//从根节点开始,逐层向下遍历,直到找到叶子节点
 	//如果该bucketKey对应的叶子节点未被缓存，则一直在subNodes下找，否则需要去cachedNodes里找
-	// ZYF Do Not know 感觉这里map会有并发读写panic，可能需要改一下
 	if val, _ := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); !val.(bool) {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			if p == nil {
@@ -441,21 +440,29 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 	wG := sync.WaitGroup{}
 	// 仅对第一层孩子节点做并发处理，减少协程数量
 	// 先通过递归到最深层，再从最深层开始往上更新脏节点
-	for _, child := range mgt.Root.subNodes {
+	for idx, child := range mgt.Root.subNodes {
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
+			continue
+		}
 		wG.Add(1)
 		child_ := child
 		go func() {
 			MGTBatchFixFoo(child_, db, cache)
 			wG.Done()
 		}()
+		mgt.Root.dataHashes[idx] = child.nodeHash
 	}
-	for _, child := range mgt.Root.cachedNodes {
+	for idx, child := range mgt.Root.cachedNodes {
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
+			continue
+		}
 		wG.Add(1)
 		child_ := child
 		go func() {
 			MGTBatchFixFoo(child_, db, cache)
 			wG.Done()
 		}()
+		mgt.Root.cachedDataHashes[idx] = child.nodeHash
 	}
 	wG.Wait()
 	// 最后更新根节点
@@ -468,17 +475,19 @@ func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 	if mgtNode == nil || !mgtNode.isDirty {
 		return
 	}
-	for _, child := range mgtNode.subNodes {
+	for idx, child := range mgtNode.subNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		MGTBatchFixFoo(child, db, cache)
+		mgtNode.dataHashes[idx] = child.nodeHash
 	}
-	for _, child := range mgtNode.cachedNodes {
+	for idx, child := range mgtNode.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		MGTBatchFixFoo(child, db, cache)
+		mgtNode.cachedDataHashes[idx] = child.nodeHash
 	}
 	mgtNode.UpdateMGTNodeToDB(db, cache)
 	mgtNode.isDirty = false
@@ -486,18 +495,17 @@ func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 
 // MGTUpdate MGT生长,给定新的buckets,返回更新后的MGT
 func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]interface{}) {
-	//跳转到此函数时mgt已经加写锁，因此任何查询、插入等操作都无需额外锁操作
 	if mgt.Root == nil {
+		return
+	}
+	// 如果newBucketSs是nil，说明是批量提交，对所有脏节点进行哈希重新计算，mgtRootHash也会被更新
+	if newBucketSs == nil {
+		mgt.MGTBatchFix(db, cache)
 		return
 	}
 	var nodePath []*MGTNode
 	//如果newBuckets中只有一个bucket，则说明没有发生分裂，只更新nodePath中所有的哈希值
 	//连环分裂至少需要第一层有rdx个桶，因此只需要判断第一层是不是一个桶就知道bucketSs里是不是只有一个桶
-	if newBucketSs == nil {
-		// 如果newBucketSs是nil，说明是批量提交，对所有脏节点进行哈希重新计算，mgtRootHash也会被更新
-		mgt.MGTBatchFix(db, cache)
-		return
-	}
 	if len(newBucketSs[0]) == 1 {
 		bk := newBucketSs[0][0]
 		nodePath = mgt.GetLeafNodeAndPath(bk.BucketKey, db, cache)
@@ -684,7 +692,9 @@ func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subNodes []*MGTN
 
 // UpdateAccessLengthSum 更新叶子节点访问路径总长度
 func (mgt *MGT) UpdateAccessLengthSum(accessPath int) {
+	mgt.updateLatch.Lock()
 	mgt.accessLength = mgt.accessLength + accessPath
+	mgt.updateLatch.Unlock()
 }
 
 // IsNeedCacheAdjust 计算是否需要调整缓存

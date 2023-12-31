@@ -258,8 +258,6 @@ func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return
 	}
-	//插入主键索引
-	//如果是第一次插入
 	if se.primaryIndex == nil { // 没有主索引说明没有交易需要批量提交
 		return
 	}

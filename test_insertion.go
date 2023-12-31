@@ -49,10 +49,10 @@ func main() {
 	//	close(kvPairCh)
 	//}
 	var batchSize = 10000
-	//var batchTimeout float64 = 100
+	var batchTimeout float64 = 100
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
-	//var stopBatchCommitterFlag = true
+	var stopBatchCommitterFlag = true
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
@@ -63,24 +63,29 @@ func main() {
 		}
 		close(kvPairCh)
 	}
-	//batchCommitter := func(wG *sync.WaitGroup) {
-	//	sT := time.Now()
-	//	for stopBatchCommitterFlag {
-	//		for curStartNum.number >= batchSize || time.Since(sT).Seconds() >= batchTimeout {
-	//			curStartNum.lock.Lock()
-	//			for curStartNum.number != curFinishNum.number {
-	//			}
-	//			//DO Something
-	//			curFinishNum.number = 0
-	//			curStartNum.number = 0
-	//			curStartNum.lock.Unlock()
-	//			sT = time.Now()
-	//		}
-	//		time.Sleep(3 * time.Second)
-	//	}
-	//	// DO Something
-	//	wG.Done()
-	//}
+	batchCommitter := func(wG *sync.WaitGroup, seDB *sedb.SEDB) {
+		sT := time.Now()
+		for stopBatchCommitterFlag {
+			for curStartNum.number >= batchSize || time.Since(sT).Seconds() >= batchTimeout {
+				curStartNum.lock.Lock()                         //阻塞新插入或查询操作
+				for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
+				}
+				fmt.Println("Batch Commit.")
+				// 批量提交，即一并更新辅助索引的脏数据
+				seDB.BatchCommit()
+				// 重置计数器
+				curFinishNum.number = 0
+				curStartNum.number = 0
+				curStartNum.lock.Unlock()
+				sT = time.Now()
+			}
+			// 休眠3秒, 防止CPU占用过高
+			time.Sleep(3 * time.Second)
+		}
+		// 所有查询与插入操作已全部结束，将尾部数据批量提交
+		seDB.BatchCommit()
+		wG.Done()
+	}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {
 		for kvPair := range kvPairCh {
 			for {
@@ -243,8 +248,8 @@ func main() {
 			doneCh := make(chan bool)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go allocateNFTOwner("../nft-owner", num, kvPairCh)
-			//batchWg := sync.WaitGroup{}
-			//go batchCommitter(&batchWg)
+			batchWg := sync.WaitGroup{}
+			go batchCommitter(&batchWg, seDB)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
 			duration = time.Since(start)
@@ -252,9 +257,8 @@ func main() {
 			for _, du := range latencyDurationList {
 				latencyDuration += du
 			}
-			//batchWg.Wait()
+			batchWg.Wait()
 			seDB.WriteSEDBInfoToFile(filePath)
-			//duration = time.Since(start)
 			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 				strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+

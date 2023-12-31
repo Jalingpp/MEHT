@@ -162,7 +162,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 	// 要不返回需要上锁的那个桶，然后延迟释放桶锁，直到mgt更新完毕，这样子就可以从mgt粒度锁缩小至桶粒度
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
-		meht.mgt = meht.mgt.MGTUpdate(bucketSs, db, meht.cache)
+		meht.mgt.MGTUpdate(bucketSs, db, meht.cache)
 		//更新mgt的根节点哈希并更新到db
 		//meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		//meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
@@ -191,6 +191,13 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 	}
 }
 
+// MGTBatchCommit 批量提交mgt
+func (meht *MEHT) MGTBatchCommit(db *leveldb.DB) {
+	// meht存在则mgt一定存在，因此无需判断mgt是否为nil
+	meht.mgt.MGTUpdate(nil, db, meht.cache)
+}
+
+// MGTCachedAdjust 缓存调整mgt
 func (meht *MEHT) MGTCachedAdjust(db *leveldb.DB) {
 	meht.mgtHash = meht.mgt.CacheAdjust(db, meht.cache)
 	meht.UpdateMEHTToDB(db)

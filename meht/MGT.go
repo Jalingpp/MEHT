@@ -433,11 +433,14 @@ func GetOldBucketKey(bucket *Bucket) []int {
 	return oldBucketKey
 }
 
+// MGTBatchFix 对根节点的所有孩子节点做并发，调用递归函数更新脏节点
 func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 	if mgt.Root == nil || !mgt.Root.isDirty {
 		return
 	}
 	wG := sync.WaitGroup{}
+	// 仅对第一层孩子节点做并发处理，减少协程数量
+	// 先通过递归到最深层，再从最深层开始往上更新脏节点
 	for _, child := range mgt.Root.subNodes {
 		wG.Add(1)
 		child_ := child
@@ -455,8 +458,12 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		}()
 	}
 	wG.Wait()
+	// 最后更新根节点
+	mgt.Root.UpdateMGTNodeToDB(db, cache)
+	mgt.Root.isDirty = false
 }
 
+// MGTBatchFixFoo 递归更新脏节点
 func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 	if mgtNode == nil || !mgtNode.isDirty {
 		return
@@ -468,7 +475,7 @@ func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 		MGTBatchFixFoo(child, db, cache)
 	}
 	for _, child := range mgtNode.cachedNodes {
-		if child == nil || !child.isDirty {
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		MGTBatchFixFoo(child, db, cache)
@@ -478,17 +485,18 @@ func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 }
 
 // MGTUpdate MGT生长,给定新的buckets,返回更新后的MGT
-func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]interface{}) *MGT {
+func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]interface{}) {
 	//跳转到此函数时mgt已经加写锁，因此任何查询、插入等操作都无需额外锁操作
 	if mgt.Root == nil {
-		return mgt
+		return
 	}
 	var nodePath []*MGTNode
 	//如果newBuckets中只有一个bucket，则说明没有发生分裂，只更新nodePath中所有的哈希值
 	//连环分裂至少需要第一层有rdx个桶，因此只需要判断第一层是不是一个桶就知道bucketSs里是不是只有一个桶
 	if newBucketSs == nil {
+		// 如果newBucketSs是nil，说明是批量提交，对所有脏节点进行哈希重新计算，mgtRootHash也会被更新
 		mgt.MGTBatchFix(db, cache)
-		return mgt
+		return
 	}
 	if len(newBucketSs[0]) == 1 {
 		bk := newBucketSs[0][0]
@@ -548,7 +556,7 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 			}
 		}
 	}
-	return mgt
+	return
 }
 
 // MGTGrow MGT生长,给定旧bucketKey和新的buckets,返回更新后的MGT

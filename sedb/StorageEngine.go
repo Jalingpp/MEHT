@@ -253,6 +253,26 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, primaryDb *leveldb.DB, secon
 	return nil, nil, nil
 }
 
+func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
+	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
+		fmt.Printf("非主键索引类型siMode设置错误\n")
+		return
+	}
+	//插入主键索引
+	//如果是第一次插入
+	if se.primaryIndex == nil { // 没有主索引说明没有交易需要批量提交
+		return
+	}
+	if se.secondaryIndexMode == "mpt" { //插入mpt
+		//目前没有实现mpt的批量提交
+	} else if se.secondaryIndexMode == "meht" { //插入meht
+		se.MEHTBatchCommit(secondaryDb)
+	} else if se.secondaryIndexMode == "mbt" {
+		//目前没有实现mpt的批量提交
+	}
+	return
+}
+
 // InsertIntoMPT 插入非主键索引
 func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
 	//如果是第一次插入
@@ -318,6 +338,16 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (stri
 	return values, mbtProof
 }
 
+func (se *StorageEngine) MEHTBatchCommit(db *leveldb.DB) {
+	if se.secondaryIndexMeht == nil { // 没有辅助索引说明没有交易需要批量提交
+		return
+	}
+	// 批量更新mgt，正式提交
+	se.secondaryIndexMeht.MGTBatchCommit(db)
+	// 批量更新会更新mgt的rootHash,因此需要更新se的辅助索引根哈希
+	se.secondaryIndexMeht.UpdateMEHTToDB(db)
+}
+
 // InsertIntoMEHT 插入非主键索引
 func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
 	//如果是第一次插入
@@ -342,8 +372,8 @@ func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (str
 		// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
 		//_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
 		_, newValues, newProof := se.secondaryIndexMeht.Insert(kvPair, db)
-		//更新meht到db
-		se.secondaryIndexMeht.UpdateMEHTToDB(db)
+		//本来是需要更新meht到db，但是现在是批量插入，mgtHash是脏的，所以更新没有意义
+		//se.secondaryIndexMeht.UpdateMEHTToDB(db)
 		return newValues, newProof
 	}
 	return values, se.secondaryIndexMeht.GetQueryProof(bucket, segKey, isSegExist, index, db)

@@ -103,6 +103,13 @@ func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	return sedb.se
 }
 
+func (sedb *SEDB) BatchCommit() {
+	if sedb.se == nil {
+		return
+	}
+	sedb.se.BatchCommit(sedb.secondaryDb)
+}
+
 // InsertKVPair 向SEDB中插入一条记录,返回插入证明
 func (sedb *SEDB) InsertKVPair(kvPair util.KVPair) *SEDBProof {
 	//如果是第一次插入

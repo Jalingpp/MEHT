@@ -266,7 +266,7 @@ func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
 	} else if se.secondaryIndexMode == "meht" { //插入meht
 		se.MEHTBatchCommit(secondaryDb)
 	} else if se.secondaryIndexMode == "mbt" {
-		//目前没有实现mpt的批量提交
+		se.MBTBatchCommit(secondaryDb)
 	}
 	return
 }
@@ -301,6 +301,15 @@ func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (stri
 		return "", nil
 	}
 	return values, mptProof
+}
+
+func (se *StorageEngine) MBTBatchCommit(db *leveldb.DB) {
+	if se.secondaryIndexMbt == nil { // 没有辅助索引说明没有交易需要批量提交
+		return
+	}
+	// 批量更新mgt，正式提交
+	secondaryIndex := se.secondaryIndexMbt
+	secondaryIndex.MBTBatchFix(db)
 }
 
 // InsertIntoMBT 插入非主键索引

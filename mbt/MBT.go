@@ -135,48 +135,54 @@ func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
 }
 
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
-	mbt.GetRoot(db)            //保证根不是nil
-	oldValueAddedFlag := false //防止读操作在已获得写锁的情况下获取锁
-	mbt.latch.Lock()
-	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db, &oldValueAddedFlag)
-	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db) //由于结构不变，因此根永远不会变动，变动的只会是根哈希，因此只需要向上更新mbt的树根哈希即可
-	mbt.latch.Unlock()
+	mbt.GetRoot(db) //保证根不是nil
+	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db)
+	//mbt.UpdateMBTInDB(mbt.Root.nodeHash, db) //由于结构不变，因此根永远不会变动，变动的只会是根哈希，因此只需要向上更新mbt的树根哈希即可
 }
 
-func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPair, cNode *MBTNode, db *leveldb.DB, flag *bool) {
-	cNode.latch.Lock()
-	defer cNode.latch.Unlock()
+func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPair, cNode *MBTNode, db *leveldb.DB) {
 	key := kvPair.GetKey()
-	if flag != nil && !(*flag) { //只在最上层root阶段获取当前视图下mpt存有的value，保证获取的值最新
-		oldVal, _ := mbt.QueryByKey(key, path, db, true)
+	if level == len(path)-1 { //当前节点是叶节点
+		//只锁叶子节点，其余路径不锁
+		cNode.latch.Lock()
+		defer cNode.latch.Unlock()
+		var oldVal string
+		var pos = -1
+		for idx, kv := range cNode.bucket { //全桶扫描
+			if kv.GetKey() == key {
+				oldVal = kv.GetValue()
+				pos = idx
+				break
+			}
+		}
 		newVal := kvPair.GetValue()
 		kvPair.SetValue(oldVal)
 		isChange := kvPair.AddValue(newVal)
 		if !isChange { //重复插入，直接返回
 			return
 		}
-		*flag = true //其余层节点无需查询最新值
-	}
-	if level == len(path)-1 { //当前节点是叶节点
-		isAdded := false
-		for i, kv := range cNode.bucket { //有则追加
-			if kv.GetKey() == key {
-				cNode.bucket[i] = kvPair
-				isAdded = true
-				break
-			}
-		}
-		if !isAdded { //无则新建
+		if pos != -1 { //key有则用新值覆盖
+			cNode.bucket[pos] = kvPair
+		} else { //无则新建
 			cNode.bucket = append(cNode.bucket, kvPair)
 			cNode.num++
 			sort.Slice(cNode.bucket, func(i, j int) bool { //保证全局有序
 				return strings.Compare(cNode.bucket[i].GetKey(), cNode.bucket[j].GetKey()) <= 0
 			})
 		}
-		UpdateMBTNodeHash(cNode, -1, db, mbt.cache) //更新节点哈希并更新节点到db
+		cNode.UpdateMBTNodeHash(db, mbt.cache) //更新节点哈希并更新节点到db
+		tmpNode := cNode.parent
+		for tmpNode != nil {
+			if tmpNode == nil || tmpNode.isDirty {
+				break
+			}
+			tmpNode.isDirty = true
+			tmpNode = tmpNode.parent
+		}
 	} else {
-		mbt.RecursivelyInsertMBTNode(path, level+1, kvPair, cNode.subNodes[path[level+1]], db, flag)
-		UpdateMBTNodeHash(cNode, path[level+1], db, mbt.cache) //更新己方保存的下层节点哈希并更新节点到db
+		nextNode := cNode.GetSubNode(path[level+1], db, mbt.cache)
+		mbt.RecursivelyInsertMBTNode(path, level+1, kvPair, nextNode, db)
+		//UpdateMBTNodeHash(cNode, path[level+1], db, mbt.cache) //更新己方保存的下层节点哈希并更新节点到db
 	}
 }
 
@@ -193,11 +199,11 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cNode
 	if cNode == nil { //找不到
 		return "", &MBTProof{false, nil}
 	}
-	if !isLockFree { //用于防止已获得写锁的读操作被自身写锁互斥
-		cNode.latch.RLock()
-		defer cNode.latch.RUnlock()
-	}
 	if level == len(path)-1 { //当前节点是叶节点
+		if !isLockFree { //用于防止已获得写锁的读操作被自身写锁互斥
+			cNode.latch.RLock()
+			defer cNode.latch.RUnlock()
+		}
 		proofElement := NewProofElement(level, 0, cNode.name, cNode.nodeHash, nil, nil)
 		for _, kv := range cNode.bucket { //全桶扫描
 			if kv.GetKey() == key {
@@ -288,6 +294,45 @@ func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
 		panic(err)
 	}
 	mbt.updateLatch.Unlock()
+}
+
+// MBTBatchFix 对根节点的所有孩子节点做并发，调用递归函数更新脏节点
+func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
+	if mbt.Root == nil || !mbt.Root.isDirty {
+		return
+	}
+	wG := sync.WaitGroup{}
+	for idx, child := range mbt.Root.subNodes {
+		if child == nil || !child.isDirty {
+			continue
+		}
+		wG.Add(1)
+		child_ := child
+		go func() {
+			MBTBatchFixFoo(child_, db, mbt.cache)
+		}()
+		mbt.Root.dataHashes[idx] = child.nodeHash
+	}
+	wG.Wait()
+	mbt.Root.UpdateMBTNodeHash(db, mbt.cache)
+	mbt.Root.isDirty = false
+	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
+}
+
+// MBTBatchFixFoo 递归更新脏节点
+func MBTBatchFixFoo(mbtNode *MBTNode, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
+	if mbtNode == nil || !mbtNode.isDirty {
+		return
+	}
+	for idx, child := range mbtNode.subNodes {
+		if child == nil || !child.isDirty {
+			continue
+		}
+		MBTBatchFixFoo(child, db, cache)
+		mbtNode.dataHashes[idx] = child.nodeHash
+	}
+	mbtNode.UpdateMBTNodeHash(db, cache)
+	mbtNode.isDirty = false
 }
 
 func (mbt *MBT) PurgeCache() {

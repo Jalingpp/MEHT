@@ -17,12 +17,14 @@ type MBTNode struct {
 	nodeHash []byte
 	name     []byte
 
+	parent     *MBTNode
 	subNodes   []*MBTNode
 	dataHashes [][]byte
 
-	isLeaf bool
-	bucket []util.KVPair
-	num    int // num of kvPairs in bucket
+	isLeaf  bool
+	isDirty bool
+	bucket  []util.KVPair
+	num     int // num of kvPairs in bucket
 
 	latch       sync.RWMutex
 	updateLatch sync.Mutex
@@ -31,11 +33,14 @@ type MBTNode struct {
 func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bool, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) (ret *MBTNode) {
 	//由于MBT结构固定，因此此函数只会在MBt初始化时被调用，因此此时dataHashes一定为空，此时nodeHash一定仅包含name
 	if isLeaf {
-		ret = &MBTNode{name, name, subNodes, dataHashes, isLeaf, make([]util.KVPair, 0),
+		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, make([]util.KVPair, 0),
 			0, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		ret = &MBTNode{name, name, subNodes, dataHashes, isLeaf, nil, -1,
+		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, nil, -1,
 			sync.RWMutex{}, sync.Mutex{}}
+	}
+	for _, node := range ret.subNodes {
+		node.parent = ret
 	}
 	if cache != nil {
 		cache.Add(string(ret.nodeHash), ret)
@@ -56,46 +61,46 @@ func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[s
 		if cache != nil {
 			if node, ok = cache.Get(string(mbtNode.dataHashes[index])); ok {
 				mbtNode.subNodes[index] = node
+				node.parent = mbtNode
 			}
 		}
 		if !ok {
 			if nodeString, err := db.Get(mbtNode.dataHashes[index], nil); err == nil {
 				node, _ = DeserializeMBTNode(nodeString)
 				mbtNode.subNodes[index] = node
+				node.parent = mbtNode
 			}
 		}
 	}
 	return mbtNode.subNodes[index]
 }
 
-func UpdateMBTNodeHash(node *MBTNode, dirtyNodeIdx int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
+func (mbtNode *MBTNode) UpdateMBTNodeHash(db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
 	if cache != nil { //删除旧值
-		cache.Remove(string(node.nodeHash))
+		cache.Remove(string(mbtNode.nodeHash))
 	}
-	if err := db.Delete(node.nodeHash, nil); err != nil {
+	if err := db.Delete(mbtNode.nodeHash, nil); err != nil {
 		fmt.Println("Error in UpdateMBTNodeHash: ", err)
 	}
-	nodeHash := make([]byte, len(node.name))
-	copy(nodeHash, node.name)
-	if node.isLeaf {
+	nodeHash := make([]byte, len(mbtNode.name))
+	copy(nodeHash, mbtNode.name)
+	if mbtNode.isLeaf {
 		dataHash := make([]byte, 0)
-		for _, kv := range node.bucket {
+		for _, kv := range mbtNode.bucket {
 			dataHash = append(dataHash, []byte(kv.GetValue())...)
 		}
 		dataHash_ := sha256.Sum256(dataHash)
-		node.dataHashes[0] = dataHash_[:]
-	} else {
-		node.dataHashes[dirtyNodeIdx] = node.subNodes[dirtyNodeIdx].nodeHash
+		mbtNode.dataHashes[0] = dataHash_[:]
 	}
-	for _, hash := range node.dataHashes {
+	for _, hash := range mbtNode.dataHashes {
 		nodeHash = append(nodeHash, hash...)
 	}
 	newHash := sha256.Sum256(nodeHash)
-	node.nodeHash = newHash[:]
+	mbtNode.nodeHash = newHash[:]
 	if cache != nil { //存入新值
-		cache.Add(string(node.nodeHash), node)
+		cache.Add(string(mbtNode.nodeHash), mbtNode)
 	} else {
-		if err := db.Put(node.nodeHash, SerializeMBTNode(node), nil); err != nil {
+		if err := db.Put(mbtNode.nodeHash, SerializeMBTNode(mbtNode), nil); err != nil {
 			log.Fatal("Insert MBTNode to DB error:", err)
 		}
 	}
@@ -147,8 +152,8 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		bucket = append(bucket, *util.NewKVPair(bk.Key, bk.Value))
 	}
 	if seMBTNode.IsLeaf {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, dataHashes, true, bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, nil, dataHashes, true, false, bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, make([]*MBTNode, len(dataHashes)), dataHashes, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(dataHashes)), dataHashes, false, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }

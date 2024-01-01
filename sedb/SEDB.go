@@ -111,7 +111,7 @@ func (sedb *SEDB) BatchCommit() {
 }
 
 // InsertKVPair 向SEDB中插入一条记录,返回插入证明
-func (sedb *SEDB) InsertKVPair(kvPair util.KVPair) *SEDBProof {
+func (sedb *SEDB) InsertKVPair(kvPair util.KVPair, isUpdate bool) *SEDBProof {
 	//如果是第一次插入
 	for sedb.GetStorageEngine() == nil && sedb.latch.TryLock() { // 只允许一个线程新建se
 		if sedb.se != nil { //可能在在TryLock之前刚好有se已经被实例化，因此需要判断是否还需要创建se
@@ -127,7 +127,7 @@ func (sedb *SEDB) InsertKVPair(kvPair util.KVPair) *SEDBProof {
 	} // 其余线程等待se创建
 	//向StorageEngine中插入一条记录
 	//primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvPair, sedb.db)
-	sedb.GetStorageEngine().Insert(kvPair, sedb.primaryDb, sedb.secondaryDb)
+	sedb.GetStorageEngine().Insert(kvPair, isUpdate, sedb.primaryDb, sedb.secondaryDb)
 	//更新seHash，并将se更新至db
 	//sedb.se.UpdateStorageEngineToDB(sedb.primaryDb) // 保证sedb留存的seHash与se实际的Hash一致
 	//sedb.updateLatch.Lock()
@@ -166,7 +166,7 @@ func createWorkerPool(numOfWorker int, sedb *SEDB, primaryKeyCh chan string, loc
 // 定义工作线程的具体工作事务
 func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan string, lock *sync.Mutex, queryResult *[]*util.KVPair, primaryProof *[]*mpt.MPTProof) {
 	for primaryKey := range primaryKeyCh { //等待工作分发，直至管道被关闭，线程结束
-		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb, false)
+		qV, pProof := sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).QueryByKey(primaryKey, sedb.primaryDb)
 		//用qV和primaryKeys[i]构造一个kvPair
 		kvPair := util.NewKVPair(primaryKey, qV)
 		lock.Lock()
@@ -195,7 +195,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 	var lock sync.Mutex
 	primaryKeyCh := make(chan string)
 	if sedb.siMode == "mpt" {
-		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(HexKeyword, sedb.secondaryDb, false)
+		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(HexKeyword, sedb.secondaryDb)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			//sum++

@@ -100,7 +100,7 @@ func main() {
 				}
 			}
 			st := time.Now()
-			seDB.InsertKVPair(kvPair)
+			seDB.InsertKVPair(kvPair, false)
 			du := time.Since(st)
 			curFinishNum.lock.Lock()
 			curFinishNum.number++

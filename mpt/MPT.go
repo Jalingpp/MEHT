@@ -29,7 +29,7 @@ import (
 
 type MPT struct {
 	rootHash []byte         //MPT的哈希值，对根节点哈希值哈希得到
-	root     *ShortNode     //根节点
+	root     *FullNode      //根节点
 	cache    *[]interface{} // cache[0], cache[1] represent cache of shortNode and fullNode respectively.
 	// the key of any node type is its nodeHash in the form of string
 	cacheEnable bool
@@ -38,7 +38,7 @@ type MPT struct {
 }
 
 // GetRoot 获取MPT的根节点，如果为nil，则从数据库中查询
-func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
+func (mpt *MPT) GetRoot(db *leveldb.DB) *FullNode {
 	//如果当前MPT的root为nil，则从数据库中查询
 	if mpt.root == nil && mpt.rootHash != nil && mpt.latch.TryLock() { // 只允许一个线程重构mpt树根
 		if mpt.root != nil { //防止root在TryLock之前被其他线程重构完毕，导致重复重构
@@ -46,7 +46,7 @@ func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {
 			return mpt.root
 		}
 		if mptRoot, _ := db.Get(mpt.rootHash, nil); len(mptRoot) != 0 {
-			mpt.root, _ = DeserializeShortNode(mptRoot)
+			mpt.root, _ = DeserializeFullNode(mptRoot)
 		}
 		mpt.latch.Unlock()
 	}
@@ -77,55 +77,87 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 }
 
 // Insert 插入一个KVPair到MPT中，返回新的根节点的哈希值
-func (mpt *MPT) Insert(kvPair util.KVPair, db *leveldb.DB) {
+func (mpt *MPT) Insert(kvPair util.KVPair, db *leveldb.DB, priMpt *MPT, flag bool) (string, bool) {
+	isPrimary := priMpt != nil
 	//判断是否为第一次插入
 	for mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
 		if mpt.root != nil { //防止root在TryLock前已经被其他线程创建，导致重复创建
 			mpt.latch.Unlock()
 			break
 		}
-		//创建一个ShortNode
-		newRoot := NewShortNode("", true, kvPair.GetKey(), nil, []byte(kvPair.GetValue()), db, mpt.cache)
-		//更新mpt根哈希并更新到数据库
-		mpt.UpdateMPTInDB(newRoot, db)
+		if !isPrimary && priMpt.root != nil { //防止主索引已经创建了树根，但是当前索引还未创建树根，导致要修改的值在上一个线程还没有插入到当前索引中因此被误认为修改了空值，导致修改的时候没有删掉旧值
+			mpt.latch.Unlock()
+			break
+		}
+		//创建一个FullNode
+		children := [16]*ShortNode{}
+		for i := 0; i < 16; i++ {
+			children[i] = nil
+		}
+		mpt.root = NewFullNode(children, nil, db, mpt.cache)
 		mpt.latch.Unlock()
-		return
 	}
 	for mpt.root == nil {
 	} // 等待最先拿到mpt锁的线程新建一个树根
-	//如果不是第一次插入，递归插入
-	oldValueAddedFlag := false //防止读操作在已获得写锁的情况下获取锁
-	mpt.latch.Lock()
-	newRoot := mpt.RecursiveInsertShortNode("", kvPair.GetKey(), []byte(kvPair.GetValue()), mpt.GetRoot(db), db, &oldValueAddedFlag)
+	_, oldValue, needDelete := mpt.RecursiveInsertFullNode("", kvPair.GetKey(), []byte(kvPair.GetValue()), mpt.GetRoot(db), db, isPrimary, flag)
 	//更新mpt根哈希并更新到数据库
-	mpt.UpdateMPTInDB(newRoot, db)
-	mpt.latch.Unlock()
+	//mpt.UpdateMPTInDB(newRoot, db)
+	return oldValue, needDelete
 }
 
 // RecursiveInsertShortNode 递归插入当前MPT Node
-func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cNode *ShortNode, db *leveldb.DB, flag *bool) *ShortNode {
-	//如果当前节点是叶子节点
-	cNode.latch.Lock()
-	defer cNode.latch.Unlock()
-	if flag != nil && !(*flag) { //只在最上层root阶段获取当前视图下mpt存有的value，保证获取的值最新
-		val, _ := mpt.QueryByKey(prefix+suffix, db, true)
-		toAdd := util.NewKVPair(prefix+suffix, val)
-		isChange := toAdd.AddValue(string(value))
-		if !isChange { //重复插入，直接返回
-			return mpt.root
-		}
-		value = []byte(toAdd.GetValue())
-		*flag = true //其余层节点无需查询最新值
-	}
-	if cNode.isLeaf {
+func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cNode *ShortNode, db *leveldb.DB, isPrimary bool, flag bool) (*ShortNode, string, bool) {
+	//由于该节点的FullNode父节点的孩子锁保证插入串行化，因此不需要再加锁
+	//cNode.latch.RLock()
+	//defer cNode.latch.RUnlock()
+	if cNode.isLeaf { //如果当前节点是叶子节点
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if strings.Compare(cNode.suffix, suffix) == 0 {
-			if !bytes.Equal(cNode.value, value) {
-				cNode.value = value
-				UpdateShortNodeHash(cNode, db, mpt.cache)
+			var isChange bool
+			if !isPrimary { //如果不是主索引，需要查询最新值，并追加要插入的值，否则直接用新值覆盖
+				toAdd := util.NewKVPair(prefix+suffix, string(cNode.value))
+				if flag { //非主索引代表删除，主索引代表需记录替换的旧值
+					isChange = toAdd.DelValue(string(value))
+				} else {
+					if cNode.toDelMap[string(value)] > 0 { //只有辅助索引才有延迟删除的情况
+						cNode.toDelMap[string(value)]--
+						return cNode, "", false
+					}
+					isChange = toAdd.AddValue(string(value))
+				}
+				if !isChange { //无变化，直接返回
+					if flag { //删除早于插入，因此记录要删除的值
+						cNode.toDelMap[string(value)]++
+					}
+					return cNode, "", false
+				}
+				//旧值追加/删除新值后的值
+				value = []byte(toAdd.GetValue())
+			} else {
+				isChange = false //判断是否有值被替换
 			}
-			return cNode
+			var oldValue string
+			if !bytes.Equal(cNode.value, value) {
+				isChange = true
+				oldValue = string(cNode.value)
+				cNode.value = value
+				cNode.UpdateShortNodeHash(db, mpt.cache)
+			}
+			if isPrimary && flag { //主索引且是更新，则记录替换掉的旧值
+				return cNode, oldValue, isChange
+			} else {
+				return cNode, "", false
+			}
 		} else {
+			if !isPrimary {
+				if flag { //若删除，则一定找不到要删除的值，延迟删除
+					cNode.toDelMap[string(value)]++
+					return cNode, "", false
+				} else if cNode.toDelMap[string(value)] > 0 { //只有辅助索引才有延迟删除的情况
+					cNode.toDelMap[string(value)]-- //晚插入的待删除旧值的插入操作被跳过，等效于删除了旧值
+					return cNode, "", false
+				}
+			}
 			//获取两个suffix的共同前缀
 			comPrefix := util.CommPrefix(cNode.suffix, suffix)
 			//如果共同前缀的长度等于当前节点的suffix的长度
@@ -138,37 +170,25 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newBranch := NewFullNode(children, cNode.value, db, mpt.cache)
 				//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
-				return newExtension
+				return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 			} else if len(comPrefix) == len(suffix) {
 				//如果共同前缀的长度等于suffix的长度
-				//更新当前节点的prefix和suffix，nodeHash
+				//更新当前节点的prefix和suffix，nodeHash不变
 				cNode.prefix = cNode.prefix + cNode.suffix[0:len(comPrefix)+1]
 				cNode.suffix = cNode.suffix[len(comPrefix)+1:]
-				UpdateShortNodeHash(cNode, db, mpt.cache)
 				//新建一个FullNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
 				newBranch := NewFullNode(children, value, db, mpt.cache)
 				//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
-				return newExtension
+				return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 			} else {
 				//新建一个LeafNode,如果suffix在除去comPrefix+1个i字节后没有字节了，则suffix为nil，否则为剩余字节
-				var newSuffix1 string
-				if len(suffix) > len(comPrefix)+1 {
-					newSuffix1 = suffix[len(comPrefix)+1:]
-				} else {
-					newSuffix1 = ""
-				}
-				leafNode := NewShortNode(prefix+suffix[0:len(comPrefix)+1], true, newSuffix1, nil, value, db, mpt.cache)
-				//更新当前节点的prefix和suffix，nodeHash
+				leafNode := NewShortNode(prefix+suffix[0:len(comPrefix)+1], true, suffix[len(comPrefix)+1:], nil, value, db, mpt.cache)
+				//更新当前节点的prefix和suffix，nodeHash不变
 				cNode.prefix = cNode.prefix + cNode.suffix[0:len(comPrefix)+1]
-				if len(cNode.suffix) > len(comPrefix)+1 {
-					cNode.suffix = cNode.suffix[len(comPrefix)+1:]
-				} else {
-					cNode.suffix = ""
-				}
-				UpdateShortNodeHash(cNode, db, mpt.cache)
+				cNode.suffix = cNode.suffix[len(comPrefix)+1:]
 				//创建一个BranchNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
@@ -176,7 +196,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newBranch := NewFullNode(children, nil, db, mpt.cache)
 				//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
-				return newExtension
+				return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 			}
 		}
 	} else {
@@ -188,47 +208,33 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		//如果当前节点的suffix被suffix完全包含
 		if len(commPrefix) == len(cNode.suffix) {
 			//递归插入到nextNode中
-			var newSuffix string
-			if len(suffix) == len(commPrefix) {
-				newSuffix = ""
-			} else {
-				newSuffix = suffix[len(commPrefix):]
-			}
-			fullNode := mpt.RecursiveInsertFullNode(prefix+commPrefix, newSuffix, value, cNode.GetNextNode(db, mpt.cache), db)
+			fullNode, oldValue, needDelete := mpt.RecursiveInsertFullNode(prefix+commPrefix, suffix[len(commPrefix):], value, cNode.GetNextNode(db, mpt.cache), db, isPrimary, flag)
 			cNode.nextNode = fullNode
+			fullNode.parent = cNode
 			cNode.nextNodeHash = fullNode.nodeHash
-			UpdateShortNodeHash(cNode, db, mpt.cache)
-			return cNode
+			//fullNode一定是脏的，因此当前节点标记为脏，延迟至批量更新哈希
+			cNode.isDirty = true
+			return cNode, oldValue, needDelete
 		} else if len(commPrefix) == len(suffix) {
 			//如果当前节点的suffix完全包含suffix
-			//更新当前节点的prefix和suffix，nodeHash
+			//更新当前节点的prefix和suffix
+			//当前节点的nodeHash不受影响，因为前后缀的拼接总是一样的
 			cNode.prefix = cNode.prefix + cNode.suffix[0:len(commPrefix)+1]
 			cNode.suffix = cNode.suffix[len(commPrefix)+1:] //当前节点在除去comPrefix后一定还有字节
-			UpdateShortNodeHash(cNode, db, mpt.cache)
 			//新建一个FullNode，包含当前节点和value
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
 			newBranch := NewFullNode(children, value, db, mpt.cache)
 			//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
-			return newExtension
+			//当前节点指向的FullNode中只有cNode，而cNode不是脏节点，且当前节点的哈希已经算上了value和cNode，因此不需要置为脏
+			return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 		} else {
-			//更新当前节点的prefix和suffix，nodeHash
+			//更新当前节点的prefix和suffix，但是nodeHash不受影响，因为前后缀的拼接总是一样的
 			cNode.prefix = cNode.prefix + cNode.suffix[0:len(commPrefix)+1]
-			if len(cNode.suffix) > len(commPrefix)+1 {
-				cNode.suffix = cNode.suffix[len(commPrefix)+1:]
-			} else {
-				cNode.suffix = ""
-			}
-			UpdateShortNodeHash(cNode, db, mpt.cache)
+			cNode.suffix = cNode.suffix[len(commPrefix)+1:]
 			//新建一个LeafNode
-			var newSuffix string
-			if len(suffix) > len(commPrefix)+1 {
-				newSuffix = suffix[len(commPrefix)+1:]
-			} else {
-				newSuffix = ""
-			}
-			newLeaf := NewShortNode(prefix+suffix[0:len(commPrefix)+1], true, newSuffix, nil, value, db, mpt.cache)
+			newLeaf := NewShortNode(prefix+suffix[0:len(commPrefix)+1], true, suffix[len(commPrefix)+1:], nil, value, db, mpt.cache)
 			//创建一个BranchNode
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
@@ -236,45 +242,79 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			newBranch := NewFullNode(children, nil, db, mpt.cache)
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为一个FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
-			return newExtension
+			return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 		}
 	}
 }
 
-func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []byte, cNode *FullNode, db *leveldb.DB) *FullNode {
-	//如果当前节点是FullNode
-	cNode.latch.Lock()
-	defer cNode.latch.Unlock()
+func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []byte, cNode *FullNode, db *leveldb.DB, isPrimary bool, flag bool) (*FullNode, string, bool) {
+	//如果当前节点是FullNode，返回的节点一定是脏节点
 	//如果len(suffix)==0，则value插入到当前FullNode的value中；否则，递归插入到children中
 	if len(suffix) == 0 {
+		cNode.latch.Lock() //只在修改当前节点值时才加写锁
+		defer cNode.latch.Unlock()
+		var isChange bool
+		if !isPrimary { //如果不是主索引，需要查询最新值，并追加要插入的值，否则直接用新值覆盖
+			toAdd := util.NewKVPair(prefix+suffix, string(cNode.value))
+			if flag { //非主索引代表删除，主索引代表需记录替换的旧值
+				isChange = toAdd.DelValue(string(value))
+			} else {
+				if cNode.toDelMap[string(value)] > 0 { //只有辅助索引才有延迟删除的情况
+					cNode.toDelMap[string(value)]--
+					return cNode, "", false
+				}
+				isChange = toAdd.AddValue(string(value))
+			}
+			if !isChange { //无变化，直接返回
+				if flag { //删除早于插入，因此记录要删除的值
+					cNode.toDelMap[string(value)]++
+				}
+				return cNode, "", false
+			}
+			//旧值追加/删除新值后的值
+			value = []byte(toAdd.GetValue())
+		} else {
+			isChange = false //判断是否有值被替换
+		}
+		var oldValue string
 		if !bytes.Equal(cNode.value, value) {
+			isChange = true
+			oldValue = string(cNode.value)
 			cNode.value = value
-			UpdateFullNodeHash(cNode, db, mpt.cache)
+			//如果当前节点是根节点，那么有可能value变更的同时孩子节点往后的数据也在同时变更，因此综合孩子节点哈希计算得到的哈希值可能不准确，因此干脆不计算，置为脏
+			cNode.isDirty = true
+			//UpdateFullNodeHash(cNode, db, mpt.cache)
 		}
-		return cNode
+		if isPrimary && flag { //主索引且是更新，则记录替换掉的旧值
+			return cNode, oldValue, isChange
+		} else {
+			return cNode, "", false
+		}
 	} else {
-		var childNode_ *ShortNode                                                            //新创建的childNode或递归查询返回的childNode
-		childNode := cNode.GetChildInFullNode(util.ByteToHexIndex(suffix[0]), db, mpt.cache) //当前fullNode中已有的childNode
-		var newSuffix string
-		if len(suffix) > 1 {
-			newSuffix = suffix[1:]
-		} else {
-			newSuffix = ""
-		}
+		var childNode_ *ShortNode //新创建的childNode或递归查询返回的childNode
+		var oldValue string
+		var needDelete bool
+		idx := util.ByteToHexIndex(suffix[0])
+		cNode.childLatch[idx].Lock()
+		defer cNode.childLatch[idx].Unlock()
+		childNode := cNode.GetChildInFullNode(idx, db, mpt.cache) //当前fullNode中已有的childNode
 		if childNode != nil {
-			childNode_ = mpt.RecursiveInsertShortNode(prefix+suffix[:1], newSuffix, value, childNode, db, nil)
+			childNode_, oldValue, needDelete = mpt.RecursiveInsertShortNode(prefix+suffix[:1], suffix[1:], value, childNode, db, isPrimary, flag)
 		} else {
-			childNode_ = NewShortNode(prefix+suffix[:1], true, newSuffix, nil, value, db, mpt.cache)
+			childNode_ = NewShortNode(prefix+suffix[:1], true, suffix[1:], nil, value, db, mpt.cache)
 		}
 		cNode.children[util.ByteToHexIndex(suffix[0])] = childNode_
-		cNode.childrenHash[util.ByteToHexIndex(suffix[0])] = childNode_.nodeHash
-		UpdateFullNodeHash(cNode, db, mpt.cache)
-		return cNode
+		childNode_.parent = cNode
+		//childNode_可能是脏节点,所以当前节点也是脏的
+		cNode.isDirty = true
+		//cNode.childrenHash[util.ByteToHexIndex(suffix[0])] = childNode_.nodeHash
+		//UpdateFullNodeHash(cNode, db, mpt.cache)
+		return cNode, oldValue, needDelete
 	}
 }
 
 // UpdateMPTInDB 用newRootHash更新mpt的哈希，并更新至DB中
-func (mpt *MPT) UpdateMPTInDB(newRoot *ShortNode, db *leveldb.DB) {
+func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {
 	//DB 中索引MPT的是其根哈希的哈希
 	mpt.updateLatch.Lock()
 	defer mpt.updateLatch.Unlock()
@@ -287,8 +327,7 @@ func (mpt *MPT) UpdateMPTInDB(newRoot *ShortNode, db *leveldb.DB) {
 		}
 	}
 	//更新mpt的root与rootHash
-	mpt.root = newRoot
-	mpt.rootHash = newRoot.nodeHash
+	mpt.rootHash = newRootHash
 	//计算新的mptHash
 	hash = sha256.Sum256(mpt.rootHash)
 	mptHash = hash[:]
@@ -338,7 +377,7 @@ func (mpt *MPT) PrintMPT(db *leveldb.DB) {
 	if root == nil {
 		return
 	}
-	mpt.RecursivePrintShortNode(root, 0, db)
+	mpt.RecursivePrintFullNode(root, 0, db)
 }
 
 // RecursivePrintShortNode 递归打印ShortNode
@@ -381,24 +420,22 @@ func (mpt *MPT) RecursivePrintFullNode(cNode *FullNode, level int, db *leveldb.D
 }
 
 // QueryByKey 根据key查询value，返回value和证明
-func (mpt *MPT) QueryByKey(key string, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
+func (mpt *MPT) QueryByKey(key string, db *leveldb.DB) (string, *MPTProof) {
 	//如果MPT为空，返回空
 	if root := mpt.GetRoot(db); root == nil {
 		return "", &MPTProof{false, 0, nil}
 	} else {
 		//递归查询
-		return mpt.RecursiveQueryShortNode(key, 0, 0, root, db, isLockFree)
+		return mpt.RecursiveQueryFullNode(key, 0, 0, root, db)
 	}
 }
 
-func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *ShortNode, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
+func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *ShortNode, db *leveldb.DB) (string, *MPTProof) {
 	if cNode == nil {
 		return "", &MPTProof{false, 0, nil}
 	}
-	if !isLockFree {
-		cNode.latch.RLock()
-		defer cNode.latch.RUnlock()
-	}
+	cNode.latch.RLock()
+	defer cNode.latch.RUnlock()
 	//当前节点是叶子节点
 	if cNode.isLeaf {
 		//构造当前节点的证明
@@ -416,7 +453,7 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *Sho
 		//当前节点的suffix被key的suffix完全包含，则继续递归查询nextNode，将子查询结果与当前结果合并返回
 		if cNode.suffix == "" || p < len(key) && len(util.CommPrefix(cNode.suffix, key[p:])) == len(cNode.suffix) {
 			nextNode := cNode.GetNextNode(db, mpt.cache)
-			valueStr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cNode.suffix), level+1, nextNode, db, isLockFree)
+			valueStr, mptProof := mpt.RecursiveQueryFullNode(key, p+len(cNode.suffix), level+1, nextNode, db)
 			proofElements := append(mptProof.GetProofs(), proofElement)
 			return valueStr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
 		} else {
@@ -425,11 +462,9 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *Sho
 	}
 }
 
-func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cNode *FullNode, db *leveldb.DB, isLockFree bool) (string, *MPTProof) {
-	if !isLockFree {
-		cNode.latch.RLock()
-		defer cNode.latch.RUnlock()
-	}
+func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cNode *FullNode, db *leveldb.DB) (string, *MPTProof) {
+	cNode.latch.RLock()
+	defer cNode.latch.RUnlock()
 	proofElement := NewProofElement(level, 2, "", "", cNode.value, nil, cNode.childrenHash)
 	if p >= len(key) {
 		//判断当前FullNode是否有value，如果有，构造存在证明返回
@@ -445,9 +480,58 @@ func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cNode *Full
 		return "", &MPTProof{false, level, []*ProofElement{proofElement}}
 	}
 	//如果当前FullNode的children中有对应的key[p]，则递归查询children，将子查询结果与当前结果合并返回
-	valueStr, mptProof := mpt.RecursiveQueryShortNode(key, p+1, level+1, childNodeP, db, isLockFree)
+	valueStr, mptProof := mpt.RecursiveQueryShortNode(key, p+1, level+1, childNodeP, db)
 	proofElements := append(mptProof.GetProofs(), proofElement)
 	return valueStr, &MPTProof{mptProof.GetIsExist(), mptProof.GetLevels(), proofElements}
+}
+
+func (mpt *MPT) MPTBatchFix(db *leveldb.DB) {
+	if mpt.root == nil || !mpt.root.isDirty {
+		return
+	}
+	wG := sync.WaitGroup{}
+	for idx, child := range mpt.root.children {
+		if child != nil && !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
+			continue
+		}
+		wG.Add(1)
+		child_ := child
+		go func() {
+			shortNodeBatchFixFoo(child_, db, mpt.cache)
+			wG.Done()
+		}()
+		mpt.root.childrenHash[idx] = child_.nodeHash
+	}
+	wG.Wait()
+	mpt.root.UpdateFullNodeHash(db, mpt.cache)
+	mpt.root.isDirty = false
+	mpt.UpdateMPTInDB(mpt.root.nodeHash, db)
+}
+
+// shortNodeBatchFixFoo 递归批量更新ShortNode
+func shortNodeBatchFixFoo(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
+	if sn == nil || !sn.isDirty {
+		return
+	}
+	nextNode := sn.GetNextNode(db, cache)
+	fullNodeBatchFixFoo(nextNode, db, cache)
+	sn.nextNodeHash = nextNode.nodeHash
+	sn.UpdateShortNodeHash(db, cache)
+	sn.isDirty = false
+}
+
+// fullNodeBatchFixFoo 递归批量更新FullNode
+func fullNodeBatchFixFoo(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
+	if fn == nil || !fn.isDirty {
+		return
+	}
+	for i := range fn.children {
+		childNode := fn.GetChildInFullNode(i, db, cache)
+		shortNodeBatchFixFoo(childNode, db, cache)
+		fn.childrenHash[i] = childNode.nodeHash
+	}
+	fn.UpdateFullNodeHash(db, cache)
+	fn.isDirty = false
 }
 
 // PrintQueryResult 打印查询结果

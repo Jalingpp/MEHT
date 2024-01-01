@@ -23,10 +23,14 @@ import (
 
 type FullNode struct {
 	nodeHash     []byte         //当前节点的哈希值,由childrenHash计算得到
+	parent       *ShortNode     //父节点
 	children     [16]*ShortNode // children的指针，0-15表示0-9,a-f
 	childrenHash [16][]byte     // children的哈希值
 	value        []byte         // 以前面ExtensionNode的prefix+suffix为key的value
+	isDirty      bool           //是否修改但未提交
+	toDelMap     map[string]int //因为更新而待删除的辅助索引值
 	latch        sync.RWMutex
+	childLatch   [16]sync.RWMutex
 	updateLatch  sync.Mutex
 }
 
@@ -63,12 +67,15 @@ type ShortNode struct {
 	nodeHash []byte //当前节点的哈希值，由prefix+suffix+value/nextNodeHash计算得到
 
 	prefix string //前缀
+	parent *FullNode
 
-	isLeaf       bool      //是否是叶子节点
-	suffix       string    //后缀，shared nibble（extension node）或key-end（leaf node）
-	nextNode     *FullNode //下一个FullNode节点(当前节点是extension node时)
-	nextNodeHash []byte    //下一个FullNode节点的哈希值
-	value        []byte    //value（当前节点是leaf node时）
+	isLeaf       bool           //是否是叶子节点
+	isDirty      bool           //是否修改但未提交
+	suffix       string         //后缀，shared nibble（extension node）或key-end（leaf node）
+	nextNode     *FullNode      //下一个FullNode节点(当前节点是extension node时)
+	nextNodeHash []byte         //下一个FullNode节点的哈希值
+	value        []byte         //value（当前节点是leaf node时）
+	toDelMap     map[string]int //因为更新而待删除的辅助索引值
 	latch        sync.RWMutex
 	updateLatch  sync.Mutex
 }
@@ -87,12 +94,14 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 			targetCache, _ := (*cache)[1].(*lru.Cache[string, *FullNode])
 			if nextNode, ok = targetCache.Get(string(sn.nextNodeHash)); ok {
 				sn.nextNode = nextNode
+				nextNode.parent = sn
 			}
 		}
 		if !ok {
 			if nextNodeString, error_ := db.Get(sn.nextNodeHash, nil); error_ == nil {
 				nextNode, _ = DeserializeFullNode(nextNodeString)
 				sn.nextNode = nextNode
+				nextNode.parent = sn
 			}
 		}
 		sn.updateLatch.Unlock()
@@ -104,18 +113,22 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 
 // NewShortNode creates a ShortNode and computes its nodeHash
 func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode, value []byte, db *leveldb.DB, cache *[]interface{}) *ShortNode {
+	sn := &ShortNode{nil, prefix, nil, isLeaf, false, suffix, nextNode, nil,
+		value, make(map[string]int), sync.RWMutex{}, sync.Mutex{}}
 	nodeHash := append([]byte(prefix), suffix...)
 	var nextNodeHash []byte
 	if isLeaf {
 		nodeHash = append(nodeHash, value...)
 		nextNodeHash = nil
 	} else {
+		nextNode.parent = sn
 		nextNodeHash = nextNode.nodeHash
 		nodeHash = append(nodeHash, nextNodeHash...)
 	}
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
-	sn := &ShortNode{nodeHash, prefix, isLeaf, suffix, nextNode, nextNodeHash, value, sync.RWMutex{}, sync.Mutex{}}
+	sn.nodeHash = nodeHash
+	sn.nextNodeHash = nextNodeHash
 	//将sn写入db中
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
@@ -130,7 +143,7 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 }
 
 // UpdateShortNodeHash 更新ShortNode的nodeHash
-func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
+func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	//先删除db中原有节点(考虑到新增的其他ShortNode可能与旧ShortNode的nodeHash相同，删除可能会丢失数据，所以注释掉)
 	err := db.Delete(sn.nodeHash, nil)
 	if err != nil {
@@ -160,18 +173,25 @@ func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
 func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[]interface{}) *FullNode {
 	var childrenHash [16][]byte
 	var nodeHash []byte
+	fn := &FullNode{nil, nil, children, childrenHash, value, false, make(map[string]int),
+		sync.RWMutex{}, [16]sync.RWMutex{}, sync.Mutex{}}
+	for i := 0; i < 16; i++ {
+		fn.childLatch[i] = sync.RWMutex{}
+	}
 	for i := 0; i < 16; i++ {
 		if children[i] == nil {
 			childrenHash[i] = nil
 		} else {
 			childrenHash[i] = children[i].nodeHash
+			children[i].parent = fn
 		}
 		nodeHash = append(nodeHash, childrenHash[i]...)
 	}
 	nodeHash = append(nodeHash, value...)
 	hash := sha256.Sum256(nodeHash)
 	nodeHash = hash[:]
-	fn := &FullNode{nodeHash, children, childrenHash, value, sync.RWMutex{}, sync.Mutex{}}
+	fn.nodeHash = nodeHash
+	fn.childrenHash = childrenHash
 	//将fn写入db中
 	if cache != nil {
 		targetCache, _ := ((*cache)[1]).(*lru.Cache[string, *FullNode])
@@ -186,7 +206,7 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[
 }
 
 // UpdateFullNodeHash updates the nodeHash of a FullNode
-func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
+func (fn *FullNode) UpdateFullNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	////先删除db中原有节点
 	//if err := db.Delete(fn.nodeHash, nil); err != nil {
 	//	fmt.Println("Delete FullNode from DB error:", err)
@@ -237,7 +257,8 @@ func DeserializeShortNode(sSnString []byte) (*ShortNode, error) {
 		fmt.Printf("DeserializeShortNode error: %v\n", err)
 		return nil, err
 	}
-	sn := &ShortNode{nil, ssn.Prefix, ssn.IsLeaf, ssn.Suffix, nil, nil, ssn.Value, sync.RWMutex{}, sync.Mutex{}}
+	sn := &ShortNode{nil, ssn.Prefix, nil, ssn.IsLeaf, false, ssn.Suffix, nil,
+		nil, ssn.Value, make(map[string]int), sync.RWMutex{}, sync.Mutex{}}
 	sn.nodeHash = ssn.NodeHash
 	sn.SetNextNodeHash(ssn.NextNodeHash)
 	return sn, nil
@@ -271,7 +292,11 @@ func DeserializeFullNode(sFnString []byte) (*FullNode, error) {
 	for i := 0; i < 16; i++ {
 		children[i] = nil
 	}
-	fn := &FullNode{sfn.NodeHash, children, sfn.ChildrenHash, sfn.Value, sync.RWMutex{}, sync.Mutex{}}
+	fn := &FullNode{sfn.NodeHash, nil, children, sfn.ChildrenHash, sfn.Value, false,
+		make(map[string]int), sync.RWMutex{}, [16]sync.RWMutex{}, sync.Mutex{}}
+	for i := 0; i < 16; i++ {
+		fn.childLatch[i] = sync.RWMutex{}
+	}
 	return fn, nil
 }
 
@@ -317,6 +342,7 @@ func (fn *FullNode) GetChildrenHash() [16][]byte {
 
 func (fn *FullNode) SetChild(index int, sn *ShortNode) {
 	fn.children[index] = sn
+	sn.parent = fn
 }
 
 func (fn *FullNode) GetValue() []byte {

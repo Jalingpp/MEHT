@@ -47,6 +47,21 @@ func (kv *KVPair) AddValue(newValue string) bool {
 	return true
 }
 
+func (kv *KVPair) DelValue(toDel string) bool {
+	if kv.value == "" {
+		return false
+	}
+	values := strings.Split(kv.value, ",")
+	for i := 0; i < len(values); i++ {
+		if values[i] == toDel {
+			values = append(values[:i], values[i+1:]...)
+			kv.value = strings.Join(values, ",")
+			return true
+		}
+	}
+	return false
+}
+
 func (kv *KVPair) DeleteValue(oldValue string) bool {
 	values := strings.Split(kv.value, ",")
 	//如果value中只有一个值

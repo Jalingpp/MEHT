@@ -303,15 +303,16 @@ func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
 	}
 	wG := sync.WaitGroup{}
 	for idx, child := range mbt.Root.subNodes {
-		if child == nil || !child.isDirty {
+		if child == nil || !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
 			continue
 		}
 		wG.Add(1)
 		child_ := child
 		go func() {
-			MBTBatchFixFoo(child_, db, mbt.cache)
+			mbtBatchFixFoo(child_, db, mbt.cache)
+			wG.Done()
 		}()
-		mbt.Root.dataHashes[idx] = child.nodeHash
+		mbt.Root.dataHashes[idx] = child_.nodeHash
 	}
 	wG.Wait()
 	mbt.Root.UpdateMBTNodeHash(db, mbt.cache)
@@ -319,8 +320,8 @@ func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
 	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
 
-// MBTBatchFixFoo 递归更新脏节点
-func MBTBatchFixFoo(mbtNode *MBTNode, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
+// mbtBatchFixFoo 递归更新脏节点
+func mbtBatchFixFoo(mbtNode *MBTNode, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
 	if mbtNode == nil || !mbtNode.isDirty {
 		return
 	}
@@ -328,7 +329,7 @@ func MBTBatchFixFoo(mbtNode *MBTNode, db *leveldb.DB, cache *lru.Cache[string, *
 		if child == nil || !child.isDirty {
 			continue
 		}
-		MBTBatchFixFoo(child, db, cache)
+		mbtBatchFixFoo(child, db, cache)
 		mbtNode.dataHashes[idx] = child.nodeHash
 	}
 	mbtNode.UpdateMBTNodeHash(db, cache)

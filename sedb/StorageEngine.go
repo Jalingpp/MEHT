@@ -174,7 +174,7 @@ func (se *StorageEngine) GetSecondaryIndexMeht(db *leveldb.DB) *meht.MEHT {
 }
 
 // Insert 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
-func (se *StorageEngine) Insert(kvPair util.KVPair, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
+func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *leveldb.DB, secondaryDb *leveldb.DB) (*mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {
 	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return nil, nil, nil
@@ -190,7 +190,7 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, primaryDb *leveldb.DB, secon
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
-	oldValue, oldPrimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvPair.GetKey(), primaryDb, false)
+	oldValue, oldPrimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvPair.GetKey(), primaryDb)
 	if oldValue == kvPair.GetValue() {
 		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
 		return oldPrimaryProof, nil, nil
@@ -198,10 +198,14 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, primaryDb *leveldb.DB, secon
 	runtime.GOMAXPROCS(1)
 	var wG sync.WaitGroup
 	wG.Add(2)
+	oldValueCh := make(chan string)
+	needDeleteCh := make(chan bool)
 	go func() {
 		defer wG.Done()
 		//将KV插入到主键索引中
-		se.primaryIndex.Insert(kvPair, primaryDb)
+		oldVal, needDelete := se.primaryIndex.Insert(kvPair, primaryDb, nil, isUpdate)
+		oldValueCh <- oldVal
+		needDeleteCh <- needDelete
 		se.updatePrimaryLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
 		se.primaryIndex.GetUpdateLatch().Lock()
 		piHash := sha256.Sum256(se.primaryIndex.GetRootHash())
@@ -221,7 +225,12 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, primaryDb *leveldb.DB, secon
 		//_, mptProof := se.InsertIntoMPT(reversedKV, db)
 		go func() { // 实际应该为返回值mptProof构建一个chan并等待输出
 			defer wG.Done()
-			se.InsertIntoMPT(reversedKV, secondaryDb)
+			se.InsertIntoMPT(reversedKV, secondaryDb, se.primaryIndex, false)
+			oldVal := <-oldValueCh
+			needDelete := <-needDeleteCh
+			if needDelete {
+				se.InsertIntoMPT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, se.primaryIndex, true)
+			}
 		}()
 		//打印插入结果
 		//fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
@@ -262,7 +271,7 @@ func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
 		return
 	}
 	if se.secondaryIndexMode == "mpt" { //插入mpt
-		//目前没有实现mpt的批量提交
+		se.MPTBatchCommit(secondaryDb)
 	} else if se.secondaryIndexMode == "meht" { //插入meht
 		se.MEHTBatchCommit(secondaryDb)
 	} else if se.secondaryIndexMode == "mbt" {
@@ -271,8 +280,18 @@ func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
 	return
 }
 
+// MPTBatchCommit 批量提交mpt
+func (se *StorageEngine) MPTBatchCommit(db *leveldb.DB) {
+	if se.secondaryIndexMpt == nil { // 没有辅助索引说明没有交易需要批量提交
+		return
+	}
+	// 批量更新mgt，正式提交
+	secondaryIndex := se.secondaryIndexMpt
+	secondaryIndex.MPTBatchFix(db)
+}
+
 // InsertIntoMPT 插入非主键索引
-func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (string, *mpt.MPTProof) {
+func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB, priMPT *mpt.MPT, flag bool) (string, *mpt.MPTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndexMpt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
@@ -283,26 +302,21 @@ func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB) (stri
 	for se.secondaryIndexMpt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	values, mptProof := se.secondaryIndexMpt.QueryByKey(kvPair.GetKey(), db, false)
-	//将原有values插入到kvPair中
-	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
-	isChange := insertedKV.AddValue(kvPair.GetValue())
-	//如果原有values中没有此value，则插入到mpt中
-	if isChange {
-		se.secondaryIndexMpt.Insert(kvPair, db)
-		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
-		se.secondaryIndexMpt.GetUpdateLatch().Lock()
-		seHash := sha256.Sum256(se.secondaryIndexMpt.GetRootHash())
-		se.secondaryIndexHashMpt = seHash[:]
-		se.secondaryIndexMpt.GetUpdateLatch().Unlock()
-		se.updateSecondaryLatch.Unlock()
-		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
-		//return newValues, newProof
-		return "", nil
-	}
-	return values, mptProof
+	//_, mptProof := se.secondaryIndexMpt.QueryByKey(kvPair.GetKey(), db, false)
+	se.secondaryIndexMpt.Insert(kvPair, db, priMPT, flag)
+	se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
+	se.secondaryIndexMpt.GetUpdateLatch().Lock()
+	seHash := sha256.Sum256(se.secondaryIndexMpt.GetRootHash())
+	se.secondaryIndexHashMpt = seHash[:]
+	se.secondaryIndexMpt.GetUpdateLatch().Unlock()
+	se.updateSecondaryLatch.Unlock()
+	//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
+	//return newValues, newProof
+	return "", nil
+	//return values, mptProof
 }
 
+// MBTBatchCommit 批量提交mbt
 func (se *StorageEngine) MBTBatchCommit(db *leveldb.DB) {
 	if se.secondaryIndexMbt == nil { // 没有辅助索引说明没有交易需要批量提交
 		return

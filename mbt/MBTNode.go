@@ -3,13 +3,11 @@ package mbt
 import (
 	"MEHT/util"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"log"
-	"strings"
 	"sync"
 )
 
@@ -110,24 +108,24 @@ func (mbtNode *MBTNode) UpdateMBTNodeHash(db *leveldb.DB, cache *lru.Cache[strin
 type SeMBTNode struct {
 	NodeHash   []byte
 	Name       []byte
-	DataHashes string
+	DataHashes [][]byte
 	IsLeaf     bool
 	Bucket     []util.SeKVPair
 }
 
 func SerializeMBTNode(node *MBTNode) []byte {
-	dataHashString := ""
-	if len(node.dataHashes) > 0 {
-		dataHashString += hex.EncodeToString(node.dataHashes[0])
-		for _, hash := range node.dataHashes[1:] {
-			dataHashString += "," + hex.EncodeToString(hash)
-		}
-	}
+	//dataHashString := ""
+	//if len(node.dataHashes) > 0 {
+	//	dataHashString += hex.EncodeToString(node.dataHashes[0])
+	//	for _, hash := range node.dataHashes[1:] {
+	//		dataHashString += "," + hex.EncodeToString(hash)
+	//	}
+	//}
 	Bucket := make([]util.SeKVPair, 0)
 	for _, bk := range node.bucket {
 		Bucket = append(Bucket, util.SeKVPair{Key: bk.GetKey(), Value: bk.GetValue()})
 	}
-	seMBTNode := &SeMBTNode{node.nodeHash, node.name, dataHashString, node.isLeaf, Bucket}
+	seMBTNode := &SeMBTNode{node.nodeHash, node.name, node.dataHashes, node.isLeaf, Bucket}
 	if jsonMBTNode, err := json.Marshal(seMBTNode); err != nil {
 		fmt.Printf("SerializeMBTNode error: %v\n", err)
 		return nil
@@ -142,21 +140,21 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		fmt.Printf("DeserializeMBTNode error: %v\n", err)
 		return nil, err
 	}
-	dataHashes := make([][]byte, 0)
-	dataHashStrings := strings.Split(seMBTNode.DataHashes, ",")
-	for i := 0; i < len(dataHashStrings); i++ {
-		dataHash, _ := hex.DecodeString(dataHashStrings[i])
-		dataHashes = append(dataHashes, dataHash)
-	}
+	//dataHashes := make([][]byte, 0)
+	//dataHashStrings := strings.Split(seMBTNode.DataHashes, ",")
+	//for i := 0; i < len(dataHashStrings); i++ {
+	//	dataHash, _ := hex.DecodeString(dataHashStrings[i])
+	//	dataHashes = append(dataHashes, dataHash)
+	//}
 	bucket := make([]util.KVPair, 0)
 	for _, bk := range seMBTNode.Bucket {
 		bucket = append(bucket, *util.NewKVPair(bk.Key, bk.Value))
 	}
 	if seMBTNode.IsLeaf {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, nil, dataHashes, true, false,
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, nil, seMBTNode.DataHashes, true, false,
 			bucket, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(dataHashes)), dataHashes, false,
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(seMBTNode.DataHashes)), seMBTNode.DataHashes, false,
 			false, nil, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }

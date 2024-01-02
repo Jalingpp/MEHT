@@ -179,6 +179,8 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 	wg.Done()
 }
 
+var sum = 0
+
 // QueryKVPairsByHexKeyword 根据十六进制的非主键HexKeyword查询完整的kvPair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
@@ -198,8 +200,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(HexKeyword, sedb.secondaryDb)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			//sum++
-			//fmt.Println("No such key in mpt!", "     ", sum)
+			sum++
+			fmt.Println("No such key in mpt!", "     ", sum)
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")
@@ -217,8 +219,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 		}(ch)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
-			//sum++
-			//fmt.Println("No such key in meht!", "     ", sum)
+			sum++
+			fmt.Println("No such key in meht!", "     ", sum)
 		} else {
 			primaryKeys := strings.Split(primaryKey, ",")
 			go generatePrimaryKey(primaryKeys, primaryKeyCh)
@@ -232,6 +234,8 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(HexKeyword, path, sedb.secondaryDb)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
+			sum++
+			fmt.Println("No such key in mbt!", "     ", sum)
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")

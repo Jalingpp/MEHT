@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"runtime"
 	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -160,6 +159,7 @@ func (se *StorageEngine) GetSecondaryIndexMeht(db *leveldb.DB) *meht.MEHT {
 			se.secondaryLatch.Unlock()
 			return se.secondaryIndexMeht
 		}
+		fmt.Println(se.secondaryIndexHashMeht)
 		if secondaryIndexString, _ := db.Get(se.secondaryIndexHashMeht, nil); len(secondaryIndexString) != 0 {
 			_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndexMeht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
@@ -195,7 +195,7 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
 		return oldPrimaryProof, nil, nil
 	}
-	runtime.GOMAXPROCS(1)
+	//runtime.GOMAXPROCS(1)
 	var wG sync.WaitGroup
 	wG.Add(2)
 	oldValueCh := make(chan string)
@@ -287,8 +287,10 @@ func (se *StorageEngine) MPTBatchCommit(db *leveldb.DB) {
 		return
 	}
 	// 批量更新mgt，正式提交
-	secondaryIndex := se.secondaryIndexMpt
-	secondaryIndex.MPTBatchFix(db)
+	se.secondaryIndexMpt.MPTBatchFix(db)
+	// 批量更新会更新mpt的rootHash,因此需要更新se的辅助索引根哈希
+	seHash := sha256.Sum256(se.secondaryIndexMpt.GetRootHash())
+	se.secondaryIndexHashMpt = seHash[:]
 }
 
 // InsertIntoMPT 插入非主键索引
@@ -305,16 +307,9 @@ func (se *StorageEngine) InsertIntoMPT(kvPair util.KVPair, db *leveldb.DB, priMP
 	//先查询得到原有value与待插入value合并
 	//_, mptProof := se.secondaryIndexMpt.QueryByKey(kvPair.GetKey(), db, false)
 	se.secondaryIndexMpt.Insert(kvPair, db, priMPT, flag)
-	se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
-	se.secondaryIndexMpt.GetUpdateLatch().Lock()
-	seHash := sha256.Sum256(se.secondaryIndexMpt.GetRootHash())
-	se.secondaryIndexHashMpt = seHash[:]
-	se.secondaryIndexMpt.GetUpdateLatch().Unlock()
-	se.updateSecondaryLatch.Unlock()
 	//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
 	//return newValues, newProof
 	return "", nil
-	//return values, mptProof
 }
 
 // MBTBatchCommit 批量提交mbt
@@ -323,8 +318,10 @@ func (se *StorageEngine) MBTBatchCommit(db *leveldb.DB) {
 		return
 	}
 	// 批量更新mgt，正式提交
-	secondaryIndex := se.secondaryIndexMbt
-	secondaryIndex.MBTBatchFix(db)
+	se.secondaryIndexMbt.MBTBatchFix(db)
+	// 批量更新会更新mbt的rootHash,因此需要更新se的辅助索引根哈希
+	seHash := sha256.Sum256(se.secondaryIndexMbt.GetRootHash())
+	se.secondaryIndexHashMbt = seHash[:]
 }
 
 // InsertIntoMBT 插入非主键索引
@@ -343,13 +340,6 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB, isDel
 	//path := mbt.ComputePath(se.secondaryIndexMbt.GetBucketNum(), se.secondaryIndexMbt.GetAggregation(), se.secondaryIndexMbt.GetGd(), kvPair.GetKey())
 	//values, mbtProof := se.secondaryIndexMbt.QueryByKey(kvPair.GetKey(), path, db, false)
 	se.secondaryIndexMbt.Insert(kvPair, db, isDelete)
-	se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
-	se.secondaryIndexMbt.GetUpdateLatch().Lock()
-	se.secondaryIndexHashMbt = se.secondaryIndexMbt.GetMBTHash()
-	se.secondaryIndexMbt.GetUpdateLatch().Unlock()
-	se.updateSecondaryLatch.Unlock()
-	//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
-	//return newValues, newProof
 	return "", nil
 	//return values, mbtProof
 }
@@ -360,8 +350,10 @@ func (se *StorageEngine) MEHTBatchCommit(db *leveldb.DB) {
 	}
 	// 批量更新mgt，正式提交
 	se.secondaryIndexMeht.MGTBatchCommit(db)
-	// 批量更新会更新mgt的rootHash,因此需要更新se的辅助索引根哈希
-	se.secondaryIndexMeht.UpdateMEHTToDB(db)
+	// 批量更新会更新mgt的rootHash,因此需要更新se的辅助索引根哈希,已经做过sha256
+	seHash := sha256.Sum256(se.secondaryIndexMeht.GetMgtHash())
+	fmt.Println(seHash)
+	se.secondaryIndexHashMeht = seHash[:]
 }
 
 // InsertIntoMEHT 插入非主键索引
@@ -488,10 +480,10 @@ type SeStorageEngine struct {
 	SeHash               []byte //搜索引擎的哈希值，由主索引根哈希和辅助索引根哈希计算得到
 	PrimaryIndexRootHash []byte // 主键索引的根哈希值
 
-	SecondaryIndexMode         string // 标识当前采用的非主键索引的类型，mpt或meht
-	SecondaryIndexRootHashMpt  []byte //mpt类型的非主键索引根哈希
-	SecondaryIndexRootHashMbt  []byte
-	SecondaryIndexRootHashMeht []byte
+	SecondaryIndexMode     string // 标识当前采用的非主键索引的类型，mpt或meht
+	SecondaryIndexHashMpt  []byte //mpt类型的非主键索引根哈希
+	SecondaryIndexHashMbt  []byte
+	SecondaryIndexHashMeht []byte
 
 	MBTArgs  []interface{}
 	MEHTArgs []interface{}
@@ -499,6 +491,7 @@ type SeStorageEngine struct {
 
 // SerializeStorageEngine 序列化存储引擎
 func SerializeStorageEngine(se *StorageEngine) []byte {
+	//fmt.Println("seSe: ", se.secondaryIndexHashMeht)
 	seSe := &SeStorageEngine{se.seHash, se.primaryIndexHash,
 		se.secondaryIndexMode, se.secondaryIndexHashMpt,
 		se.secondaryIndexHashMbt, se.secondaryIndexHashMeht,
@@ -519,10 +512,11 @@ func DeserializeStorageEngine(seString []byte, cacheEnable bool, cacheCapacity [
 		fmt.Printf("DeserializeStorageEngine error: %v\n", err)
 		return nil, err
 	}
+	//fmt.Println("dese: ", seSe.SecondaryIndexHashMeht)
 	se := &StorageEngine{seSe.SeHash, nil, seSe.PrimaryIndexRootHash, seSe.SecondaryIndexMode,
-		nil, seSe.SecondaryIndexRootHashMpt, nil,
-		seSe.SecondaryIndexRootHashMbt, nil,
-		seSe.SecondaryIndexRootHashMeht, seSe.MBTArgs, seSe.MEHTArgs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
+		nil, seSe.SecondaryIndexHashMpt, nil,
+		seSe.SecondaryIndexHashMbt, nil,
+		seSe.SecondaryIndexHashMeht, seSe.MBTArgs, seSe.MEHTArgs, cacheEnable, cacheCapacity, sync.RWMutex{}, sync.RWMutex{},
 		sync.Mutex{}, sync.Mutex{}}
 	return se, nil
 }

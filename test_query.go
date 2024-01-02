@@ -41,8 +41,9 @@ func main() {
 	allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
 		// PHI 代表分割分位数
 		queries := util.ReadQueryFromFile(dirPath, opNum)
-		for _, query := range queries {
+		for i, query := range queries {
 			queryCh <- query
+			fmt.Println(i)
 		}
 		close(queryCh)
 	}
@@ -143,7 +144,6 @@ func main() {
 	}
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
-			num = 1
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
 			mbtBucketNum := 1280
 			mbtAggregation := 16

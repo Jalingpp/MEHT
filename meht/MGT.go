@@ -295,7 +295,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 	}
 	//从根节点开始,逐层向下遍历,直到找到叶子节点
 	//如果该bucketKey对应的叶子节点未被缓存，则一直在subNodes下找，否则需要去cachedNodes里找
-	if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && !val.(bool) {
+	if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); !ok || !val.(bool) {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			if p == nil {
 				return nil
@@ -317,7 +317,6 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 			//获取当前节点的第identI号缓存子节点
 			cachedNode := p.GetCachedNode(bucketKey[identI], db, mgt.rdx, cache)
 			//判断缓存子节点是否是叶子
-			// ZYF ERROR
 			if cachedNode.isLeaf {
 				// 如果是叶子则比较是否与要找的bucketKey相同：相同则返回结果；不相同则p移动到第identI个子节点，切换为下一个identI。
 				if util.IntArrayToString(cachedNode.bucketKey, mgt.rdx) == util.IntArrayToString(bucketKey, mgt.rdx) {
@@ -527,6 +526,9 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 		nodePath[0].UpdateMGTNodeToDB(db, cache)
 		//更新所有父节点的nodeHashes,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
+			if i == 1 {
+				nodePath[1].dataHashes[bk.BucketKey[i-1]] = nodePath[0].nodeHash
+			}
 			//nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
 			//nodePath[i].UpdateMGTNodeToDB(db, cache)
 			// 一整条路径的值都会被修改为dirty，但是不会再重新计算哈希，因为这个操作会由batch调整的时候来做
@@ -599,11 +601,12 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	//更新父节点的child为新的父节点
 	if len(nodePath) == 1 { // 此处根节点哈希已经成功更新，因此不需要标为dirty
 		mgt.Root = newFatherNode
-		mgt.Root.UpdateMGTNodeToDB(db, cache)
+		//mgt.Root.UpdateMGTNodeToDB(db, cache)
 		return mgt
 	}
 	// 同一时刻一个桶只会有一个线程更新，因此对应的，这个mgtNode也只会被一个线程更新，因此此处不会被并发覆盖
 	nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
+	nodePath[1].dataHashes[oldBucketKey[0]] = newFatherNode.nodeHash
 	newFatherNode.parent = nodePath[1]
 	// 即使同一时刻有nodePath[1]的多个孩子节点都在更新，dirty也只会被置为true，不会有任何问题
 	nodePath[1].isDirty = true

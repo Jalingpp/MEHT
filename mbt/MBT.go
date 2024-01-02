@@ -22,7 +22,6 @@ type MBT struct {
 	bucketNum   int
 	aggregation int
 	gd          int
-	mbtHash     []byte
 	rootHash    []byte
 	Root        *MBTNode
 	cache       *lru.Cache[string, *MBTNode]
@@ -88,9 +87,7 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 			offset += parSize
 		}
 	}
-	rootHash := sha256.Sum256(root.nodeHash)
-	mbtHash := rootHash[:]
-	return &MBT{bucketNum, aggregation, gd, mbtHash, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+	return &MBT{bucketNum, aggregation, gd, root.nodeHash, root, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 }
 
 func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
@@ -112,10 +109,6 @@ func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
 
 func (mbt *MBT) GetRootHash() []byte {
 	return mbt.rootHash
-}
-
-func (mbt *MBT) GetMBTHash() []byte {
-	return mbt.mbtHash
 }
 
 func (mbt *MBT) GetBucketNum() int {
@@ -190,6 +183,9 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 		}
 		cNode.UpdateMBTNodeHash(db, mbt.cache) //更新节点哈希并更新节点到db
 		tmpNode := cNode.parent
+		if tmpNode != nil {
+			tmpNode.dataHashes[path[level]] = cNode.nodeHash
+		}
 		for tmpNode != nil {
 			if tmpNode == nil || tmpNode.isDirty {
 				break
@@ -301,12 +297,12 @@ func ComputeMBTRoot(value string, mbtProof *MBTProof) []byte {
 func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
 	hash := sha256.Sum256(newRootHash)
 	mbt.updateLatch.Lock()
-	if err := db.Delete(mbt.mbtHash, nil); err != nil {
+	oldHash := sha256.Sum256(mbt.rootHash)
+	if err := db.Delete(oldHash[:], nil); err != nil {
 		panic(err)
 	}
-	mbt.mbtHash = hash[:]
 	mbt.rootHash = newRootHash
-	if err := db.Put(mbt.mbtHash, SerializeMBT(mbt), nil); err != nil {
+	if err := db.Put(hash[:], SerializeMBT(mbt), nil); err != nil {
 		panic(err)
 	}
 	mbt.updateLatch.Unlock()
@@ -430,15 +426,13 @@ func DeserializeMBT(data []byte, db *leveldb.DB, cacheEnable bool, mbtNodeCC int
 		fmt.Printf("DeserializeMBT error: %v\n", err)
 		return nil, err
 	}
-	rootHash := sha256.Sum256(seMBT.MBTRootHash)
-	mbtHash := rootHash[:]
 	if cacheEnable {
 		c, _ := lru.NewWithEvict[string, *MBTNode](mbtNodeCC, func(k string, v *MBTNode) {
 			callBackFoo[string, *MBTNode](k, v, db)
 		})
-		mbt = &MBT{seMBT.BucketNum, seMBT.Aggregation, seMBT.Gd, mbtHash, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.BucketNum, seMBT.Aggregation, seMBT.Gd, seMBT.MBTRootHash, nil, c, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	} else {
-		mbt = &MBT{seMBT.BucketNum, seMBT.Aggregation, seMBT.Gd, mbtHash, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
+		mbt = &MBT{seMBT.BucketNum, seMBT.Aggregation, seMBT.Gd, seMBT.MBTRootHash, nil, nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}}
 	}
 	return
 }

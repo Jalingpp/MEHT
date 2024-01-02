@@ -149,6 +149,10 @@ func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	if err != nil {
 		fmt.Println("Delete ShortNode from DB error:", err)
 	}
+	if cache != nil {
+		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
+		targetCache.Remove(string(sn.nodeHash))
+	}
 	nodeHash := append([]byte(sn.prefix), sn.suffix...)
 	if sn.isLeaf {
 		nodeHash = append(nodeHash, sn.value...)
@@ -156,7 +160,8 @@ func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 		nodeHash = append(nodeHash, sn.nextNode.nodeHash...)
 	}
 	hash := sha256.Sum256(nodeHash)
-	sn.nodeHash = hash[:]
+	sn.nodeHash = make([]byte, len(hash))
+	copy(sn.nodeHash, hash[:])
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
 		targetCache.Add(string(sn.nodeHash), sn)
@@ -208,9 +213,13 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[
 // UpdateFullNodeHash updates the nodeHash of a FullNode
 func (fn *FullNode) UpdateFullNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	////先删除db中原有节点
-	//if err := db.Delete(fn.nodeHash, nil); err != nil {
-	//	fmt.Println("Delete FullNode from DB error:", err)
-	//}
+	if err := db.Delete(fn.nodeHash, nil); err != nil {
+		fmt.Println("Delete FullNode from DB error:", err)
+	}
+	if cache != nil {
+		targetCache, _ := (*cache)[1].(*lru.Cache[string, *FullNode])
+		targetCache.Remove(string(fn.nodeHash))
+	}
 	nodeHash := make([]byte, 0)
 	for i := 0; i < 16; i++ {
 		nodeHash = append(nodeHash, fn.childrenHash[i]...)

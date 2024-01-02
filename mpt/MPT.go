@@ -282,8 +282,25 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			oldValue = string(cNode.value)
 			cNode.value = value
 			//如果当前节点是根节点，那么有可能value变更的同时孩子节点往后的数据也在同时变更，因此综合孩子节点哈希计算得到的哈希值可能不准确，因此干脆不计算，置为脏
-			cNode.isDirty = true
-			//UpdateFullNodeHash(cNode, db, mpt.cache)
+			cNode.UpdateFullNodeHash(db, mpt.cache)
+			var pShort = cNode.parent
+			var pFull *FullNode
+			if pShort != nil {
+				pShort.nextNodeHash = cNode.nodeHash
+				pShort.isDirty = true
+				for pShort != nil {
+					pFull = pShort.parent
+					if pFull == nil || pFull.isDirty {
+						break
+					}
+					pFull.isDirty = true
+					pShort = pFull.parent
+					if pShort == nil || pShort.isDirty {
+						break
+					}
+					pShort.isDirty = true
+				}
+			}
 		}
 		if isPrimary && flag { //主索引且是更新，则记录替换掉的旧值
 			return cNode, oldValue, isChange
@@ -305,8 +322,23 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 		}
 		cNode.children[util.ByteToHexIndex(suffix[0])] = childNode_
 		childNode_.parent = cNode
+		cNode.childrenHash[util.ByteToHexIndex(suffix[0])] = childNode_.nodeHash
 		//childNode_可能是脏节点,所以当前节点也是脏的
 		cNode.isDirty = true
+		var pShort = cNode.parent
+		var pFull *FullNode
+		for pShort != nil {
+			if pShort.isDirty {
+				break
+			}
+			pShort.isDirty = true
+			pFull = pShort.parent
+			if pFull == nil || pFull.isDirty {
+				break
+			}
+			pFull.isDirty = true
+			pShort = pFull.parent
+		}
 		//cNode.childrenHash[util.ByteToHexIndex(suffix[0])] = childNode_.nodeHash
 		//UpdateFullNodeHash(cNode, db, mpt.cache)
 		return cNode, oldValue, needDelete
@@ -491,7 +523,7 @@ func (mpt *MPT) MPTBatchFix(db *leveldb.DB) {
 	}
 	wG := sync.WaitGroup{}
 	for idx, child := range mpt.root.children {
-		if child != nil && !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
+		if child == nil || !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
 			continue
 		}
 		wG.Add(1)
@@ -514,11 +546,10 @@ func shortNodeBatchFixFoo(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
 		return
 	}
 	nextNode := sn.nextNode
-	if nextNode == nil || !nextNode.isDirty {
-		return
+	if nextNode != nil && nextNode.isDirty {
+		fullNodeBatchFixFoo(nextNode, db, cache)
+		sn.nextNodeHash = nextNode.nodeHash
 	}
-	fullNodeBatchFixFoo(nextNode, db, cache)
-	sn.nextNodeHash = nextNode.nodeHash
 	sn.UpdateShortNodeHash(db, cache)
 	sn.isDirty = false
 }

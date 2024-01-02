@@ -4,6 +4,7 @@ import (
 	"MEHT/mht"
 	"MEHT/util"
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -66,12 +67,25 @@ func NewMEHT(rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC in
 	}
 }
 
+func (meht *MEHT) GetMgtHash() []byte {
+	return meht.mgtHash
+}
+
 // UpdateMEHTToDB 更新MEHT到db
-func (meht *MEHT) UpdateMEHTToDB(db *leveldb.DB) {
-	meht.latch.RLock()
+func (meht *MEHT) UpdateMEHTToDB(newRootHash []byte, db *leveldb.DB) {
+	newHash := sha256.Sum256(newRootHash)
+	meht.latch.Lock()
+	oldHash := sha256.Sum256(meht.mgtHash)
+	meht.mgtHash = make([]byte, len(newHash))
+	copy(meht.mgtHash, newHash[:])
+	if err := db.Delete(oldHash[:], nil); err != nil {
+		panic(err)
+	}
+	newHash = sha256.Sum256(meht.mgtHash)
 	meMEHT := SerializeMEHT(meht)
-	meht.latch.RUnlock()
-	if err := db.Put([]byte("meht"), meMEHT, nil); err != nil {
+	meht.latch.Unlock()
+	fmt.Println(newHash[:])
+	if err := db.Put(newHash[:], meMEHT, nil); err != nil {
 		panic(err)
 	}
 }
@@ -183,12 +197,14 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 func (meht *MEHT) MGTBatchCommit(db *leveldb.DB) {
 	// meht存在则mgt一定存在，因此无需判断mgt是否为nil
 	meht.mgt.MGTUpdate(nil, db, meht.cache)
+	meht.mgt.UpdateMGTToDB(db)
+	meht.UpdateMEHTToDB(meht.mgt.mgtRootHash, db)
 }
 
 // MGTCachedAdjust 缓存调整mgt
 func (meht *MEHT) MGTCachedAdjust(db *leveldb.DB) {
-	meht.mgtHash = meht.mgt.CacheAdjust(db, meht.cache)
-	meht.UpdateMEHTToDB(db)
+	newMgtHash := meht.mgt.CacheAdjust(db, meht.cache)
+	meht.UpdateMEHTToDB(newMgtHash, db)
 }
 
 // PrintMEHT 打印整个MEHT

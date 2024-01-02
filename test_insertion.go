@@ -71,7 +71,6 @@ func main() {
 				curStartNum.lock.Lock()                         //阻塞新插入或查询操作
 				for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
 				}
-				fmt.Println("Batch Commit.")
 				// 批量提交，即一并更新辅助索引的脏数据
 				seDB.BatchCommit()
 				// 重置计数器
@@ -80,8 +79,6 @@ func main() {
 				curStartNum.lock.Unlock()
 				sT = time.Now()
 			}
-			// 休眠3秒, 防止CPU占用过高
-			time.Sleep(3 * time.Second)
 		}
 		// 所有查询与插入操作已全部结束，将尾部数据批量提交
 		seDB.BatchCommit()
@@ -134,21 +131,11 @@ func main() {
 			go worker(&wg, seDB, kvPairCh, (*durationChList)[i])
 		}
 		wg.Wait()
-		//stopBatchCommitterFlag = false
+		stopBatchCommitterFlag = false
 		for _, duCh := range *durationChList {
 			close(duCh)
 		}
 	}
-	//serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
-	//	shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
-	//	merkleTreeCC int, numOfWorker int, phi int) string {
-	//	return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
-	//		",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
-	//		strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
-	//		strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
-	//		strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
-	//		strconv.Itoa(numOfWorker) + ",\tphi: " + strconv.Itoa(phi) + "."
-	//}
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
 		merkleTreeCC int, numOfWorker int) string {
@@ -218,8 +205,8 @@ func main() {
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := 1000
-				fullNodeCacheCapacity := 1000
+				shortNodeCacheCapacity := 50000000
+				fullNodeCacheCapacity := 50000000
 				mgtNodeCacheCapacity := 100000000
 				bucketCacheCapacity := 128000000
 				segmentCacheCapacity := mehtBs * bucketCacheCapacity
@@ -249,6 +236,7 @@ func main() {
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
 			batchWg := sync.WaitGroup{}
+			batchWg.Add(1)
 			go batchCommitter(&batchWg, seDB)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)

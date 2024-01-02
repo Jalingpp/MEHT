@@ -56,10 +56,11 @@ func main() {
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for _, kvPair := range kvPairs {
+		for i, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
+			fmt.Println(i)
 		}
 		close(kvPairCh)
 	}
@@ -173,7 +174,7 @@ func main() {
 			//	}
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
-				if n >= 30 {
+				if n >= 300000 {
 					insertNum = append(insertNum, n)
 				} else {
 					numOfWorker = n
@@ -191,7 +192,6 @@ func main() {
 	}
 	for _, siMode := range siModeOptions {
 		for _, num := range insertNum {
-			num = 1
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
 			dirs := strings.Split(filePath, "/")
 			if _, err := os.Stat(strings.Join(dirs[:len(dirs)-1], "/")); os.IsNotExist(err) {
@@ -247,7 +247,7 @@ func main() {
 			latencyDurationList := make([]time.Duration, numOfWorker)
 			doneCh := make(chan bool)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-			go allocateNFTOwner("../nft-owner", num, kvPairCh)
+			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
 			batchWg := sync.WaitGroup{}
 			go batchCommitter(&batchWg, seDB)
 			start := time.Now()

@@ -48,14 +48,15 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret_, ok := seh.ht.Load(bucketKey)
-	ret := ret_.(*Bucket)
 	if !ok {
 		if len(bucketKey) > 0 {
 			return seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache)
 		} else {
 			return nil
 		}
-	} else if ret != dummyBucket {
+	}
+	ret := ret_.(*Bucket)
+	if ret != dummyBucket {
 		return ret
 	}
 	key_ := "bucket" + bucketKey
@@ -192,7 +193,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		bucket.DelegationLatch.Unlock() // 允许其他线程委托自己插入
 		//mgtLatch.Lock()                 // 阻塞一直等到获得mgt锁，用以一次性更新并更改mgt树
 		//bucket.RootLatchGainFlag = true      // 告知其他线程准备开始整体更新，让其他线程不要再尝试委托自己
-		time.Sleep(time.Millisecond * 50)
+		//time.Sleep(time.Millisecond * 50)
 		bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
 		if bucket.number < bucket.capacity { // 由于插入数目一定不引起桶分裂，顶多插满，因此最后插完的桶就是当前桶
 			for _, kvp := range bucket.DelegationList {

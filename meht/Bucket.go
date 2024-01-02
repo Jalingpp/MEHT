@@ -110,8 +110,11 @@ func (b *Bucket) GetSegment(segKey string, db *leveldb.DB, cache *[]interface{})
 		}
 		b.segLatch.Unlock()
 	}
-	ret, _ := b.segments.Load(segKey)
-	return ret.([]util.KVPair)
+	if ret, ok := b.segments.Load(segKey); ok {
+		return ret.([]util.KVPair)
+	} else {
+		return nil
+	}
 }
 
 // UpdateSegmentToDB 更新segment至db中
@@ -201,8 +204,11 @@ func (b *Bucket) GetMerkleTree(index string, db *leveldb.DB, cache *[]interface{
 		}
 		b.mtLatch.Unlock()
 	}
-	ret, _ := b.merkleTrees.Load(index)
-	return ret.(*mht.MerkleTree)
+	if ret, ok := b.merkleTrees.Load(index); ok {
+		return ret.(*mht.MerkleTree)
+	} else {
+		return nil
+	}
 }
 
 // UpdateMerkleTreeToDB 将merkle tree更新至db中
@@ -273,6 +279,9 @@ func (b *Bucket) IsInBucket(key string, db *leveldb.DB, cache *[]interface{}) bo
 	//defer b.segLatch.Unlock()       // 防止segIdxMaps并发读写，segIdxMaps只会在GetSegment调用时可能被修改，上锁后保证只有一个线程对其读或写
 	b.GetSegment(segKey, db, cache) // 如果segments还没有从磁盘中读取，那么segIdxMaps[segKey]此时也会是缺省状态
 	segIdxMap, _ := b.segIdxMaps.Load(segKey)
+	if segIdxMap == nil {
+		return false
+	}
 	_, ok := segIdxMap.(*sync.Map).Load(key)
 	return ok
 }
@@ -287,9 +296,15 @@ func (b *Bucket) GetValue(key string, db *leveldb.DB, cache *[]interface{}) stri
 	b.GetSegment(segKey, db, cache) // 如果segments还没有从磁盘中读取，那么segIdxMaps[segKey]此时也会是缺省状态
 	//判断是否在bucket中,在则返回value,不在则返回空字符串
 	segIdxMap, _ := b.segIdxMaps.Load(segKey)
+	if segIdxMap == nil {
+		return ""
+	}
 	if idx, ok := segIdxMap.(*sync.Map).Load(key); ok {
-		segment, _ := b.segments.Load(segKey)
-		return segment.([]util.KVPair)[idx.(int)].GetValue()
+		if segment, ok := b.segments.Load(segKey); ok {
+			return segment.([]util.KVPair)[idx.(int)].GetValue()
+		} else {
+			return ""
+		}
 	}
 	return ""
 }
@@ -302,6 +317,9 @@ func (b *Bucket) GetIndex(key string, db *leveldb.DB, cache *[]interface{}) (str
 	//defer b.segLatch.Unlock()       // 防止segIdxMaps并发读写，segIdxMaps只会在GetSegment调用时可能被修改，上锁后保证只有一个线程对其读或写
 	b.GetSegment(segKey, db, cache) // 如果segments还没有从磁盘中读取，那么segIdxMaps[segKey]此时也会是缺省状态
 	segIdxMap, _ := b.segIdxMaps.Load(segKey)
+	if segIdxMap == nil {
+		return "", false, -1
+	}
 	if idx, ok := segIdxMap.(*sync.Map).Load(key); ok {
 		return segKey, true, idx.(int)
 	}

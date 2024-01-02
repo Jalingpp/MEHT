@@ -78,7 +78,7 @@ func NewMPT(db *leveldb.DB, cacheEnable bool, shortNodeCC int, fullNodeCC int) *
 
 // Insert 插入一个KVPair到MPT中，返回新的根节点的哈希值
 func (mpt *MPT) Insert(kvPair util.KVPair, db *leveldb.DB, priMpt *MPT, flag bool) (string, bool) {
-	isPrimary := priMpt != nil
+	isPrimary := priMpt == nil
 	//判断是否为第一次插入
 	for mpt.GetRoot(db) == nil && mpt.latch.TryLock() { // 只允许一个线程新建树根
 		if mpt.root != nil { //防止root在TryLock前已经被其他线程创建，导致重复创建
@@ -513,7 +513,10 @@ func shortNodeBatchFixFoo(sn *ShortNode, db *leveldb.DB, cache *[]interface{}) {
 	if sn == nil || !sn.isDirty {
 		return
 	}
-	nextNode := sn.GetNextNode(db, cache)
+	nextNode := sn.nextNode
+	if nextNode == nil || !nextNode.isDirty {
+		return
+	}
 	fullNodeBatchFixFoo(nextNode, db, cache)
 	sn.nextNodeHash = nextNode.nodeHash
 	sn.UpdateShortNodeHash(db, cache)
@@ -525,8 +528,7 @@ func fullNodeBatchFixFoo(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
 	if fn == nil || !fn.isDirty {
 		return
 	}
-	for i := range fn.children {
-		childNode := fn.GetChildInFullNode(i, db, cache) //只有将所有孩子从磁盘中尽可能读出来才能保证fn的nodeHash的正确性
+	for i, childNode := range fn.children {
 		if childNode == nil || !childNode.isDirty {
 			continue
 		}

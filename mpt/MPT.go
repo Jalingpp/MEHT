@@ -526,7 +526,10 @@ func fullNodeBatchFixFoo(fn *FullNode, db *leveldb.DB, cache *[]interface{}) {
 		return
 	}
 	for i := range fn.children {
-		childNode := fn.GetChildInFullNode(i, db, cache)
+		childNode := fn.GetChildInFullNode(i, db, cache) //只有将所有孩子从磁盘中尽可能读出来才能保证fn的nodeHash的正确性
+		if childNode == nil || !childNode.isDirty {
+			continue
+		}
 		shortNodeBatchFixFoo(childNode, db, cache)
 		fn.childrenHash[i] = childNode.nodeHash
 	}

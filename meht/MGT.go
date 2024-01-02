@@ -471,22 +471,23 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 }
 
 // MGTBatchFixFoo 递归更新脏节点
-func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
+func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, rdx int, cache *[]interface{}) {
 	if mgtNode == nil || !mgtNode.isDirty {
 		return
 	}
-	for idx, child := range mgtNode.subNodes {
+	for idx := range mgtNode.subNodes {
+		child := mgtNode.GetSubNode(idx, db, rdx, cache)
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
-		MGTBatchFixFoo(child, db, cache)
+		MGTBatchFixFoo(child, db, rdx, cache)
 		mgtNode.dataHashes[idx] = child.nodeHash
 	}
 	for idx, child := range mgtNode.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
-		MGTBatchFixFoo(child, db, cache)
+		MGTBatchFixFoo(child, db, rdx, cache)
 		mgtNode.cachedDataHashes[idx] = child.nodeHash
 	}
 	mgtNode.UpdateMGTNodeToDB(db, cache)

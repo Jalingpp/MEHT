@@ -229,7 +229,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 	} else if sedb.siMode == "mbt" {
 		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb)
 		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetAggregation(), mbtIndex.GetGd(), HexKeyword)
-		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(HexKeyword, path, sedb.secondaryDb, false)
+		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(HexKeyword, path, sedb.secondaryDb)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)

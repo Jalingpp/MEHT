@@ -157,18 +157,36 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 		}
 		newVal := kvPair.GetValue()
 		kvPair.SetValue(oldVal)
-		isChange := kvPair.AddValue(newVal)
-		if !isChange { //重复插入，直接返回
-			return
-		}
-		if pos != -1 { //key有则用新值覆盖
-			cNode.bucket[pos] = kvPair
-		} else { //无则新建
-			cNode.bucket = append(cNode.bucket, kvPair)
-			cNode.num++
-			sort.Slice(cNode.bucket, func(i, j int) bool { //保证全局有序
-				return strings.Compare(cNode.bucket[i].GetKey(), cNode.bucket[j].GetKey()) <= 0
-			})
+		if isDelete {
+			if pos == -1 { //删除失败，将要删除的kv队加入延迟删除记录表
+				cNode.toDelMap[kvPair.GetKey()][newVal]++
+				return
+			} else {
+				if isChange := kvPair.DelValue(newVal); !isChange { //删除失败，将要删除的kv队加入延迟删除记录表
+					cNode.toDelMap[kvPair.GetKey()][newVal]++
+					return
+				} else {
+					cNode.bucket[pos] = kvPair
+				}
+			}
+		} else {
+			if cNode.toDelMap[kvPair.GetKey()][newVal] > 0 { //删除记录表中有则删除，即跳过本次插入操作
+				cNode.toDelMap[kvPair.GetKey()][newVal]--
+				return
+			}
+			isChange := kvPair.AddValue(newVal)
+			if !isChange { //重复插入，直接返回
+				return
+			}
+			if pos != -1 { //key有则用新值覆盖
+				cNode.bucket[pos] = kvPair
+			} else { //无则新建
+				cNode.bucket = append(cNode.bucket, kvPair)
+				cNode.num++
+				sort.Slice(cNode.bucket, func(i, j int) bool { //保证全局有序
+					return strings.Compare(cNode.bucket[i].GetKey(), cNode.bucket[j].GetKey()) <= 0
+				})
+			}
 		}
 		cNode.UpdateMBTNodeHash(db, mbt.cache) //更新节点哈希并更新节点到db
 		tmpNode := cNode.parent
@@ -186,24 +204,22 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 	}
 }
 
-func (mbt *MBT) QueryByKey(key string, path []int, db *leveldb.DB, isLockFree bool) (string, *MBTProof) {
+func (mbt *MBT) QueryByKey(key string, path []int, db *leveldb.DB) (string, *MBTProof) {
 	if root := mbt.GetRoot(db); root == nil {
 		return "", &MBTProof{false, nil}
 	} else {
 		//递归查询
-		return mbt.RecursivelyQueryMBTNode(key, path, 0, root, db, isLockFree)
+		return mbt.RecursivelyQueryMBTNode(key, path, 0, root, db)
 	}
 }
 
-func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cNode *MBTNode, db *leveldb.DB, isLockFree bool) (string, *MBTProof) {
+func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cNode *MBTNode, db *leveldb.DB) (string, *MBTProof) {
 	if cNode == nil { //找不到
 		return "", &MBTProof{false, nil}
 	}
 	if level == len(path)-1 { //当前节点是叶节点
-		if !isLockFree { //用于防止已获得写锁的读操作被自身写锁互斥
-			cNode.latch.RLock()
-			defer cNode.latch.RUnlock()
-		}
+		cNode.latch.RLock()
+		defer cNode.latch.RUnlock()
 		proofElement := NewProofElement(level, 0, cNode.name, cNode.nodeHash, nil, nil)
 		for _, kv := range cNode.bucket { //全桶扫描
 			if kv.GetKey() == key {
@@ -218,7 +234,7 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cNode
 			nextNodeHash = nextNode.nodeHash
 		}
 		proofElement := NewProofElement(level, 1, cNode.name, cNode.nodeHash, nextNodeHash, cNode.dataHashes)
-		valueStr, mbtProof := mbt.RecursivelyQueryMBTNode(key, path, level+1, nextNode, db, isLockFree)
+		valueStr, mbtProof := mbt.RecursivelyQueryMBTNode(key, path, level+1, nextNode, db)
 		proofElements := append(mbtProof.GetProofs(), proofElement)
 		return valueStr, &MBTProof{mbtProof.GetExist(), proofElements}
 	}

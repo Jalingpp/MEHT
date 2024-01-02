@@ -21,10 +21,11 @@ type MBTNode struct {
 	subNodes   []*MBTNode
 	dataHashes [][]byte
 
-	isLeaf  bool
-	isDirty bool
-	bucket  []util.KVPair
-	num     int // num of kvPairs in bucket
+	isLeaf   bool
+	isDirty  bool
+	bucket   []util.KVPair
+	num      int // num of kvPairs in bucket
+	toDelMap map[string]map[string]int
 
 	latch       sync.RWMutex
 	updateLatch sync.Mutex
@@ -34,10 +35,10 @@ func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bo
 	//由于MBT结构固定，因此此函数只会在MBt初始化时被调用，因此此时dataHashes一定为空，此时nodeHash一定仅包含name
 	if isLeaf {
 		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, make([]util.KVPair, 0),
-			0, sync.RWMutex{}, sync.Mutex{}}
+			0, make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}
 	} else {
 		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, nil, -1,
-			sync.RWMutex{}, sync.Mutex{}}
+			make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}
 	}
 	for _, node := range ret.subNodes {
 		node.parent = ret
@@ -152,8 +153,10 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		bucket = append(bucket, *util.NewKVPair(bk.Key, bk.Value))
 	}
 	if seMBTNode.IsLeaf {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, nil, dataHashes, true, false, bucket, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, nil, dataHashes, true, false,
+			bucket, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(dataHashes)), dataHashes, false, false, nil, len(seMBTNode.Bucket), sync.RWMutex{}, sync.Mutex{}}, nil
+		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(dataHashes)), dataHashes, false,
+			false, nil, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}, nil
 	}
 }

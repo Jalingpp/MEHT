@@ -122,15 +122,15 @@ func (meht *MEHT) GetCache() *[]interface{} {
 }
 
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *MEHTProof) {
+func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
 	for meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
-		if meht.seh.bucketsNumber != 0 {
+		if meht.seh.bucketsNumber != 0 || isDelete {
 			meht.seh.latch.Unlock()
 			break
 		}
-		//插入KV到SEH
-		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache)
+		//插入KV到SEH,第一个插入的操作一定不能是删除操作,因为此时root还没有bucket
+		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, false)
 		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketSs[0][0].GetSegmentKey(kvPair.GetKey())]
 		//更新seh到db
 		//meht.seh.UpdateSEHToDB
@@ -157,7 +157,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB) (*Bucket, string, *
 	//因为无论是桶时间戳的改变还是换了一个新桶，这都意味着上一次插入已经完成了
 	var waitTimestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache)
+		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache, isDelete)
 	}
 	// 要不返回需要上锁的那个桶，然后延迟释放桶锁，直到mgt更新完毕，这样子就可以从mgt粒度锁缩小至桶粒度
 	if bucketDelegationCode_ == DELEGATE {

@@ -22,13 +22,13 @@ import (
 // func DeserializeFullNode(sFnString []byte) (*FullNode, error) {}：反序列化FullNode
 
 type FullNode struct {
-	nodeHash     []byte         //当前节点的哈希值,由childrenHash计算得到
-	parent       *ShortNode     //父节点
-	children     [16]*ShortNode // children的指针，0-15表示0-9,a-f
-	childrenHash [16][]byte     // children的哈希值
-	value        []byte         // 以前面ExtensionNode的prefix+suffix为key的value
-	isDirty      bool           //是否修改但未提交
-	toDelMap     map[string]int //因为更新而待删除的辅助索引值
+	nodeHash     []byte                    //当前节点的哈希值,由childrenHash计算得到
+	parent       *ShortNode                //父节点
+	children     [16]*ShortNode            // children的指针，0-15表示0-9,a-f
+	childrenHash [16][]byte                // children的哈希值
+	value        []byte                    // 以前面ExtensionNode的prefix+suffix为key的value
+	isDirty      bool                      //是否修改但未提交
+	toDelMap     map[string]map[string]int //因为更新而待删除的辅助索引值
 	latch        sync.RWMutex
 	childLatch   [16]sync.RWMutex
 	updateLatch  sync.Mutex
@@ -69,13 +69,13 @@ type ShortNode struct {
 	prefix string //前缀
 	parent *FullNode
 
-	isLeaf       bool           //是否是叶子节点
-	isDirty      bool           //是否修改但未提交
-	suffix       string         //后缀，shared nibble（extension node）或key-end（leaf node）
-	nextNode     *FullNode      //下一个FullNode节点(当前节点是extension node时)
-	nextNodeHash []byte         //下一个FullNode节点的哈希值
-	value        []byte         //value（当前节点是leaf node时）
-	toDelMap     map[string]int //因为更新而待删除的辅助索引值
+	isLeaf       bool                      //是否是叶子节点
+	isDirty      bool                      //是否修改但未提交
+	suffix       string                    //后缀，shared nibble（extension node）或key-end（leaf node）
+	nextNode     *FullNode                 //下一个FullNode节点(当前节点是extension node时)
+	nextNodeHash []byte                    //下一个FullNode节点的哈希值
+	value        []byte                    //value（当前节点是leaf node时）
+	toDelMap     map[string]map[string]int //因为更新而待删除的辅助索引值
 	latch        sync.RWMutex
 	updateLatch  sync.Mutex
 }
@@ -114,7 +114,7 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 // NewShortNode creates a ShortNode and computes its nodeHash
 func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode, value []byte, db *leveldb.DB, cache *[]interface{}) *ShortNode {
 	sn := &ShortNode{nil, prefix, nil, isLeaf, false, suffix, nextNode, nil,
-		value, make(map[string]int), sync.RWMutex{}, sync.Mutex{}}
+		value, make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}
 	nodeHash := append([]byte(prefix), suffix...)
 	var nextNodeHash []byte
 	if isLeaf {
@@ -173,7 +173,7 @@ func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[]interface{}) *FullNode {
 	var childrenHash [16][]byte
 	var nodeHash []byte
-	fn := &FullNode{nil, nil, children, childrenHash, value, false, make(map[string]int),
+	fn := &FullNode{nil, nil, children, childrenHash, value, false, make(map[string]map[string]int),
 		sync.RWMutex{}, [16]sync.RWMutex{}, sync.Mutex{}}
 	for i := 0; i < 16; i++ {
 		fn.childLatch[i] = sync.RWMutex{}
@@ -258,7 +258,7 @@ func DeserializeShortNode(sSnString []byte) (*ShortNode, error) {
 		return nil, err
 	}
 	sn := &ShortNode{nil, ssn.Prefix, nil, ssn.IsLeaf, false, ssn.Suffix, nil,
-		nil, ssn.Value, make(map[string]int), sync.RWMutex{}, sync.Mutex{}}
+		nil, ssn.Value, make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}
 	sn.nodeHash = ssn.NodeHash
 	sn.SetNextNodeHash(ssn.NextNodeHash)
 	return sn, nil
@@ -293,7 +293,7 @@ func DeserializeFullNode(sFnString []byte) (*FullNode, error) {
 		children[i] = nil
 	}
 	fn := &FullNode{sfn.NodeHash, nil, children, sfn.ChildrenHash, sfn.Value, false,
-		make(map[string]int), sync.RWMutex{}, [16]sync.RWMutex{}, sync.Mutex{}}
+		make(map[string]map[string]int), sync.RWMutex{}, [16]sync.RWMutex{}, sync.Mutex{}}
 	for i := 0; i < 16; i++ {
 		fn.childLatch[i] = sync.RWMutex{}
 	}

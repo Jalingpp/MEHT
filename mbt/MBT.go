@@ -134,13 +134,13 @@ func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
 	return &mbt.updateLatch
 }
 
-func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB) {
+func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) {
 	mbt.GetRoot(db) //保证根不是nil
-	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db)
+	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db, isDelete)
 	//mbt.UpdateMBTInDB(mbt.Root.nodeHash, db) //由于结构不变，因此根永远不会变动，变动的只会是根哈希，因此只需要向上更新mbt的树根哈希即可
 }
 
-func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPair, cNode *MBTNode, db *leveldb.DB) {
+func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPair, cNode *MBTNode, db *leveldb.DB, isDelete bool) {
 	key := kvPair.GetKey()
 	if level == len(path)-1 { //当前节点是叶节点
 		//只锁叶子节点，其余路径不锁
@@ -181,7 +181,7 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 		}
 	} else {
 		nextNode := cNode.GetSubNode(path[level+1], db, mbt.cache)
-		mbt.RecursivelyInsertMBTNode(path, level+1, kvPair, nextNode, db)
+		mbt.RecursivelyInsertMBTNode(path, level+1, kvPair, nextNode, db, isDelete)
 		//UpdateMBTNodeHash(cNode, path[level+1], db, mbt.cache) //更新己方保存的下层节点哈希并更新节点到db
 	}
 }

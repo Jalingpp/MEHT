@@ -37,10 +37,10 @@ type Bucket struct {
 	merkleTrees sync.Map // merkle trees: one for each segment map[string]*mht.MerkleTree
 
 	latchTimestamp int64
-	DelegationList map[string]util.KVPair // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
+	DelegationList map[string]util.KVPair    // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
+	toDelMap       map[string]map[string]int // 用于记录哪些数据需要被延迟删除
 	//RootLatchGainFlag bool                   // 用于判断被委托线程是否已经获取到树根，如果获取到了，那么置为True，其余线程停止对DelegationLatch进行获取尝试，保证被委托线程在获取到树根以后可以尽快获取到DelegationLatch并开始不接受委托
-	latch sync.RWMutex
-
+	latch           sync.RWMutex
 	segLatch        sync.RWMutex
 	mtLatch         sync.RWMutex
 	DelegationLatch sync.Mutex // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
@@ -52,7 +52,7 @@ var dummyBucket = &Bucket{ld: -1, rdx: -1, capacity: -1, segNum: -1}
 func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{nil, ld, rdx, capacity, 0, segNum,
 		sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair),
+		make(map[string]util.KVPair), make(map[string]map[string]int),
 		sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 }
 
@@ -402,6 +402,8 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	b.segments = sync.Map{}
 	b.segIdxMaps = sync.Map{}
 	b.merkleTrees = sync.Map{}
+	bToDelMap := b.toDelMap
+	b.toDelMap = make(map[string]map[string]int)
 	buckets = append(buckets, b)
 	//创建rdx-1个新bucket
 	for i := 0; i < b.rdx-1; i++ {
@@ -420,6 +422,10 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 		}
 		return true
 	})
+	//将原bucket中待删除的数据对象插入到新的rdx个bucket中
+	for key, value := range bToDelMap {
+		buckets[util.StringToBucketKeyIdxWithRdx(key, b.ld, b.rdx)].toDelMap[key] = value
+	}
 	return buckets
 }
 
@@ -621,7 +627,7 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	}
 	bucket := &Bucket{seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
 		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
+		make(map[string]util.KVPair), make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 	for i := 0; i < len(seBucket.SegKeys); i++ {
 		bucket.merkleTrees.Store(seBucket.SegKeys[i], mht.DummyMerkleTree)
 	}

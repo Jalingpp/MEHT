@@ -219,8 +219,6 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 	reversedKV := util.ReverseKVPair(kvPair)
 	//插入非主键索引
 	if se.secondaryIndexMode == "mpt" { //插入mpt
-		//如果oldValue不为空，则在非主键索引中删除该value-key对
-
 		//插入到mpt类型的非主键索引中
 		//_, mptProof := se.InsertIntoMPT(reversedKV, db)
 		go func() { // 实际应该为返回值mptProof构建一个chan并等待输出
@@ -232,9 +230,6 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 				se.InsertIntoMPT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, se.primaryIndex, true)
 			}
 		}()
-		//打印插入结果
-		//fmt.Printf("key=%x , value=%x已插入非主键索引MPT\n", []byte(reversedKV.GetKey()), []byte(newValues))
-		//mptProof.PrintMPTProof()
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, mptProof, nil
@@ -243,19 +238,25 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 		//_, mehtProof  = se.InsertIntoMEHT(reversedKV, db)
 		go func() { //实际应该为返回值mehtProof构建一个chan并等待输出
 			defer wG.Done()
-			se.InsertIntoMEHT(reversedKV, secondaryDb)
+			se.InsertIntoMEHT(reversedKV, secondaryDb, false)
+			oldVal := <-oldValueCh
+			needDelete := <-needDeleteCh
+			if needDelete {
+				se.InsertIntoMEHT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, true)
+			}
 		}()
-		//打印插入结果
-		//fmt.Printf("key=%x , value=%x已插入非主键索引MEHT\n", []byte(reversedKV.GetKey()), []byte(newValues))
-		//meht.PrintMEHTProof(mehtProof)
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, nil, mehtProof
 	} else {
 		go func() {
 			defer wG.Done()
-			se.InsertIntoMBT(reversedKV, secondaryDb)
-			//se.In
+			se.InsertIntoMBT(reversedKV, secondaryDb, false)
+			oldVal := <-oldValueCh
+			needDelete := <-needDeleteCh
+			if needDelete {
+				se.InsertIntoMBT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, true)
+			}
 		}()
 	}
 	wG.Wait()
@@ -327,7 +328,7 @@ func (se *StorageEngine) MBTBatchCommit(db *leveldb.DB) {
 }
 
 // InsertIntoMBT 插入非主键索引
-func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (string, *mbt.MBTProof) {
+func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (string, *mbt.MBTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndexMbt(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会拿到写锁并创建非主键索引
 		//创建一个新的非主键索引
@@ -339,24 +340,18 @@ func (se *StorageEngine) InsertIntoMBT(kvPair util.KVPair, db *leveldb.DB) (stri
 	for se.secondaryIndexMbt == nil { // 其余线程等待非主键索引创建
 	}
 	//先查询得到原有value与待插入value合并
-	path := mbt.ComputePath(se.secondaryIndexMbt.GetBucketNum(), se.secondaryIndexMbt.GetAggregation(), se.secondaryIndexMbt.GetGd(), kvPair.GetKey())
-	values, mbtProof := se.secondaryIndexMbt.QueryByKey(kvPair.GetKey(), path, db, false)
-	//用原有values插入到kvPair中
-	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
-	isChange := insertedKV.AddValue(kvPair.GetValue())
-	//如果原有values中没有此value，则插入到mpt中
-	if isChange {
-		se.secondaryIndexMbt.Insert(kvPair, db)
-		se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
-		se.secondaryIndexMbt.GetUpdateLatch().Lock()
-		se.secondaryIndexHashMbt = se.secondaryIndexMbt.GetMBTHash()
-		se.secondaryIndexMbt.GetUpdateLatch().Unlock()
-		se.updateSecondaryLatch.Unlock()
-		//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
-		//return newValues, newProof
-		return "", nil
-	}
-	return values, mbtProof
+	//path := mbt.ComputePath(se.secondaryIndexMbt.GetBucketNum(), se.secondaryIndexMbt.GetAggregation(), se.secondaryIndexMbt.GetGd(), kvPair.GetKey())
+	//values, mbtProof := se.secondaryIndexMbt.QueryByKey(kvPair.GetKey(), path, db, false)
+	se.secondaryIndexMbt.Insert(kvPair, db, isDelete)
+	se.updateSecondaryLatch.Lock() // 保证se存储的辅助索引根哈希与实际辅助索引的根哈希是一致的
+	se.secondaryIndexMbt.GetUpdateLatch().Lock()
+	se.secondaryIndexHashMbt = se.secondaryIndexMbt.GetMBTHash()
+	se.secondaryIndexMbt.GetUpdateLatch().Unlock()
+	se.updateSecondaryLatch.Unlock()
+	//newValues, newProof := se.secondaryIndex_mpt.QueryByKey(insertedKV.GetKey(), db)
+	//return newValues, newProof
+	return "", nil
+	//return values, mbtProof
 }
 
 func (se *StorageEngine) MEHTBatchCommit(db *leveldb.DB) {
@@ -370,7 +365,7 @@ func (se *StorageEngine) MEHTBatchCommit(db *leveldb.DB) {
 }
 
 // InsertIntoMEHT 插入非主键索引
-func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (string, *meht.MEHTProof) {
+func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (string, *meht.MEHTProof) {
 	//如果是第一次插入
 	if se.GetSecondaryIndexMeht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
@@ -381,23 +376,13 @@ func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB) (str
 	}
 	for se.GetSecondaryIndexMeht(db) == nil { // 其余线程等待meht创建成功
 	}
-	//先查询得到原有value与待插入value合并
-	values, bucket, segKey, isSegExist, index := se.secondaryIndexMeht.QueryValueByKey(kvPair.GetKey(), db)
-	//用原有values构建待插入的kvPair
-	insertedKV := util.NewKVPair(kvPair.GetKey(), values)
-	//将新的value插入到kvPair中
-	isChange := insertedKV.AddValue(kvPair.GetValue())
-	//如果原有values中没有此value，则插入到meht中
-	if isChange {
-		// 这里逻辑也需要转变，因为并发插入的时候可能很多键都相同但被阻塞了一直没写进去，那更新就会有非常多初始值的重复
-		// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
-		//_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
-		_, newValues, newProof := se.secondaryIndexMeht.Insert(kvPair, db)
-		//本来是需要更新meht到db，但是现在是批量插入，mgtHash是脏的，所以更新没有意义
-		//se.secondaryIndexMeht.UpdateMEHTToDB(db)
-		return newValues, newProof
-	}
-	return values, se.secondaryIndexMeht.GetQueryProof(bucket, segKey, isSegExist, index, db)
+	// 这里逻辑也需要转变，因为并发插入的时候可能很多键都相同但被阻塞了一直没写进去，那更新就会有非常多初始值的重复
+	// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
+	//_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
+	_, newValues, newProof := se.secondaryIndexMeht.Insert(kvPair, db, isDelete)
+	//本来是需要更新meht到db，但是现在是批量插入，mgtHash是脏的，所以更新没有意义
+	//se.secondaryIndexMeht.UpdateMEHTToDB(db)
+	return newValues, newProof
 }
 
 // GetMBTArgs 解析MBTArgs

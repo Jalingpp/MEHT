@@ -119,15 +119,15 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				if flag { //非主索引代表删除，主索引代表需记录替换的旧值
 					isChange = toAdd.DelValue(string(value))
 				} else {
-					if cNode.toDelMap[string(value)] > 0 { //只有辅助索引才有延迟删除的情况
-						cNode.toDelMap[string(value)]--
+					if cNode.toDelMap[prefix+suffix][string(value)] > 0 { //只有辅助索引才有延迟删除的情况
+						cNode.toDelMap[prefix+suffix][string(value)]--
 						return cNode, "", false
 					}
 					isChange = toAdd.AddValue(string(value))
 				}
 				if !isChange { //无变化，直接返回
 					if flag { //删除早于插入，因此记录要删除的值
-						cNode.toDelMap[string(value)]++
+						cNode.toDelMap[prefix+suffix][string(value)]++
 					}
 					return cNode, "", false
 				}
@@ -151,10 +151,10 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		} else {
 			if !isPrimary {
 				if flag { //若删除，则一定找不到要删除的值，延迟删除
-					cNode.toDelMap[string(value)]++
+					cNode.toDelMap[prefix+suffix][string(value)]++
 					return cNode, "", false
-				} else if cNode.toDelMap[string(value)] > 0 { //只有辅助索引才有延迟删除的情况
-					cNode.toDelMap[string(value)]-- //晚插入的待删除旧值的插入操作被跳过，等效于删除了旧值
+				} else if cNode.toDelMap[prefix+suffix][string(value)] > 0 { //只有辅助索引才有延迟删除的情况
+					cNode.toDelMap[prefix+suffix][string(value)]-- //晚插入的待删除旧值的插入操作被跳过，等效于删除了旧值
 					return cNode, "", false
 				}
 			}
@@ -259,15 +259,15 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			if flag { //非主索引代表删除，主索引代表需记录替换的旧值
 				isChange = toAdd.DelValue(string(value))
 			} else {
-				if cNode.toDelMap[string(value)] > 0 { //只有辅助索引才有延迟删除的情况
-					cNode.toDelMap[string(value)]--
+				if cNode.toDelMap[prefix+suffix][string(value)] > 0 { //只有辅助索引才有延迟删除的情况
+					cNode.toDelMap[prefix+suffix][string(value)]--
 					return cNode, "", false
 				}
 				isChange = toAdd.AddValue(string(value))
 			}
 			if !isChange { //无变化，直接返回
 				if flag { //删除早于插入，因此记录要删除的值
-					cNode.toDelMap[string(value)]++
+					cNode.toDelMap[prefix+suffix][string(value)]++
 				}
 				return cNode, "", false
 			}

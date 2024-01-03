@@ -230,7 +230,7 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
-		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, false, nil, bucket.BucketKey[1:], sync.RWMutex{}, sync.Mutex{}}
+		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, make([]*MGTNode, rdx), make([][]byte, rdx), isLeaf, false, nil, subNodes[0].bucketKey[1:], sync.RWMutex{}, sync.Mutex{}}
 	} else {
 		mgtNode = &MGTNode{nodeHash, nil, subNodes, dataHashes, nil, nil, isLeaf, false, bucket, bucket.BucketKey, sync.RWMutex{}, sync.Mutex{}}
 	}

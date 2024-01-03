@@ -256,13 +256,16 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) {
 	//跳转到此函数时MGT已加写锁
 	//delete the old node in leveldb
-	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
-		panic(err)
-	}
+	//if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
+	//	panic(err)
+	//}
 	var targetCache *lru.Cache[string, *MGTNode]
 	if cache != nil {
 		targetCache, _ = (*cache)[0].(*lru.Cache[string, *MGTNode])
 		targetCache.Remove(string(mgtNode.nodeHash))
+	}
+	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
+		panic(err)
 	}
 	//update nodeHash
 	UpdateNodeHash(mgtNode)
@@ -440,17 +443,18 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 	wG := sync.WaitGroup{}
 	// 仅对第一层孩子节点做并发处理，减少协程数量
 	// 先通过递归到最深层，再从最深层开始往上更新脏节点
-	for idx, child := range mgt.Root.subNodes {
+	for i, child := range mgt.Root.subNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		wG.Add(1)
 		child_ := child
+		idx := i
 		go func() {
 			MGTBatchFixFoo(child_, db, cache)
+			mgt.Root.dataHashes[idx] = child_.nodeHash
 			wG.Done()
 		}()
-		mgt.Root.dataHashes[idx] = child.nodeHash
 	}
 	for i, child := range mgt.Root.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点

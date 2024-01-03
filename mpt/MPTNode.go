@@ -145,13 +145,17 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 // UpdateShortNodeHash 更新ShortNode的nodeHash
 func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	//先删除db中原有节点(考虑到新增的其他ShortNode可能与旧ShortNode的nodeHash相同，删除可能会丢失数据，所以注释掉)
-	err := db.Delete(sn.nodeHash, nil)
-	if err != nil {
-		fmt.Println("Delete ShortNode from DB error:", err)
-	}
+	//err := db.Delete(sn.nodeHash, nil)
+	//if err != nil {
+	//	fmt.Println("Delete ShortNode from DB error:", err)
+	//}
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
 		targetCache.Remove(string(sn.nodeHash))
+	}
+	err := db.Delete(sn.nodeHash, nil)
+	if err != nil {
+		fmt.Println("Delete ShortNode from DB error:", err)
 	}
 	nodeHash := append([]byte(sn.prefix), sn.suffix...)
 	if sn.isLeaf {
@@ -213,12 +217,15 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[
 // UpdateFullNodeHash updates the nodeHash of a FullNode
 func (fn *FullNode) UpdateFullNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	////先删除db中原有节点
-	if err := db.Delete(fn.nodeHash, nil); err != nil {
-		fmt.Println("Delete FullNode from DB error:", err)
-	}
+	//if err := db.Delete(fn.nodeHash, nil); err != nil {
+	//	fmt.Println("Delete FullNode from DB error:", err)
+	//}
 	if cache != nil {
 		targetCache, _ := (*cache)[1].(*lru.Cache[string, *FullNode])
 		targetCache.Remove(string(fn.nodeHash))
+	}
+	if err := db.Delete(fn.nodeHash, nil); err != nil {
+		fmt.Println("Delete FullNode from DB error:", err)
 	}
 	nodeHash := make([]byte, 0)
 	for i := 0; i < 16; i++ {

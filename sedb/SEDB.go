@@ -107,7 +107,7 @@ func (sedb *SEDB) BatchCommit() {
 	if sedb.se == nil {
 		return
 	}
-	sedb.se.BatchCommit(sedb.secondaryDb)
+	sedb.se.BatchCommit(sedb.primaryDb, sedb.secondaryDb)
 }
 
 func (sedb *SEDB) CacheAdjust(a float64, b float64) {

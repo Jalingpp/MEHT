@@ -189,11 +189,11 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
-	oldValue, oldPrimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvPair.GetKey(), primaryDb)
-	if oldValue == kvPair.GetValue() {
-		//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
-		return oldPrimaryProof, nil, nil
-	}
+	//oldValue, oldPrimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvPair.GetKey(), primaryDb)
+	//if oldValue == kvPair.GetValue() {
+	//	//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
+	//	return oldPrimaryProof, nil, nil
+	//}
 	//runtime.GOMAXPROCS(1)
 	var wG sync.WaitGroup
 	wG.Add(2)
@@ -262,14 +262,13 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 	return nil, nil, nil
 }
 
-func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
+func (se *StorageEngine) BatchCommit(primaryDb *leveldb.DB, secondaryDb *leveldb.DB) {
 	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return
 	}
-	if se.primaryIndex == nil { // 没有主索引说明没有交易需要批量提交
-		return
-	}
+	// ZYF 可以并发
+	//se.PrimaryIndexBatchCommit(primaryDb)
 	if se.secondaryIndexMode == "mpt" { //插入mpt
 		se.MPTBatchCommit(secondaryDb)
 	} else if se.secondaryIndexMode == "meht" { //插入meht
@@ -296,6 +295,15 @@ func (se *StorageEngine) CacheAdjust(secondaryDb *leveldb.DB, a float64, b float
 		return
 	}
 	return
+}
+
+func (se *StorageEngine) PrimaryIndexBatchCommit(db *leveldb.DB) {
+	if se.primaryIndex == nil {
+		return
+	}
+	se.primaryIndex.MPTBatchFix(db)
+	seHash := sha256.Sum256(se.primaryIndex.GetRootHash())
+	se.primaryIndexHash = seHash[:]
 }
 
 // MPTBatchCommit 批量提交mpt

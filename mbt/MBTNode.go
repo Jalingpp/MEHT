@@ -51,6 +51,10 @@ func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bo
 	return
 }
 
+func (mbtNode *MBTNode) GetName() string {
+	return string(mbtNode.name)
+}
+
 func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
 	mbtNode.updateLatch.Lock()
 	defer mbtNode.updateLatch.Unlock()

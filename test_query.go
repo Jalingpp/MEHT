@@ -193,7 +193,7 @@ func main() {
 			voList := make([]uint, numOfWorker)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go countVo(&voList, &voChList, doneCh)
-			go allocateQuery("../", num, queryCh)
+			go allocateQuery("data/", num, queryCh)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList)
 			duration = time.Since(start)

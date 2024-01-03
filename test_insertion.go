@@ -55,12 +55,12 @@ func main() {
 	var stopBatchCommitterFlag = true
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
-		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for i, kvPair := range kvPairs {
+		kvPairs := util.ReadNFTOwnerFromFile(filepath, 30000)
+		for _, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
-			fmt.Println(i)
+			//fmt.Println(i)
 		}
 		close(kvPairCh)
 	}
@@ -73,6 +73,7 @@ func main() {
 				}
 				// 批量提交，即一并更新辅助索引的脏数据
 				seDB.BatchCommit()
+				fmt.Println("Batch Commit.")
 				// 重置计数器
 				curFinishNum.number = 0
 				curStartNum.number = 0
@@ -82,6 +83,7 @@ func main() {
 		}
 		// 所有查询与插入操作已全部结束，将尾部数据批量提交
 		seDB.BatchCommit()
+		fmt.Println("Batch Commit.")
 		wG.Done()
 	}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {

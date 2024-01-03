@@ -187,7 +187,7 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 			tmpNode.dataHashes[path[level]] = cNode.nodeHash
 		}
 		for tmpNode != nil {
-			if tmpNode == nil || tmpNode.isDirty {
+			if tmpNode.isDirty {
 				break
 			}
 			tmpNode.isDirty = true
@@ -324,10 +324,15 @@ func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
 			mbtBatchFixFoo(child_, db, mbt.cache)
 			wG.Done()
 		}()
-		mbt.Root.dataHashes[idx] = child_.nodeHash
+		mbt.Root.dataHashes[idx] = mbt.Root.subNodes[idx].nodeHash
 	}
 	wG.Wait()
 	mbt.Root.UpdateMBTNodeHash(db, mbt.cache)
+	fmt.Println("--------------------------------------")
+	for i, hash := range mbt.Root.dataHashes {
+		fmt.Println("rootChild", i, ": ", hash)
+	}
+	fmt.Println("--------------------------------------")
 	mbt.Root.isDirty = false
 	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
@@ -361,6 +366,10 @@ func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
 	switch any(v).(type) {
 	case *MBTNode:
 		v_ = SerializeMBTNode(any(v).(*MBTNode))
+		v__ := any(v).(*MBTNode)
+		if v__.GetName() == "Branch83" {
+			fmt.Println("XXXXXXXXXXx")
+		}
 	default:
 		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBAckFoo in MBT.")
 	}

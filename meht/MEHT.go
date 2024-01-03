@@ -84,7 +84,6 @@ func (meht *MEHT) UpdateMEHTToDB(newRootHash []byte, db *leveldb.DB) {
 	newHash = sha256.Sum256(meht.mgtHash)
 	meMEHT := SerializeMEHT(meht)
 	meht.latch.Unlock()
-	fmt.Println(newHash[:])
 	if err := db.Put(newHash[:], meMEHT, nil); err != nil {
 		panic(err)
 	}
@@ -201,8 +200,11 @@ func (meht *MEHT) MGTBatchCommit(db *leveldb.DB) {
 	meht.UpdateMEHTToDB(meht.mgt.mgtRootHash, db)
 }
 
-// MGTCachedAdjust 缓存调整mgt
-func (meht *MEHT) MGTCachedAdjust(db *leveldb.DB) {
+// MGTCacheAdjust 缓存调整mgt
+func (meht *MEHT) MGTCacheAdjust(db *leveldb.DB, a float64, b float64) {
+	if !meht.mgt.IsNeedCacheAdjust(meht.GetSEH(db).bucketsNumber, a, b) {
+		return
+	}
 	newMgtHash := meht.mgt.CacheAdjust(db, meht.cache)
 	meht.UpdateMEHTToDB(newMgtHash, db)
 }

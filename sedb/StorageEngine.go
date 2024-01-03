@@ -159,7 +159,6 @@ func (se *StorageEngine) GetSecondaryIndexMeht(db *leveldb.DB) *meht.MEHT {
 			se.secondaryLatch.Unlock()
 			return se.secondaryIndexMeht
 		}
-		fmt.Println(se.secondaryIndexHashMeht)
 		if secondaryIndexString, _ := db.Get(se.secondaryIndexHashMeht, nil); len(secondaryIndexString) != 0 {
 			_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndexMeht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
@@ -281,6 +280,24 @@ func (se *StorageEngine) BatchCommit(secondaryDb *leveldb.DB) {
 	return
 }
 
+func (se *StorageEngine) CacheAdjust(secondaryDb *leveldb.DB, a float64, b float64) {
+	if se.secondaryIndexMode != "meht" && se.secondaryIndexMode != "mpt" && se.secondaryIndexMode != "mbt" {
+		fmt.Printf("非主键索引类型siMode设置错误\n")
+		return
+	}
+	if se.primaryIndex == nil {
+		return
+	}
+	if se.secondaryIndexMode == "mpt" { //mpt无缓存调整
+		return
+	} else if se.secondaryIndexMode == "meht" {
+		se.MEHTCacheAdjust(secondaryDb, a, b)
+	} else if se.secondaryIndexMode == "mbt" { //mbt无缓存调整
+		return
+	}
+	return
+}
+
 // MPTBatchCommit 批量提交mpt
 func (se *StorageEngine) MPTBatchCommit(db *leveldb.DB) {
 	if se.secondaryIndexMpt == nil { // 没有辅助索引说明没有交易需要批量提交
@@ -352,7 +369,15 @@ func (se *StorageEngine) MEHTBatchCommit(db *leveldb.DB) {
 	se.secondaryIndexMeht.MGTBatchCommit(db)
 	// 批量更新会更新mgt的rootHash,因此需要更新se的辅助索引根哈希,已经做过sha256
 	seHash := sha256.Sum256(se.secondaryIndexMeht.GetMgtHash())
-	fmt.Println(seHash)
+	se.secondaryIndexHashMeht = seHash[:]
+}
+
+func (se *StorageEngine) MEHTCacheAdjust(db *leveldb.DB, a float64, b float64) {
+	if se.secondaryIndexMeht == nil {
+		return
+	}
+	se.secondaryIndexMeht.MGTCacheAdjust(db, a, b)
+	seHash := sha256.Sum256(se.secondaryIndexMeht.GetMgtHash())
 	se.secondaryIndexHashMeht = seHash[:]
 }
 

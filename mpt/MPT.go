@@ -522,17 +522,19 @@ func (mpt *MPT) MPTBatchFix(db *leveldb.DB) {
 		return
 	}
 	wG := sync.WaitGroup{}
-	for idx, child := range mpt.root.children {
+	for i, child := range mpt.root.children {
 		if child == nil || !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
 			continue
 		}
 		wG.Add(1)
 		child_ := child
+		idx := i
 		go func() {
 			shortNodeBatchFixFoo(child_, db, mpt.cache)
+			mpt.root.childrenHash[idx] = child_.nodeHash
 			wG.Done()
 		}()
-		mpt.root.childrenHash[idx] = child_.nodeHash
+
 	}
 	wG.Wait()
 	mpt.root.UpdateFullNodeHash(db, mpt.cache)

@@ -452,17 +452,18 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		}()
 		mgt.Root.dataHashes[idx] = child.nodeHash
 	}
-	for idx, child := range mgt.Root.cachedNodes {
+	for i, child := range mgt.Root.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		wG.Add(1)
 		child_ := child
+		idx := i
 		go func() {
 			MGTBatchFixFoo(child_, db, cache)
+			mgt.Root.cachedDataHashes[idx] = child_.nodeHash
 			wG.Done()
 		}()
-		mgt.Root.cachedDataHashes[idx] = child.nodeHash
 	}
 	wG.Wait()
 	// 最后更新根节点

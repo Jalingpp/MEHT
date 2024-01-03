@@ -314,25 +314,26 @@ func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
 		return
 	}
 	wG := sync.WaitGroup{}
-	for idx, child := range mbt.Root.subNodes {
+	for i, child := range mbt.Root.subNodes {
 		if child == nil || !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
 			continue
 		}
 		wG.Add(1)
 		child_ := child
+		idx := i
 		go func() {
 			mbtBatchFixFoo(child_, db, mbt.cache)
+			mbt.Root.dataHashes[idx] = child_.nodeHash
 			wG.Done()
 		}()
-		mbt.Root.dataHashes[idx] = mbt.Root.subNodes[idx].nodeHash
 	}
 	wG.Wait()
 	mbt.Root.UpdateMBTNodeHash(db, mbt.cache)
-	fmt.Println("--------------------------------------")
-	for i, hash := range mbt.Root.dataHashes {
-		fmt.Println("rootChild", i, ": ", hash)
-	}
-	fmt.Println("--------------------------------------")
+	//fmt.Println("--------------------------------------")
+	//for i, hash := range mbt.Root.dataHashes {
+	//	fmt.Println("rootChild", i, ": ", hash)
+	//}
+	//fmt.Println("--------------------------------------")
 	mbt.Root.isDirty = false
 	mbt.UpdateMBTInDB(mbt.Root.nodeHash, db)
 }
@@ -366,10 +367,6 @@ func callBackFoo[K comparable, V any](k K, v V, db *leveldb.DB) {
 	switch any(v).(type) {
 	case *MBTNode:
 		v_ = SerializeMBTNode(any(v).(*MBTNode))
-		v__ := any(v).(*MBTNode)
-		if v__.GetName() == "Branch83" {
-			fmt.Println("XXXXXXXXXXx")
-		}
 	default:
 		panic("Unknown type " + reflect.TypeOf(v).String() + " in callBAckFoo in MBT.")
 	}

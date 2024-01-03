@@ -110,6 +110,13 @@ func (sedb *SEDB) BatchCommit() {
 	sedb.se.BatchCommit(sedb.secondaryDb)
 }
 
+func (sedb *SEDB) CacheAdjust(a float64, b float64) {
+	if sedb.se == nil {
+		return
+	}
+	sedb.se.CacheAdjust(sedb.secondaryDb, a, b)
+}
+
 // InsertKVPair 向SEDB中插入一条记录,返回插入证明
 func (sedb *SEDB) InsertKVPair(kvPair util.KVPair, isUpdate bool) *SEDBProof {
 	//如果是第一次插入

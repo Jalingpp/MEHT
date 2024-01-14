@@ -161,7 +161,7 @@ func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	if sn.isLeaf {
 		nodeHash = append(nodeHash, sn.value...)
 	} else {
-		nodeHash = append(nodeHash, sn.nextNode.nodeHash...)
+		nodeHash = append(nodeHash, sn.nextNodeHash...)
 	}
 	hash := sha256.Sum256(nodeHash)
 	sn.nodeHash = make([]byte, len(hash))

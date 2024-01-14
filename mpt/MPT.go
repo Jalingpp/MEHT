@@ -170,6 +170,27 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newBranch := NewFullNode(children, cNode.value, db, mpt.cache)
 				//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
+				for m := range cNode.toDelMap {
+					if len(util.CommPrefix(m, newLeaf.prefix)) == len(newLeaf.prefix) { //如果newLeaf的前缀是m的前缀，m的插入一定会走到newLeaf，将m的删除记录移动到newLeaf上
+						for n := range cNode.toDelMap[m] {
+							newLeaf.toDelMap[m][n] = cNode.toDelMap[m][n]
+						}
+						delete(cNode.toDelMap, m)
+					} else { //否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
+						for n := range cNode.toDelMap[m] {
+							newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
+						}
+					}
+				}
+				//当前节点将会被新的extensionNode替换，因此需要从cache及db中删除
+				if mpt.cache != nil {
+					targetCache, _ := (*mpt.cache)[0].(*lru.Cache[string, *ShortNode])
+					targetCache.Remove(string(cNode.nodeHash))
+				}
+				err := db.Delete(cNode.nodeHash, nil)
+				if err != nil {
+					fmt.Println("Delete ShortNode from DB error:", err)
+				}
 				return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 			} else if len(comPrefix) == len(suffix) {
 				//如果共同前缀的长度等于suffix的长度
@@ -182,6 +203,16 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newBranch := NewFullNode(children, value, db, mpt.cache)
 				//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
+				for m := range cNode.toDelMap {
+					//如果cNode新前缀是m的前缀，m的插入一定会走到cNode，将m的删除记录移动到cNode上
+					//否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
+					if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) {
+						for n := range cNode.toDelMap[m] {
+							newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
+						}
+						delete(cNode.toDelMap, m)
+					}
+				}
 				return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 			} else {
 				//新建一个LeafNode,如果suffix在除去comPrefix+1个i字节后没有字节了，则suffix为nil，否则为剩余字节
@@ -196,6 +227,19 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newBranch := NewFullNode(children, nil, db, mpt.cache)
 				//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
+				for m := range cNode.toDelMap {
+					if len(util.CommPrefix(m, leafNode.prefix)) == len(leafNode.prefix) { //如果leafNode的前缀是m的前缀，m的插入一定会走到leafNode，将m的删除记录移动到leafNode上
+						for n := range cNode.toDelMap[m] {
+							leafNode.toDelMap[m][n] = cNode.toDelMap[m][n]
+						}
+						delete(cNode.toDelMap, m)
+					} else if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) { //如果cNode前缀不是m前缀，m的插入只会走到newExtension，因此将m的删除记录移动到newExtension上
+						for n := range cNode.toDelMap[m] {
+							newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
+						}
+						delete(cNode.toDelMap, m)
+					}
+				}
 				return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 			}
 		}
@@ -227,6 +271,16 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			newBranch := NewFullNode(children, value, db, mpt.cache)
 			//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
+			for m := range cNode.toDelMap {
+				//如果cNode新前缀是m的前缀，m的插入一定会走到cNode，将m的删除记录移动到cNode上
+				//否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
+				if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) {
+					for n := range cNode.toDelMap[m] {
+						newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
+					}
+					delete(cNode.toDelMap, m)
+				}
+			}
 			//当前节点指向的FullNode中只有cNode，而cNode不是脏节点，且当前节点的哈希已经算上了value和cNode，因此不需要置为脏
 			return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 		} else {
@@ -242,6 +296,19 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			newBranch := NewFullNode(children, nil, db, mpt.cache)
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为一个FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
+			for m := range cNode.toDelMap {
+				if len(util.CommPrefix(m, newLeaf.prefix)) == len(newLeaf.prefix) { //如果leafNode的前缀是m的前缀，m的插入一定会走到leafNode，将m的删除记录移动到leafNode上
+					for n := range cNode.toDelMap[m] {
+						newLeaf.toDelMap[m][n] = cNode.toDelMap[m][n]
+					}
+					delete(cNode.toDelMap, m)
+				} else if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) { //如果cNode前缀不是m前缀，m的插入只会走到newExtension，因此将m的删除记录移动到newExtension上
+					for n := range cNode.toDelMap[m] {
+						newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
+					}
+					delete(cNode.toDelMap, m)
+				}
+			}
 			return newExtension, "", false //一定没有值被替换，因此不需要判断当前是不是主索引，是不是需要记录被替换的旧值
 		}
 	}
@@ -319,6 +386,14 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			childNode_, oldValue, needDelete = mpt.RecursiveInsertShortNode(prefix+suffix[:1], suffix[1:], value, childNode, db, isPrimary, flag)
 		} else {
 			childNode_ = NewShortNode(prefix+suffix[:1], true, suffix[1:], nil, value, db, mpt.cache)
+			for m := range cNode.toDelMap {
+				if len(util.CommPrefix(m, childNode_.prefix)) == len(childNode_.prefix) { //如果childNode_的前缀是m的前缀，m的插入一定会走到childNode_，将m的删除记录移动到childNode_上
+					for n := range cNode.toDelMap[m] {
+						childNode_.toDelMap[m][n] = cNode.toDelMap[m][n]
+					}
+					delete(cNode.toDelMap, m)
+				}
+			}
 		}
 		cNode.children[util.ByteToHexIndex(suffix[0])] = childNode_
 		childNode_.parent = cNode

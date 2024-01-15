@@ -256,9 +256,6 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) {
 	//跳转到此函数时MGT已加写锁
 	//delete the old node in leveldb
-	//if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
-	//	panic(err)
-	//}
 	var targetCache *lru.Cache[string, *MGTNode]
 	if cache != nil {
 		targetCache, _ = (*cache)[0].(*lru.Cache[string, *MGTNode])

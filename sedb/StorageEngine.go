@@ -182,9 +182,13 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 	//如果是第一次插入
 	if se.GetPrimaryIndex(primaryDb) == nil && se.primaryLatch.TryLock() { // 主索引重构失败，只允许一个线程新建主索引
 		//创建一个新的主键索引
-		shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
-		se.primaryIndex = mpt.NewMPT(primaryDb, se.cacheEnable, shortNodeCC, fullNodeCC)
-		se.primaryLatch.Unlock()
+		if se.GetPrimaryIndex(primaryDb) != nil {
+			se.primaryLatch.Unlock()
+		} else {
+			shortNodeCC, fullNodeCC, _, _, _, _, _ := GetCapacity(&se.cacheCapacity)
+			se.primaryIndex = mpt.NewMPT(primaryDb, se.cacheEnable, shortNodeCC, fullNodeCC)
+			se.primaryLatch.Unlock()
+		}
 	}
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
@@ -267,15 +271,23 @@ func (se *StorageEngine) BatchCommit(primaryDb *leveldb.DB, secondaryDb *leveldb
 		fmt.Printf("非主键索引类型siMode设置错误\n")
 		return
 	}
-	// ZYF 可以并发
-	//se.PrimaryIndexBatchCommit(primaryDb)
-	if se.secondaryIndexMode == "mpt" { //插入mpt
-		se.MPTBatchCommit(secondaryDb)
-	} else if se.secondaryIndexMode == "meht" { //插入meht
-		se.MEHTBatchCommit(secondaryDb)
-	} else if se.secondaryIndexMode == "mbt" {
-		se.MBTBatchCommit(secondaryDb)
-	}
+	wG := sync.WaitGroup{}
+	wG.Add(2)
+	go func() {
+		se.PrimaryIndexBatchCommit(primaryDb)
+		wG.Done()
+	}()
+	go func() {
+		if se.secondaryIndexMode == "mpt" { //插入mpt
+			se.MPTBatchCommit(secondaryDb)
+		} else if se.secondaryIndexMode == "meht" { //插入meht
+			se.MEHTBatchCommit(secondaryDb)
+		} else if se.secondaryIndexMode == "mbt" {
+			se.MBTBatchCommit(secondaryDb)
+		}
+		wG.Done()
+	}()
+	wG.Wait()
 	return
 }
 

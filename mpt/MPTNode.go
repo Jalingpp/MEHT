@@ -59,6 +59,7 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 		fn.updateLatch.Unlock()
 	}
 	for fn.GetChildren()[index] == nil && len(fn.GetChildrenHash()[index]) != 0 {
+		fmt.Println("why?")
 	} //其余线程等待childNode重构
 	return fn.GetChildren()[index]
 }
@@ -145,10 +146,6 @@ func NewShortNode(prefix string, isLeaf bool, suffix string, nextNode *FullNode,
 // UpdateShortNodeHash 更新ShortNode的nodeHash
 func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	//先删除db中原有节点(考虑到新增的其他ShortNode可能与旧ShortNode的nodeHash相同，删除可能会丢失数据，所以注释掉)
-	//err := db.Delete(sn.nodeHash, nil)
-	//if err != nil {
-	//	fmt.Println("Delete ShortNode from DB error:", err)
-	//}
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
 		targetCache.Remove(string(sn.nodeHash))
@@ -164,8 +161,7 @@ func (sn *ShortNode) UpdateShortNodeHash(db *leveldb.DB, cache *[]interface{}) {
 		nodeHash = append(nodeHash, sn.nextNodeHash...)
 	}
 	hash := sha256.Sum256(nodeHash)
-	sn.nodeHash = make([]byte, len(hash))
-	copy(sn.nodeHash, hash[:])
+	sn.nodeHash = hash[:]
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *ShortNode])
 		targetCache.Add(string(sn.nodeHash), sn)
@@ -217,9 +213,6 @@ func NewFullNode(children [16]*ShortNode, value []byte, db *leveldb.DB, cache *[
 // UpdateFullNodeHash updates the nodeHash of a FullNode
 func (fn *FullNode) UpdateFullNodeHash(db *leveldb.DB, cache *[]interface{}) {
 	////先删除db中原有节点
-	//if err := db.Delete(fn.nodeHash, nil); err != nil {
-	//	fmt.Println("Delete FullNode from DB error:", err)
-	//}
 	if cache != nil {
 		targetCache, _ := (*cache)[1].(*lru.Cache[string, *FullNode])
 		targetCache.Remove(string(fn.nodeHash))

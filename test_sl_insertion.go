@@ -25,7 +25,7 @@ func main() {
 	}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair) {
 		for kvPair := range kvPairCh {
-			seDB.InsertKVPair(kvPair)
+			seDB.InsertKVPair(kvPair, false)
 		}
 		wg.Done()
 	}

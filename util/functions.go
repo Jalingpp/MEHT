@@ -121,12 +121,14 @@ func StringToBucketKeyIdxWithRdx(str string, offset int, rdx int) int {
 
 func CommPrefix(a string, b string) string {
 	var idx int
+	ret := ""
 	for idx = 0; idx < len(a) && idx < len(b); idx++ {
 		if a[idx] != b[idx] {
 			break
 		}
+		ret += string(a[idx])
 	}
-	return (" " + a[:idx])[1:]
+	return ret
 }
 
 func StringToHex(s string) string {

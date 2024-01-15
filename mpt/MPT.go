@@ -37,6 +37,10 @@ type MPT struct {
 	updateLatch sync.Mutex
 }
 
+func (mpt *MPT) GetCache() *[]interface{} {
+	return mpt.cache
+}
+
 // GetRoot 获取MPT的根节点，如果为nil，则从数据库中查询
 func (mpt *MPT) GetRoot(db *leveldb.DB) *FullNode {
 	//如果当前MPT的root为nil，则从数据库中查询
@@ -252,10 +256,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		//如果当前节点的suffix被suffix完全包含
 		if len(commPrefix) == len(cNode.suffix) {
 			//递归插入到nextNode中
-			fullNode, oldValue, needDelete := mpt.RecursiveInsertFullNode(prefix+commPrefix, suffix[len(commPrefix):], value, cNode.GetNextNode(db, mpt.cache), db, isPrimary, flag)
-			cNode.nextNode = fullNode
-			fullNode.parent = cNode
-			cNode.nextNodeHash = fullNode.nodeHash
+			_, oldValue, needDelete := mpt.RecursiveInsertFullNode(prefix+commPrefix, suffix[len(commPrefix):], value, cNode.GetNextNode(db, mpt.cache), db, isPrimary, flag)
 			//fullNode一定是脏的，因此当前节点标记为脏，延迟至批量更新哈希
 			cNode.isDirty = true
 			return cNode, oldValue, needDelete
@@ -269,8 +270,10 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
 			newBranch := NewFullNode(children, value, db, mpt.cache)
+			newBranch.isDirty = cNode.isDirty
 			//新建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为新建的FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
+			newExtension.isDirty = cNode.isDirty
 			for m := range cNode.toDelMap {
 				//如果cNode新前缀是m的前缀，m的插入一定会走到cNode，将m的删除记录移动到cNode上
 				//否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
@@ -294,8 +297,10 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
 			children[util.ByteToHexIndex(suffix[len(commPrefix)])] = newLeaf
 			newBranch := NewFullNode(children, nil, db, mpt.cache)
+			newBranch.isDirty = cNode.isDirty
 			//创建一个ExtensionNode，其prefix为之前的prefix，其suffix为comPrefix，其nextNode为一个FullNode
 			newExtension := NewShortNode(prefix, false, commPrefix, newBranch, nil, db, mpt.cache)
+			newExtension.isDirty = cNode.isDirty
 			for m := range cNode.toDelMap {
 				if len(util.CommPrefix(m, newLeaf.prefix)) == len(newLeaf.prefix) { //如果leafNode的前缀是m的前缀，m的插入一定会走到leafNode，将m的删除记录移动到leafNode上
 					for n := range cNode.toDelMap[m] {
@@ -349,7 +354,8 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			oldValue = string(cNode.value)
 			cNode.value = value
 			//如果当前节点是根节点，那么有可能value变更的同时孩子节点往后的数据也在同时变更，因此综合孩子节点哈希计算得到的哈希值可能不准确，因此干脆不计算，置为脏
-			cNode.UpdateFullNodeHash(db, mpt.cache)
+			//cNode.UpdateFullNodeHash(db, mpt.cache)
+			cNode.isDirty = true
 			var pShort = cNode.parent
 			var pFull *FullNode
 			if pShort != nil {
@@ -395,9 +401,9 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 				}
 			}
 		}
-		cNode.children[util.ByteToHexIndex(suffix[0])] = childNode_
+		cNode.children[idx] = childNode_
 		childNode_.parent = cNode
-		cNode.childrenHash[util.ByteToHexIndex(suffix[0])] = childNode_.nodeHash
+		cNode.childrenHash[idx] = childNode_.nodeHash
 		//childNode_可能是脏节点,所以当前节点也是脏的
 		cNode.isDirty = true
 		var pShort = cNode.parent
@@ -597,11 +603,13 @@ func (mpt *MPT) MPTBatchFix(db *leveldb.DB) {
 		return
 	}
 	wG := sync.WaitGroup{}
+	wG.Add(len(mpt.root.children))
 	for i, child := range mpt.root.children {
 		if child == nil || !child.isDirty { //如果孩子节点为空或者孩子节点不是脏节点，则跳过
+			wG.Done()
 			continue
 		}
-		wG.Add(1)
+
 		child_ := child
 		idx := i
 		go func() {

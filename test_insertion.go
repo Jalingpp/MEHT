@@ -58,11 +58,10 @@ func main() {
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for i, kvPair := range kvPairs {
+		for _, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
-			fmt.Println(i)
 		}
 		close(kvPairCh)
 	}
@@ -85,6 +84,7 @@ func main() {
 		}
 		// 所有查询与插入操作已全部结束，将尾部数据批量提交
 		seDB.BatchCommit()
+		seDB.QueryKVPairsByHexKeyword(util.StringToHex("0x77aca1fdb0b7841765939b2b43491f0ba3641f24"))
 		//seDB.CacheAdjust(a, b)
 		wG.Done()
 	}

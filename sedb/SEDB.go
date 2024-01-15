@@ -313,27 +313,68 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 	return r
 }
 
+func STraverse(node *mpt.ShortNode, db *leveldb.DB, cache *[]interface{}) {
+	if node == nil {
+		return
+	}
+	child := node.GetNextNode(db, cache)
+	FTraverse(child, db, cache)
+	ssn := mpt.SerializeShortNode(node)
+	//将更新后的sn写入db中
+	if err := db.Put(node.GetNodeHash(), ssn, nil); err != nil {
+		fmt.Println("Insert ShortNode to DB error:", err)
+	}
+}
+
+func FTraverse(node *mpt.FullNode, db *leveldb.DB, cache *[]interface{}) {
+	if node == nil {
+		return
+	}
+	for _, child := range node.GetChildren() {
+		if child == nil {
+			continue
+		}
+		STraverse(child, db, cache)
+	}
+	sfn := mpt.SerializeFullNode(node)
+	if err := db.Put(node.GetNodeHash(), sfn, nil); err != nil {
+		fmt.Println("Insert ShortNode to DB error:", err)
+	}
+}
+
 // WriteSEDBInfoToFile 写seHash和dbPath到文件
 func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	se := sedb.GetStorageEngine()
 	se.UpdateStorageEngineToDB()
+
 	sedb.seHash = se.seHash
 	if err := sedb.primaryDb.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
 		fmt.Println("Insert StorageEngine to DB error:", err)
 	}
 	if sedb.cacheEnable {
-		sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).PurgeCache()
-		switch sedb.siMode {
-		case "meht":
-			sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).PurgeCache()
-			se.GetSecondaryIndexMeht(sedb.secondaryDb).GetSEH(sedb.secondaryDb).UpdateSEHToDB(sedb.secondaryDb)
-		case "mpt":
-			sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).PurgeCache()
-		case "mbt":
-			sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb).PurgeCache()
-		default:
-			log.Fatal("Unknown siMode when purge cache.")
-		}
+		wG := sync.WaitGroup{}
+		wG.Add(2)
+		go func() {
+			//sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).PurgeCache()
+			root := se.primaryIndex.GetRoot(sedb.primaryDb)
+			FTraverse(root, sedb.primaryDb, se.primaryIndex.GetCache())
+			wG.Done()
+		}()
+		go func() {
+			switch sedb.siMode {
+			case "meht":
+				sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).PurgeCache()
+				se.GetSecondaryIndexMeht(sedb.secondaryDb).GetSEH(sedb.secondaryDb).UpdateSEHToDB(sedb.secondaryDb)
+			case "mpt":
+				sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).PurgeCache()
+			case "mbt":
+				sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb).PurgeCache()
+			default:
+				log.Fatal("Unknown siMode when purge cache.")
+			}
+			wG.Done()
+		}()
+		wG.Wait()
 	}
 	data := hex.EncodeToString(sedb.seHash) + "," + sedb.primaryDbPath + "," + sedb.secondaryDbPath + "\n"
 	util.WriteStringToFile(filePath, data)

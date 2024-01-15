@@ -244,13 +244,13 @@ func main() {
 			go batchCommitter(&batchWg, seDB)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
-			duration = time.Since(start)
 			<-doneCh
 			for _, du := range latencyDurationList {
 				latencyDuration += du
 			}
 			batchWg.Wait()
 			seDB.WriteSEDBInfoToFile(filePath)
+			duration = time.Since(start)
 			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 				strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+

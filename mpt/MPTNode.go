@@ -37,9 +37,8 @@ type FullNode struct {
 // GetChildInFullNode 获取FullNode的第index个child，如果为nil，则从数据库中查询
 func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]interface{}) *ShortNode {
 	//如果当前节点的children[index]为nil，则从数据库中查询
-	if fn.GetChildren()[index] == nil && len(fn.GetChildrenHash()[index]) != 0 && fn.updateLatch.TryLock() {
+	if fn.GetChildren()[index] == nil && len(fn.GetChildrenHash()[index]) != 0 {
 		if fn.GetChildren()[index] != nil { // 可能刚好在进到if但是lock之前别的线程更新了孩子
-			fn.updateLatch.Unlock()
 			return fn.GetChildren()[index]
 		}
 		var ok bool
@@ -56,11 +55,7 @@ func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB, cache *[]inter
 				fn.SetChild(index, child)
 			}
 		}
-		fn.updateLatch.Unlock()
 	}
-	for fn.GetChildren()[index] == nil && len(fn.GetChildrenHash()[index]) != 0 {
-		fmt.Println("why?")
-	} //其余线程等待childNode重构
 	return fn.GetChildren()[index]
 }
 

@@ -257,6 +257,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		if len(commPrefix) == len(cNode.suffix) {
 			//递归插入到nextNode中
 			_, oldValue, needDelete := mpt.RecursiveInsertFullNode(prefix+commPrefix, suffix[len(commPrefix):], value, cNode.GetNextNode(db, mpt.cache), db, isPrimary, flag)
+			//nextNode.parent = cNode
+			//cNode.nextNode = nextNode
+			//cNode.nextNodeHash = nextNode.nodeHash
 			//fullNode一定是脏的，因此当前节点标记为脏，延迟至批量更新哈希
 			cNode.isDirty = true
 			return cNode, oldValue, needDelete
@@ -521,11 +524,13 @@ func (mpt *MPT) RecursivePrintFullNode(cNode *FullNode, level int, db *leveldb.D
 	}
 	//递归打印所有孩子节点
 	for i := 0; i < 16; i++ {
+		cNode.childLatch[i].RLock()
 		childNode := cNode.GetChildInFullNode(i, db, mpt.cache)
 		if childNode != nil {
 			// fmt.Printf("已获取childNode[%d]:%x\n", i, childNode.nodeHash)
 			mpt.RecursivePrintShortNode(childNode, level+1, db)
 		}
+		cNode.childLatch[i].RUnlock()
 		// else {
 		// 	fmt.Printf("childNode[%d]不存在\n", i)
 		// }
@@ -588,6 +593,8 @@ func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cNode *Full
 		}
 	}
 	//如果当前FullNode的children中没有对应的key[p]，则构造不存在证明返回
+	cNode.childLatch[util.ByteToHexIndex(key[p])].RLock()
+	defer cNode.childLatch[util.ByteToHexIndex(key[p])].RUnlock()
 	childNodeP := cNode.GetChildInFullNode(util.ByteToHexIndex(key[p]), db, mpt.cache)
 	if childNodeP == nil {
 		return "", &MPTProof{false, level, []*ProofElement{proofElement}}

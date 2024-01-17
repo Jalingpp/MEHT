@@ -19,7 +19,6 @@ func main() {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
-			//fmt.Println(i)
 		}
 		close(kvPairCh)
 	}

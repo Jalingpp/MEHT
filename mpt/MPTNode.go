@@ -94,7 +94,7 @@ func (sn *ShortNode) GetNextNode(db *leveldb.DB, cache *[]interface{}) *FullNode
 			}
 		}
 		if !ok {
-			if nextNodeString, error_ := db.Get(sn.nextNodeHash, nil); error_ == nil {
+			if nextNodeString, _ := db.Get(sn.nextNodeHash, nil); len(nextNodeString) != 0 {
 				nextNode, _ = DeserializeFullNode(nextNodeString)
 				sn.nextNode = nextNode
 				nextNode.parent = sn

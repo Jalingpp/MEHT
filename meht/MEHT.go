@@ -186,7 +186,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 			continue
 		}
 		meht.seh.latch.RLock()
-		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
+		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache, false) // 此处重新查询了插入值所在bucket
 		meht.seh.latch.RUnlock()
 		return kvBucket, kvPair.GetValue(), nil
 	}
@@ -243,7 +243,7 @@ func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, 
 	defer meht.latch.RUnlock()
 	seh := meht.GetSEH(db)
 	seh.latch.RLock()
-	if bucket := seh.GetBucketByKey(key, db, meht.cache); bucket != nil {
+	if bucket := seh.GetBucketByKey(key, db, meht.cache, true); bucket != nil {
 		//根据key找到value
 		seh.latch.RUnlock() //防止在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，导致死锁
 		value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache, false)

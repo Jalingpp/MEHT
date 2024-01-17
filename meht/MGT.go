@@ -300,9 +300,9 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 			if p == nil {
 				return nil
 			}
-			if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
-				return nil
-			}
+			//if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
+			//	return nil
+			//}
 			p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
 			//将p插入到result的第0个位置
 			result = append([]*MGTNode{p}, result...)
@@ -376,14 +376,14 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 	}
 	//从根节点开始,逐层向下遍历,直到找到该中间节点
 	//如果该bucketKey对应的中间节点未被缓存，则一直在subNodes下找，否则需要去cachedNodes里找
-	if val, ok := mgt.cachedINMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && !val.(bool) {
+	if val, ok := mgt.cachedINMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); !ok || !val.(bool) {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			if p == nil {
 				return nil
 			}
-			if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
-				return nil
-			}
+			//if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
+			//	return nil
+			//}
 			p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
 			//将p插入到result的第0个位置
 			result = append([]*MGTNode{p}, result...)
@@ -424,11 +424,12 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 
 // GetOldBucketKey 给定一个bucket,返回它的旧bucketKey
 func GetOldBucketKey(bucket *Bucket) []int {
-	oldBucketKey := make([]int, 0)
 	bucketKey := bucket.GetBucketKey()
-	for i := 1; i < len(bucketKey); i++ {
-		oldBucketKey = append(oldBucketKey, bucketKey[i])
+	if len(bucketKey) == 0 {
+		return nil
 	}
+	oldBucketKey := make([]int, len(bucketKey)-1)
+	copy(oldBucketKey, bucketKey[1:])
 	return oldBucketKey
 }
 
@@ -789,8 +790,9 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
 				if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
 					tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
-					nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
-					nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
+					delPos := len(tempBK) - 1
+					nodePath[1].cachedNodes[tempBK[delPos]] = nil
+					nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
 				}
 				//3.更新nodePath[1]及以后的所有节点
 				nodePath[1].UpdateMGTNodeToDB(db, cache)

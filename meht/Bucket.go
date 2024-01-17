@@ -77,6 +77,49 @@ func NewSegment() []util.KVPair {
 	return kvPairs
 }
 
+func (b *Bucket) SetSegment(segKey string, db *leveldb.DB, cache *[]interface{}, value string, idx int) {
+	//跳转到此函数时bucket已加写锁
+	if _, ok := b.segments.Load(segKey); !ok {
+		b.segLatch.Lock()
+		if oldSeg, ok := b.segments.Load(segKey); ok {
+			b.segLatch.Unlock()
+			newSeg := oldSeg.([]util.KVPair)
+			newSeg[idx].SetValue(value)
+			b.segments.Store(segKey, newSeg)
+			return
+		}
+		var kvs_ *[]util.KVPair
+		key_ := util.IntArrayToString(b.BucketKey, b.rdx) + "segment" + segKey
+		b.segIdxMaps.Delete(segKey)
+		if cache != nil {
+			targetCache, _ := (*cache)[2].(*lru.Cache[string, *[]util.KVPair])
+			if kvs_, ok = targetCache.Get(key_); ok {
+				b.segments.Store(segKey, *kvs_)
+				toAddMap := sync.Map{}
+				for i, kv := range *kvs_ {
+					toAddMap.Store(kv.GetKey(), i)
+				}
+				b.segIdxMaps.Store(segKey, &toAddMap)
+			}
+		}
+		if !ok {
+			if kvString, error_ := db.Get([]byte(key_), nil); error_ == nil {
+				kvs, segIdxMap, _ := DeserializeSegment(kvString)
+				b.segments.Store(segKey, kvs)
+				b.segIdxMaps.Store(segKey, segIdxMap)
+			}
+		}
+		b.segLatch.Unlock()
+	}
+	if oldSeg, ok := b.segments.Load(segKey); ok {
+		newSeg := oldSeg.([]util.KVPair)
+		newSeg[idx].SetValue(value)
+		b.segments.Store(segKey, newSeg)
+	} else {
+		fmt.Println("Error in SetSegment: Segment not found!")
+	}
+}
+
 // GetSegment 获取segment,若不存在,则从db中获取
 func (b *Bucket) GetSegment(segKey string, db *leveldb.DB, cache *[]interface{}) []util.KVPair {
 	//跳转到此函数时bucket已加写锁
@@ -95,8 +138,8 @@ func (b *Bucket) GetSegment(segKey string, db *leveldb.DB, cache *[]interface{})
 			if kvs_, ok = targetCache.Get(key_); ok {
 				b.segments.Store(segKey, *kvs_)
 				toAddMap := sync.Map{}
-				for idx, seg := range *kvs_ {
-					toAddMap.Store(seg.GetKey(), idx)
+				for idx, kv := range *kvs_ {
+					toAddMap.Store(kv.GetKey(), idx)
 				}
 				b.segIdxMaps.Store(segKey, &toAddMap)
 			}
@@ -333,7 +376,8 @@ func (b *Bucket) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}
 	segKey, _, index := b.GetIndex(kvPair.GetKey(), db, cache)
 	if index != -1 {
 		//在bucket中,修改value
-		b.GetSegment(segKey, db, cache)[index].SetValue(kvPair.GetValue())
+		//b.GetSegment(segKey, db, cache)[index].SetValue(kvPair.GetValue())
+		b.SetSegment(segKey, db, cache, kvPair.GetValue(), index)
 		//将修改后的segment更新至db中
 		b.UpdateSegmentToDB(segKey, db, cache)
 		//更新bucket中对应segment的merkle tree
@@ -362,6 +406,7 @@ func (b *Bucket) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}
 			segIdxMap_, _ := b.segIdxMaps.Load(segKey)
 			segIdxMap := segIdxMap_.(*sync.Map)
 			segIdxMap.Store(kvPair.GetKey(), len(newSegment)-1)
+			b.segIdxMaps.Store(segKey, segIdxMap)
 			//将更新后的segment更新至db中
 			b.UpdateSegmentToDB(segKey, db, cache)
 			b.number++
@@ -373,6 +418,7 @@ func (b *Bucket) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}
 			merkleTree_, _ := b.merkleTrees.Load(segKey)
 			merkleTree := merkleTree_.(*mht.MerkleTree)
 			merkleTree.InsertData([]byte(kvPair.GetValue()))
+			b.merkleTrees.Store(segKey, merkleTree)
 			//将更新后的merkle tree更新至db中
 			b.UpdateMerkleTreeToDB(segKey, db, cache)
 			buckets = append(buckets, b)
@@ -416,7 +462,11 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	originBKey := b.GetBucketKey()
 	b.SetBucketKey(append([]int{0}, originBKey...))
 	b.number = 0
-	bSegments := b.GetSegments()
+	mMap := make(map[string][]util.KVPair)
+	b.GetSegments().Range(func(key, value interface{}) bool {
+		mMap[key.(string)] = value.([]util.KVPair)
+		return true
+	})
 	b.segments = sync.Map{}
 	b.segIdxMaps = sync.Map{}
 	b.merkleTrees = sync.Map{}
@@ -432,14 +482,13 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 		buckets = append(buckets, newBucket)
 	}
 	//获取原bucket中所有数据对象
-	bSegments.Range(func(key, value interface{}) bool {
-		for _, kvp := range value.([]util.KVPair) {
+	for _, kvps := range mMap {
+		for _, kvp := range kvps {
 			//获取key的倒数第ld位
 			//将数据对象插入到对应的bucket中
 			buckets[util.StringToBucketKeyIdxWithRdx(kvp.GetKey(), b.ld, b.rdx)].Insert(kvp, db, cache)
 		}
-		return true
-	})
+	}
 	//将原bucket中待删除的数据对象插入到新的rdx个bucket中
 	for key, value := range bToDelMap {
 		buckets[util.StringToBucketKeyIdxWithRdx(key, b.ld, b.rdx)].toDelMap[key] = value

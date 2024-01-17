@@ -241,6 +241,9 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 		//_, mehtProof  = se.InsertIntoMEHT(reversedKV, db)
 		go func() { //实际应该为返回值mehtProof构建一个chan并等待输出
 			defer wG.Done()
+			if reversedKV.GetKey() == "307837376163613166646230623738343137363539333962326234333439316630626133363431663234" {
+				fmt.Println("Insert in meht found.")
+			}
 			se.InsertIntoMEHT(reversedKV, secondaryDb, false)
 			oldVal := <-oldValueCh
 			needDelete := <-needDeleteCh

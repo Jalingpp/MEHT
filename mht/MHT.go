@@ -114,7 +114,6 @@ func (tree *MerkleTree) GetRootHash() []byte {
 
 // UpdateRoot 修改data中第i个数据后更新默克尔树的根节点,返回新的根节点哈希
 func (tree *MerkleTree) UpdateRoot(i int, data []byte) []byte {
-	// fmt.Printf("value byte:%x\n", data)
 	tree.DataList[i] = data
 	//修改叶子节点
 	hash := sha256.Sum256(data)

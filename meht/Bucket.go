@@ -446,7 +446,8 @@ func (b *Bucket) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}
 			//判断key应该插入到哪个bucket中
 			//fmt.Printf("已分裂成%d个bucket,key=%s应该插入到第%d个bucket中\n", b.rdx, ikey, bk)
 			ret = append(ret, buckets)
-			if ret_ := buckets[util.StringToBucketKeyIdxWithRdx(kvPair.GetKey(), b.ld, b.rdx)].Insert(kvPair, db, cache); len(ret_[0]) != b.rdx { //说明这一次的插入没有引起桶分裂
+			nextIdx := util.StringToBucketKeyIdxWithRdx(kvPair.GetKey(), b.ld, b.rdx)
+			if ret_ := buckets[nextIdx].Insert(kvPair, db, cache); len(ret_[0]) != b.rdx { //说明这一次的插入没有引起桶分裂
 				return ret
 			} else { //此次插入引发桶分裂,分裂的rdx个桶作为新的一层桶加入到ret末尾
 				return append(ret, ret_...)

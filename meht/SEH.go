@@ -45,7 +45,7 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 }
 
 // GetBucket 获取bucket，如果内存中没有，从db中读取
-func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}, f ...bool) *Bucket {
+func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret_, ok := seh.ht.Load(bucketKey)
 	if !ok {
@@ -75,10 +75,10 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 }
 
 // GetBucketByKey GetBucket returns the bucket with the given key
-func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}, f bool) *Bucket {
+func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	if seh.gd == 0 {
-		return seh.GetBucket("", db, cache, f)
+		return seh.GetBucket("", db, cache)
 	}
 	var bKey string
 	if len(key) >= seh.gd {
@@ -86,7 +86,7 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{},
 	} else {
 		bKey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
 	}
-	return seh.GetBucket(bKey, db, cache, f)
+	return seh.GetBucket(bKey, db, cache)
 }
 
 // GetGD returns the global depth of the SEH
@@ -107,7 +107,7 @@ func (seh *SEH) GetBucketsNumber() int {
 // GetValueByKey returns the value of the key-value pair with the given key
 func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) string {
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(key, db, cache, false)
+	bucket := seh.GetBucketByKey(key, db, cache)
 	seh.latch.RUnlock()
 	if bucket == nil {
 		return ""
@@ -118,7 +118,7 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 // GetProof returns the proof of the key-value pair with the given key
 func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(key, db, cache, false)
+	bucket := seh.GetBucketByKey(key, db, cache)
 	seh.latch.RUnlock()
 	value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, cache, false)
 	segRootHash, mhtProof := bucket.GetProof(segKey, isSegExist, index, db, cache)
@@ -142,13 +142,13 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(kvPair.GetKey(), db, cache, false)
+	bucket := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 	seh.latch.RUnlock()
 	//即使要删除的值在辅助索引上还没有来得及插入，也不会影响删除操作，因为删除操作只需要找到桶并记录这一次删除操作即可
 	//后续要删除的值也一定会先经过这个桶去插入，不会说延迟删除的桶和即将插入的桶不会有交集，但是桶分裂时要将删除标记传递下去，保证延后的需删除值在插入时一定会在待插入桶找到删除标记
 	if bucket.latch.TryLock() {
 		seh.latch.RLock()
-		bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache, false)
+		bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 		seh.latch.RUnlock()
 		if bucket_ != bucket {
 			bucket.latch.Unlock()
@@ -281,7 +281,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			if bucket.DelegationLatch.TryLock() {
 				seh.latch.RLock()
 				//需要检查是否因为桶的分裂而导致自己的桶已经不是当前桶了，如果不是则重做
-				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache, false)
+				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					bucket.DelegationLatch.Unlock()

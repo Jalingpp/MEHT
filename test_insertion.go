@@ -53,8 +53,8 @@ func main() {
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
 	var stopBatchCommitterFlag = true
-	//var a = 0.9
-	//var b = 0.1
+	var a = 0.9
+	var b = 0.1
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)

@@ -118,13 +118,6 @@ type SeMBTNode struct {
 }
 
 func SerializeMBTNode(node *MBTNode) []byte {
-	//dataHashString := ""
-	//if len(node.dataHashes) > 0 {
-	//	dataHashString += hex.EncodeToString(node.dataHashes[0])
-	//	for _, hash := range node.dataHashes[1:] {
-	//		dataHashString += "," + hex.EncodeToString(hash)
-	//	}
-	//}
 	Bucket := make([]util.SeKVPair, 0)
 	for _, bk := range node.bucket {
 		Bucket = append(Bucket, util.SeKVPair{Key: bk.GetKey(), Value: bk.GetValue()})

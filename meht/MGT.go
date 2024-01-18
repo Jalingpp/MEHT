@@ -317,7 +317,7 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 	} else {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			//获取当前节点的第identI号缓存子节点
-			cachedNode := p.GetCachedNode(bucketKey[identI-1], db, mgt.rdx, cache)
+			cachedNode := p.GetCachedNode(bucketKey[identI], db, mgt.rdx, cache)
 			if cachedNode != nil {
 				//判断缓存子节点是否是叶子
 				if cachedNode.isLeaf {
@@ -633,7 +633,7 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 		nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
 		nodePath[1].dataHashes[oldBucketKey[0]] = newFatherNode.nodeHash
 	} else {
-		delta := len(oldBucketKey) - len(nodePath)
+		delta := len(oldBucketKey) - len(nodePath) + 1
 		nodePath[1].cachedNodes[oldBucketKey[delta]] = newFatherNode
 		nodePath[1].cachedDataHashes[oldBucketKey[delta]] = newFatherNode.nodeHash
 	}

@@ -58,11 +58,11 @@ func main() {
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for i, kvPair := range kvPairs {
+		for _, kvPair := range kvPairs {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
-			fmt.Println(i)
+			//fmt.Println(i)
 		}
 		close(kvPairCh)
 	}

@@ -313,45 +313,6 @@ func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof 
 	return r
 }
 
-//func STraverse(node *mpt.ShortNode, db *leveldb.DB, cache *[]interface{}) {
-//	if node == nil {
-//		return
-//	}
-//	child := node.GetNextNode(db, cache)
-//	FTraverse(child, db, cache)
-//	if bytes.Equal([]byte{132, 66, 222, 144, 191, 204, 157, 79, 234, 212, 146, 152, 169, 190, 24, 168, 126, 176, 42, 0, 150, 110, 249, 217, 35, 121, 144, 69, 47, 124, 146, 27}, node.GetNodeHash()) {
-//		fmt.Println("vvvvvvvvvvvvv")
-//	}
-//	ssn := mpt.SerializeShortNode(node)
-//	//将更新后的sn写入db中
-//	err := db.Put(node.GetNodeHash(), ssn, nil)
-//	if err != nil {
-//		fmt.Println("Insert ShortNode to DB error:", err)
-//	}
-//}
-//
-//func FTraverse(node *mpt.FullNode, db *leveldb.DB, cache *[]interface{}) {
-//	if node == nil {
-//		return
-//	}
-//	for i, child := range node.GetChildren() {
-//		if child == nil {
-//			continue
-//		}
-//		if !bytes.Equal(child.GetNodeHash(), node.GetChildrenHash()[i]) {
-//			fmt.Println("cccccccccccccccccccc")
-//		}
-//		STraverse(child, db, cache)
-//	}
-//	if bytes.Equal([]byte{132, 66, 222, 144, 191, 204, 157, 79, 234, 212, 146, 152, 169, 190, 24, 168, 126, 176, 42, 0, 150, 110, 249, 217, 35, 121, 144, 69, 47, 124, 146, 27}, node.GetNodeHash()) {
-//		fmt.Println("aaaaaaaaaaaaaaaa")
-//	}
-//	sfn := mpt.SerializeFullNode(node)
-//	if err := db.Put(node.GetNodeHash(), sfn, nil); err != nil {
-//		fmt.Println("Insert ShortNode to DB error:", err)
-//	}
-//}
-
 // WriteSEDBInfoToFile 写seHash和dbPath到文件
 func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	se := sedb.GetStorageEngine()

@@ -41,8 +41,9 @@ func main() {
 	allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
 		// PHI 代表分割分位数
 		queries := util.ReadQueryFromFile(dirPath, opNum)
-		for _, query := range queries {
+		for i, query := range queries {
 			queryCh <- query
+			fmt.Println(i)
 		}
 		close(queryCh)
 	}

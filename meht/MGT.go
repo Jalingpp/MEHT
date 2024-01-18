@@ -302,9 +302,6 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 			if p == nil {
 				return nil
 			}
-			//if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
-			//	return nil
-			//}
 			p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
 			//将p插入到result的第0个位置
 			result = append([]*MGTNode{p}, result...)
@@ -330,10 +327,6 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 						//更新LN访问路径总长度
 						mgt.UpdateAccessLengthSum(len(result))
 						return result
-					} else {
-						p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
-						//将p插入到result的第0个位置
-						result = append([]*MGTNode{p}, result...)
 					}
 				} else {
 					//如果不是叶子节点，则判断要找的bucketKey是否包含当前缓存中间节点的bucketKey
@@ -355,10 +348,9 @@ func (mgt *MGT) GetLeafNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[]int
 						return result
 					}
 				}
-			} else { //不包含则p移动到第identI个子节点，切换为下一个identI继续查找
-				p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
-				result = append([]*MGTNode{p}, result...)
 			}
+			p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
+			result = append([]*MGTNode{p}, result...)
 		}
 	}
 	//更新叶子节点的访问频次
@@ -397,30 +389,31 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			//获取当前节点的第identI号缓存子节点
 			cachedNode := p.GetCachedNode(identI, db, mgt.rdx, cache)
-			//判断缓存子节点是否是中间节点
-			if !cachedNode.isLeaf {
-				// 如果是要找的中间节点
-				if util.IntArrayToString(cachedNode.bucketKey, mgt.rdx) == util.IntArrayToString(bucketKey, mgt.rdx) {
-					result = append([]*MGTNode{cachedNode}, result...)
-					return result
-				} else if strings.HasSuffix(util.IntArrayToString(bucketKey, mgt.rdx), util.IntArrayToString(cachedNode.bucketKey, mgt.rdx)) {
-					//如果要找的中间节点的bucketKey以该缓存中间节点的bucketKey为后缀,则继续搜索其子节点
-					//将cachedNode加入结果列表中
-					result = append([]*MGTNode{cachedNode}, result...)
-					//p指向cachedNode，并递归其SubNode
-					p = cachedNode
-					for identI = identI - 1; identI >= 0; identI-- {
-						p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
-						//将p插入到result的第0个位置
-						result = append([]*MGTNode{p}, result...)
+			if cachedNode != nil {
+				//判断缓存子节点是否是中间节点
+				if !cachedNode.isLeaf {
+					// 如果是要找的中间节点
+					if util.IntArrayToString(cachedNode.bucketKey, mgt.rdx) == util.IntArrayToString(bucketKey, mgt.rdx) {
+						result = append([]*MGTNode{cachedNode}, result...)
+						return result
+					} else if strings.HasSuffix(util.IntArrayToString(bucketKey, mgt.rdx), util.IntArrayToString(cachedNode.bucketKey, mgt.rdx)) {
+						//如果要找的中间节点的bucketKey以该缓存中间节点的bucketKey为后缀,则继续搜索其子节点
+						//将cachedNode加入结果列表中
+						result = append([]*MGTNode{cachedNode}, result...)
+						//p指向cachedNode，并递归其SubNode
+						p = cachedNode
+						for identI = identI - 1; identI >= 0; identI-- {
+							p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
+							//将p插入到result的第0个位置
+							result = append([]*MGTNode{p}, result...)
+						}
+						return result
 					}
-					return result
-				} else {
-					//如果不在该缓存目录下,则p移动到第identI个子节点，切换为下一个identI继续查找
-					p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
-					result = append([]*MGTNode{p}, result...)
 				}
 			}
+			//如果不在该缓存目录下,则p移动到第identI个子节点，切换为下一个identI继续查找
+			p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
+			result = append([]*MGTNode{p}, result...)
 		}
 	}
 	return result
@@ -763,13 +756,26 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 		INode := key.(string)
 		//找到其所在的路径
 		bkINode, _ := util.StringToIntArray(INode, mgt.rdx)
+		//说明当前节点虽然是IN但是父亲节点也是IN，由subNode字段连接，不需要做额外cacheNode清空操作
+		//只需要将父亲节点不是IN的IN节点移动到正确位置即可
 		nodePath := mgt.GetInternalNodeAndPath(bkINode, db, cache)
+		if len(nodePath[1].bucketKey)+1 == len(nodePath[0].bucketKey) {
+			mgt.cachedINMap.Delete(INode)
+			return true
+		}
 		//将其所在的缓存父节点(nodePath[1])相应的缓存位置空
 		fmt.Println(bkINode)
 		mgt.PrintCachedPath(nodePath)
 		tempBK := bkINode[:len(bkINode)-len(nodePath[1].bucketKey)]
 		nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
 		nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
+		for i := 1; i < len(nodePath); i++ {
+			if !nodePath[i].isDirty {
+				nodePath[i].isDirty = true
+			} else {
+				break
+			}
+		}
 		//将该INode在cachedINMap中删除
 		mgt.cachedINMap.Delete(INode)
 		//将以INode为后缀的所有cachedLNMap中删除
@@ -785,11 +791,14 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 		nodePathFather[0].subNodes[bkINode[0]] = nodePath[0]
 		nodePath[0].parent = nodePathFather[0]
 		nodePathFather[0].dataHashes[bkINode[0]] = nodePath[0].nodeHash
-		//更新nodePath_father中所有节点的nodeHash(nodePath_father一定包含nodePath中的所有节点,因此无须再更新nodePath)
-		nodePathFather[0].UpdateMGTNodeToDB(db, cache)
+		//nodePathFather[0]可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+		nodePathFather[0].isDirty = true
 		for i := 1; i < len(nodePathFather); i++ {
-			nodePathFather[i].dataHashes[bkINode[i]] = nodePathFather[i-1].nodeHash
-			nodePathFather[i].UpdateMGTNodeToDB(db, cache)
+			if !nodePathFather[i].isDirty {
+				nodePathFather[i].isDirty = true
+			} else {
+				break
+			}
 		}
 		return true
 	})
@@ -828,11 +837,14 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 					nodePath[1].cachedNodes[tempBK[delPos]] = nil
 					nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
 				}
-				//3.更新nodePath[1]及以后的所有节点
-				nodePath[1].UpdateMGTNodeToDB(db, cache)
-				for i := 2; i < len(nodePath); i++ {
-					nodePath[i].dataHashes[nodePath[i-1].bucketKey[0]] = nodePath[i-1].nodeHash
-					nodePath[i].UpdateMGTNodeToDB(db, cache)
+				//3.更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+				nodePath[1].isDirty = true
+				for k := 2; k < len(nodePath); k++ {
+					if !nodePath[k].isDirty {
+						nodePath[k].isDirty = true
+					} else {
+						break
+					}
 				}
 				//4.将该叶子节点放入缓存Map中
 				mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
@@ -853,11 +865,14 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 					npFather[0].subNodes[cachedLN.bucketKey[0]] = cachedLN
 					cachedLN.parent = npFather[0]
 					npFather[0].dataHashes[cachedLN.bucketKey[0]] = cachedLN.nodeHash
-					//2.更新np_father上所有节点
-					npFather[0].UpdateMGTNodeToDB(db, cache)
-					for i := 1; i < len(npFather); i++ {
-						npFather[i].dataHashes[npFather[i-1].bucketKey[0]] = npFather[i-1].nodeHash
-						npFather[i].UpdateMGTNodeToDB(db, cache)
+					//2.更新np_father上所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+					npFather[0].isDirty = true
+					for k := 1; k < len(npFather); k++ {
+						if !npFather[k].isDirty {
+							npFather[k].isDirty = true
+						} else {
+							break
+						}
 					}
 					//3.再将当前节点放入nodePath[i]的缓存目录中
 					nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
@@ -870,11 +885,14 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 						nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
 						nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
 					}
-					//5.更新nodePath[1]及以后的所有节点
-					nodePath[1].UpdateMGTNodeToDB(db, cache)
-					for i := 2; i < len(nodePath); i++ {
-						nodePath[i].dataHashes[nodePath[i-1].bucketKey[0]] = nodePath[i-1].nodeHash
-						nodePath[i].UpdateMGTNodeToDB(db, cache)
+					//5.更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+					nodePath[1].isDirty = true
+					for k := 2; k < len(nodePath); k++ {
+						if !nodePath[k].isDirty {
+							nodePath[k].isDirty = true
+						} else {
+							break
+						}
 					}
 					//6.将该节点放入缓存Map中
 					mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)

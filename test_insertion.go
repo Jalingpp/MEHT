@@ -76,6 +76,7 @@ func main() {
 				// 批量提交，即一并更新辅助索引的脏数据
 				seDB.BatchCommit()
 				seDB.CacheAdjust(a, b)
+				seDB.BatchCommit()
 				// 重置计数器
 				curFinishNum.number = 0
 				curStartNum.number = 0

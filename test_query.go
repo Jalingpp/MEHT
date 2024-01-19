@@ -43,7 +43,8 @@ func main() {
 		queries := util.ReadQueryFromFile(dirPath, opNum)
 		for i, query := range queries {
 			queryCh <- query
-			fmt.Println(i)
+			fmt.Println(i, query)
+			time.Sleep(2)
 		}
 		close(queryCh)
 	}

@@ -251,15 +251,6 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		bucket.DelegationList = nil
 		bucket.DelegationList = make(map[string]util.KVPair)
 		bucket.latchTimestamp = 0
-		if kvPair.GetKey() == "307837376163613166646230623738343137363539333962326234333439316630626133363431663234" {
-			for _, buckets := range bucketSs {
-				for _, bucket__ := range buckets {
-					segKey, isExist, idx := bucket__.GetIndex(kvPair.GetKey(), db, cache)
-					val := bucket__.GetSegment(segKey, db, cache)[idx]
-					fmt.Println(val, isExist, idx)
-				}
-			}
-		}
 		bucket.DelegationLatch.Unlock()
 		// 此处桶锁不释放，会在MGTGrow的地方释放，因为此处桶锁释放后，其他线程就可以插入了，而此时mgt若需要分裂则还没有更新，因此可能会出现桶插入了但是相应mgtNode不存在的问题
 		return bucketSs, DELEGATE, nil, 0
@@ -301,9 +292,6 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 						if bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
 							bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]--
 						} else {
-							if newValKvp.GetKey() == "307837376163613166646230623738343137363539333962326234333439316630626133363431663234" {
-								fmt.Println("Client find key in list!")
-							}
 							if isChange := newValKvp.AddValue(kvPair.GetValue()); isChange {
 								bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 							}
@@ -318,9 +306,6 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 						} else {
 							value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
 							newValKvp := util.NewKVPair(kvPair.GetKey(), value)
-							if newValKvp.GetKey() == "307837376163613166646230623738343137363539333962326234333439316630626133363431663234" {
-								fmt.Println("Client find key in bucket!")
-							}
 							if isChange := newValKvp.AddValue(kvPair.GetValue()); isChange {
 								bucket.DelegationList[kvPair.GetKey()] = *newValKvp
 							}

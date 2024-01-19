@@ -5,6 +5,7 @@ import (
 	"MEHT/meht"
 	"MEHT/mpt"
 	"MEHT/util"
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -217,6 +218,42 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
 		pKey, qBucket, segKey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(HexKeyword, sedb.secondaryDb)
+		fmt.Println(qBucket.BucketKey)
+		seIdx := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb)
+		mgt := seIdx.GetMGT(sedb.secondaryDb)
+		path := mgt.GetLeafNodeAndPath(qBucket.BucketKey, sedb.secondaryDb, seIdx.GetCache())
+		for i, _ := range path {
+			fmt.Println(path[i], "\n", path[i].GetNodeHash(), path[i].GetIsDirty(), path[i].GetIsLeaf())
+			if i == len(path)-1 {
+				break
+			}
+			curNode := path[i]
+			fNode := path[i+1]
+			if curNode.GetParent() != fNode {
+				fmt.Println("error father")
+			}
+			idx := curNode.GetBucketKey()
+			idx__ := fNode.GetBucketKey()
+			tmpKey := idx[:len(idx)-len(idx__)]
+			if len(idx) == len(idx__)+1 {
+				fmt.Println("may be sub")
+			} else {
+				fmt.Println("may be cache")
+			}
+			flag := false
+			if bytes.Equal(fNode.GetSubNodeHash(tmpKey[len(tmpKey)-1]), curNode.GetNodeHash()) {
+				fmt.Println("Is subNode")
+				flag = true
+			}
+			if bytes.Equal(fNode.GetCachedNodeHash(tmpKey[len(tmpKey)-1]), curNode.GetNodeHash()) {
+				fmt.Println("Is cachedNode")
+				flag = true
+			}
+			if !flag {
+				fmt.Println("error nodeHash")
+			}
+			fmt.Println("\n-----------------------------------------------\n")
+		}
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)

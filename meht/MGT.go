@@ -90,6 +90,33 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	return mgt.Root
 }
 
+func (mgtNode *MGTNode) GetNodeHash() []byte {
+	return mgtNode.nodeHash
+}
+
+func (mgtNode *MGTNode) GetParent() *MGTNode {
+	return mgtNode.parent
+}
+
+func (mgtNode *MGTNode) GetBucketKey() []int {
+	return mgtNode.bucketKey
+}
+
+func (mgtNode *MGTNode) GetSubNodeHash(i int) []byte {
+	return mgtNode.dataHashes[i]
+}
+
+func (mgtNode *MGTNode) GetCachedNodeHash(i int) []byte {
+	return mgtNode.cachedDataHashes[i]
+}
+
+func (mgtNode *MGTNode) GetIsDirty() bool {
+	return mgtNode.isDirty
+}
+func (mgtNode *MGTNode) GetIsLeaf() bool {
+	return mgtNode.isLeaf
+}
+
 // GetSubNode 获取subNode,如果subNode为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetSubNode(index int, db *leveldb.DB, rdx int, cache *[]interface{}) *MGTNode {
 	if mgtNode.subNodes[index] == nil && mgtNode.subNodesLatch[index].TryLock() { // 既然进入这个函数那么是一定能找到节点的
@@ -813,28 +840,23 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 				//newPath = append([]*MGTNode{nodePath[0]}, newPath...)
 				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
 				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
-				tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
-				delPos := len(tempBK) - 1
-				if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
-					nodePath[1].cachedNodes[tempBK[delPos]] = nil
-					nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
-				} else {
-					//nodePath[1].subNodes[tempBK[delPos]] = nil
-					//nodePath[1].dataHashes[tempBK[delPos]] = nil
-				}
-				//3.更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
-				nodePath[1].isDirty = true
-				for k := 2; k < len(nodePath); k++ {
+				//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+				for k := 1; k < len(nodePath); k++ {
 					if !nodePath[k].isDirty {
 						nodePath[k].isDirty = true
 					} else {
 						break
 					}
 				}
-				//4.将该叶子节点放入缓存Map中
-				mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
-				//5.打印缓存更新结果
-				//mgt.PrintCachedPath(newPath)
+				tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
+				delPos := len(tempBK) - 1
+				if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
+					nodePath[1].cachedNodes[tempBK[delPos]] = nil
+					nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
+				} else {
+					//将该叶子节点放入缓存Map中
+					mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
+				}
 				break
 			} else { //如果当前节点的第bucketKey[identI]个缓存位不为空
 				//比较缓存节点与当前叶节点的热度,如果当前节点更热,则替换,并将原缓存节点放回原处,否则继续看下一位置
@@ -862,18 +884,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 					nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
 					nodePath[0].parent = nodePath[i]
 					nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
-					//newPath = append([]*MGTNode{nodePath[0]}, newPath...)
-					//4.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
-					tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
-					delPos := len(tempBK) - 1
-					if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
-						nodePath[1].cachedNodes[tempBK[delPos]] = nil
-						nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
-					} else {
-						//nodePath[1].subNodes[tempBK[delPos]] = nil
-						//nodePath[1].dataHashes[tempBK[delPos]] = nil
-					}
-					//5.更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+					//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
 					for k := 1; k < len(nodePath); k++ {
 						if !nodePath[k].isDirty {
 							nodePath[k].isDirty = true
@@ -881,10 +892,16 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 							break
 						}
 					}
-					//6.将该节点放入缓存Map中
-					mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
-					//7.打印缓存更新结果
-					//mgt.PrintCachedPath(newPath)
+					//4.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
+					tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
+					delPos := len(tempBK) - 1
+					if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
+						nodePath[1].cachedNodes[tempBK[delPos]] = nil
+						nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
+					} else {
+						//将该节点放入缓存Map中
+						mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
+					}
 					break
 				} else {
 					//原缓存节点更热

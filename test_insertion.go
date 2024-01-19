@@ -86,6 +86,7 @@ func main() {
 		}
 		// 所有查询与插入操作已全部结束，将尾部数据批量提交
 		seDB.BatchCommit()
+		seDB.QueryKVPairsByHexKeyword(util.StringToHex("0xe848a2c9643a9adc1b0555e8f5df713120dd60df"))
 		wG.Done()
 	}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {

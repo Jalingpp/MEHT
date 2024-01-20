@@ -72,6 +72,10 @@ func NewMGT(rdx int) *MGT {
 	return &MGT{rdx, nil, nil, sync.Map{}, sync.Map{}, make(map[string]int), 0, sync.RWMutex{}, sync.Mutex{}}
 }
 
+func (mgt *MGT) GetRdx() int {
+	return mgt.rdx
+}
+
 // GetRoot 获取root,如果root为空,则从leveldb中读取
 func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	if mgt.Root == nil {

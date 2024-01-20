@@ -254,6 +254,34 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 			}
 			fmt.Println("\n-----------------------------------------------\n")
 		}
+		root := mgt.Root
+		for i := 0; i < 16; i++ {
+			node := root.GetCachedNode(i, sedb.secondaryDb, mgt.GetRdx(), seIdx.GetCache())
+			if node == nil {
+				continue
+			}
+			fmt.Println(i, ":")
+			if node.GetParent() == root {
+				fmt.Println("parent ok")
+			} else {
+				fmt.Println("parent error")
+			}
+			if bytes.Equal(node.GetNodeHash(), root.GetCachedNodeHash(i)) {
+				fmt.Println("nodeHash ok")
+			} else {
+				fmt.Println("nodeHash error")
+			}
+			if node.GetIsLeaf() {
+				fmt.Println("node is leaf")
+			} else {
+				fmt.Println("node is not leaf")
+			}
+			if node.GetIsDirty() {
+				fmt.Println("node is dirty")
+			} else {
+				fmt.Println("node is clean")
+			}
+		}
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)

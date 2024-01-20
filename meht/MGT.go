@@ -472,7 +472,7 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 	// 仅对第一层孩子节点做并发处理，减少协程数量
 	// 先通过递归到最深层，再从最深层开始往上更新脏节点
 	for i, child := range mgt.Root.subNodes {
-		if child == nil || !child.isDirty || child.parent != mgt.Root { // child 不存在的节点一定不会是脏节点
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		wG.Add(1)
@@ -485,7 +485,7 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		}()
 	}
 	for i, child := range mgt.Root.cachedNodes {
-		if child == nil || !child.isDirty || child.parent != mgt.Root { // child 不存在的节点一定不会是脏节点
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		wG.Add(1)
@@ -516,7 +516,7 @@ func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 		mgtNode.dataHashes[idx] = child.nodeHash
 	}
 	for idx, child := range mgtNode.cachedNodes {
-		if child == nil || !child.isDirty || child.parent != mgtNode { // child 不存在的节点一定不会是脏节点
+		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		MGTBatchFixFoo(child, db, cache)
@@ -838,30 +838,30 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 			//newPath = append([]*MGTNode{nodePath[i]}, newPath...)
 			//如果当前节点的第bucketKey[identI]个缓存位为空,则放置
 			if nodePath[i].cachedDataHashes[bucketKey[identI]] == nil {
-				//1.放置当前节点(nodePath[0])
-				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
-				nodePath[0].parent = nodePath[i]
-				//newPath = append([]*MGTNode{nodePath[0]}, newPath...)
-				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
-				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
-				//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
-				for k := 1; k < len(nodePath); k++ {
-					if !nodePath[k].isDirty {
-						nodePath[k].isDirty = true
-					} else {
-						break
-					}
-				}
-				tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
-				delPos := len(tempBK) - 1
-				if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
-					nodePath[1].cachedNodes[tempBK[delPos]] = nil
-					nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
-				} else {
-					//将该叶子节点放入缓存Map中
-					mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
-				}
-				break
+				////1.放置当前节点(nodePath[0])
+				//nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
+				//nodePath[0].parent = nodePath[i]
+				////newPath = append([]*MGTNode{nodePath[0]}, newPath...)
+				//nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
+				////2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
+				////更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+				//for k := 1; k < len(nodePath); k++ {
+				//	if !nodePath[k].isDirty {
+				//		nodePath[k].isDirty = true
+				//	} else {
+				//		break
+				//	}
+				//}
+				//tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
+				//delPos := len(tempBK) - 1
+				//if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
+				//	nodePath[1].cachedNodes[tempBK[delPos]] = nil
+				//	nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
+				//} else {
+				//	//将该叶子节点放入缓存Map中
+				//	mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
+				//}
+				//break
 			} else { //如果当前节点的第bucketKey[identI]个缓存位不为空
 				//比较缓存节点与当前叶节点的热度,如果当前节点更热,则替换,并将原缓存节点放回原处,否则继续看下一位置
 				cachedLN := nodePath[i].GetCachedNode(bucketKey[identI], db, mgt.rdx, cache)

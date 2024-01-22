@@ -560,7 +560,12 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 		//更新所有父节点的nodeHashes,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
 			if i == 1 {
-				nodePath[1].dataHashes[bk.BucketKey[i-1]] = nodePath[0].nodeHash
+				offset := len(bk.BucketKey) - len(nodePath[1].bucketKey)
+				if offset == 1 {
+					nodePath[1].dataHashes[bk.BucketKey[0]] = nodePath[0].nodeHash
+				} else {
+					nodePath[1].cachedDataHashes[bk.BucketKey[offset-1]] = nodePath[0].nodeHash
+				}
 			}
 			//nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
 			//nodePath[i].UpdateMGTNodeToDB(db, cache)
@@ -765,7 +770,7 @@ func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
 }
 
 // CacheAdjust 调整缓存
-func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
+func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 	//第一步: 先将所有非叶子节点放回原处
 	mgt.cachedINMap.Range(func(key, value interface{}) bool {
 		INode := key.(string)
@@ -825,6 +830,9 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 		bucketKey, _ := util.StringToIntArray(hotnessSlice[j].GetKey(), mgt.rdx)
 		//找到当前叶子节点及其路径
 		nodePath := mgt.GetLeafNodeAndPath(bucketKey, db, cache)
+		if !nodePath[0].isLeaf {
+			fmt.Println("Not leaf!!!!")
+		}
 		if len(nodePath) <= 2 {
 			//说明该叶子节点是根节点或者该叶子节点在根节点的缓存目录中,已经没有缓存优化空间
 			//fmt.Println("已是叶节点", hotnessSlice[j].GetKey(), "的最佳位置")
@@ -838,30 +846,30 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 			//newPath = append([]*MGTNode{nodePath[i]}, newPath...)
 			//如果当前节点的第bucketKey[identI]个缓存位为空,则放置
 			if nodePath[i].cachedDataHashes[bucketKey[identI]] == nil {
-				////1.放置当前节点(nodePath[0])
-				//nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
-				//nodePath[0].parent = nodePath[i]
-				////newPath = append([]*MGTNode{nodePath[0]}, newPath...)
-				//nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
-				////2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
-				////更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
-				//for k := 1; k < len(nodePath); k++ {
-				//	if !nodePath[k].isDirty {
-				//		nodePath[k].isDirty = true
-				//	} else {
-				//		break
-				//	}
-				//}
-				//tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
-				//delPos := len(tempBK) - 1
-				//if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
-				//	nodePath[1].cachedNodes[tempBK[delPos]] = nil
-				//	nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
-				//} else {
-				//	//将该叶子节点放入缓存Map中
-				//	mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
-				//}
-				//break
+				//1.放置当前节点(nodePath[0])
+				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
+				nodePath[0].parent = nodePath[i]
+				//newPath = append([]*MGTNode{nodePath[0]}, newPath...)
+				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
+				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
+				//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
+				for k := 1; k < len(nodePath); k++ {
+					if !nodePath[k].isDirty {
+						nodePath[k].isDirty = true
+					} else {
+						break
+					}
+				}
+				tempBK := bucketKey[:len(bucketKey)-len(nodePath[1].bucketKey)]
+				delPos := len(tempBK) - 1
+				if val, ok := mgt.cachedLNMap.Load(util.IntArrayToString(bucketKey, mgt.rdx)); ok && val.(bool) {
+					nodePath[1].cachedNodes[tempBK[delPos]] = nil
+					nodePath[1].cachedDataHashes[tempBK[delPos]] = nil
+				} else {
+					//将该叶子节点放入缓存Map中
+					mgt.cachedLNMap.Store(hotnessSlice[j].GetKey(), true)
+				}
+				break
 			} else { //如果当前节点的第bucketKey[identI]个缓存位不为空
 				//比较缓存节点与当前叶节点的热度,如果当前节点更热,则替换,并将原缓存节点放回原处,否则继续看下一位置
 				cachedLN := nodePath[i].GetCachedNode(bucketKey[identI], db, mgt.rdx, cache)
@@ -918,8 +926,6 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) []byte {
 	//第三步: 清空统计列表
 	mgt.hotnessList = make(map[string]int)
 	mgt.accessLength = 0
-
-	return mgt.UpdateMGTToDB(db)
 }
 
 // PrintCachedPath 打印缓存更新后的缓存路径

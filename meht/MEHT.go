@@ -205,8 +205,7 @@ func (meht *MEHT) MGTCacheAdjust(db *leveldb.DB, a float64, b float64) {
 	if !meht.mgt.IsNeedCacheAdjust(meht.GetSEH(db).bucketsNumber, a, b) {
 		return
 	}
-	newMgtHash := meht.mgt.CacheAdjust(db, meht.cache)
-	meht.UpdateMEHTToDB(newMgtHash, db)
+	meht.mgt.CacheAdjust(db, meht.cache)
 }
 
 // PrintMEHT 打印整个MEHT

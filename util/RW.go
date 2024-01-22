@@ -1,39 +1,89 @@
 package util
 
 import (
-	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
-func ReadKVPairFromFile(filepath string) []*KVPair {
-	//打开文本文件
-	file, err := os.Open(filepath)
+//// GetDirAllFilePathsFollowSymlink gets all the file paths in the specified directory recursively.
+//func GetDirAllFilePathsFollowSymlink(dirname string) ([]string, error) {
+//	// Remove the trailing path separator if dirname has.
+//	dirname = strings.TrimSuffix(dirname, string(os.PathSeparator))
+//	infos, err := os.ReadDir(dirname)
+//	if err != nil {
+//		return nil, err
+//	}
+//	paths := make([]string, 0, len(infos))
+//	for _, info := range infos {
+//		path := dirname + string(os.PathSeparator) + info.Name()
+//		realInfo, err := os.Stat(path)
+//		if err != nil {
+//			return nil, err
+//		}
+//		if realInfo.IsDir() {
+//			tmp, err := GetDirAllFilePathsFollowSymlink(path)
+//			if err != nil {
+//				return nil, err
+//			}
+//			paths = append(paths, tmp...)
+//			continue
+//		}
+//		paths = append(paths, path)
+//	}
+//	return paths, nil
+//}
+
+func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []KVPair) {
+	content, err := os.ReadFile(filepath)
 	if err != nil {
-		fmt.Println("Open file error!")
-		return nil
+		panic(err)
 	}
-	defer file.Close()
-	//创建KVPair数组
-	var kvPairs []*KVPair
-	//读取文件内容
-	readr := bufio.NewReader(file)
-	for {
-		//读取一行
-		line, err := readr.ReadString('\n')
-		if err != nil {
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		if len(line) == 0 || i == num {
 			break
 		}
-		//将一行分割为key和value
-		line = strings.TrimRight(line, "\n")
-		kv := strings.Split(line, ",")
-		//创建一个KVPair
-		kvPair := NewKVPair(kv[0], kv[1])
-		//将KVPair加入数组
-		kvPairs = append(kvPairs, kvPair)
+		line_ := Strip(line, "\r")
+		kvs := strings.Split(line_, ",")
+		kvPairs = append(kvPairs, KVPair{kvs[0], kvs[1]})
 	}
-	return kvPairs
+	return
+}
+
+//func ReadQueryOwnerFromFile(filepath string, num int) (ret []string) {
+//	content, err := os.ReadFile(filepath)
+//	if err != nil {
+//		panic(err)
+//	}
+//	lines := strings.Split(string(content), "\n")
+//	for i, line := range lines {
+//		if len(line) == 0 || i == num {
+//			break
+//		}
+//		ret = append(ret, Strip(line, "\r"))
+//	}
+//	return
+//}
+
+func ReadQueryFromFile(dirPath string, num int) (ret []string) {
+	if dirPath[len(dirPath)-1] != '/' || dirPath[len(dirPath)-1] != '\\' {
+		dirPath = (" " + dirPath[:len(dirPath)-1])[1:] + string(os.PathSeparator)
+	}
+	content, err := os.ReadFile(dirPath + "query-" + strconv.Itoa(num/10000) + "W")
+	//content, err := os.ReadFile(dirPath + "query-1")
+	if err != nil {
+		panic(err)
+	}
+	lines := strings.Split(string(content), "\n")
+	for i, line := range lines {
+		if len(line) == 0 || i == num {
+			break
+		}
+		ret = append(ret, Strip(line, "\r"))
+	}
+	return
 }
 
 func WriteStringToFile(filePath string, data string) {
@@ -43,26 +93,45 @@ func WriteStringToFile(filePath string, data string) {
 		fmt.Println("Create file error!")
 		return
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(file)
 	//写字符串
-	file.WriteString(data)
+	_, err = file.WriteString(data)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func WriteResultToFile(filePath string, data string) {
+	//打开文件
+	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Open file error!")
+		return
+	}
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(file)
+	//写字符串
+	_, err = file.WriteString(data)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func ReadStringFromFile(filePath string) (string, error) {
-	//打开文件
-	file, err := os.Open(filePath)
+	//读取文件内容
+	content, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Println("Open file error!")
 		return "", err
 	}
-	defer file.Close()
-	//读取文件内容
-	readr := bufio.NewReader(file)
-	line, err := readr.ReadString('\n')
-	if err != nil {
-		return "", err
-	}
-	//去掉换行符
-	line = strings.TrimRight(line, "\n")
-	return line, nil
+	return strings.Split(string(content), "\n")[0], nil
 }

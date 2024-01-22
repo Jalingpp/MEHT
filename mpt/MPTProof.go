@@ -1,6 +1,9 @@
 package mpt
 
-import "fmt"
+import (
+	"MEHT/util"
+	"fmt"
+)
 
 //func (mptProof *MPTProof) PrintMPTProof() {}： 打印 MPTProof
 
@@ -9,11 +12,21 @@ type ProofElement struct {
 
 	proofType int // 0:leaf node, 1: extension node, 2: branch node
 
-	prefix         []byte     // prefix of leaf node or extension node
-	suffix         []byte     // suffix of leaf node or extension node
+	prefix         string     // prefix of leaf node or extension node
+	suffix         string     // suffix of leaf node or extension node
 	value          []byte     // value of leaf node or branch node
 	nextNodeHash   []byte     // next node hash of extension node
 	childrenHashes [16][]byte // children hashes of branch node
+}
+
+// GetSizeOf 获取ProofElement大小
+func (proofElement *ProofElement) GetSizeOf() uint {
+	ret := 2*util.SIZEOFINT + uint(len(proofElement.prefix)+len(proofElement.suffix))*util.SIZEOFBYTE +
+		uint(len(proofElement.value)+len(proofElement.nextNodeHash))*util.SIZEOFBYTE
+	for _, hash := range proofElement.childrenHashes {
+		ret += uint(len(hash)) * util.SIZEOFBYTE
+	}
+	return ret
 }
 
 type MPTProof struct {
@@ -22,7 +35,16 @@ type MPTProof struct {
 	proofs  []*ProofElement //存在证明的elements
 }
 
-func NewProofElement(level int, proofType int, prefix []byte, suffix []byte, value []byte, nextNodeHash []byte, childrenHashes [16][]byte) *ProofElement {
+// GetSizeOf 获取MPTProof大小
+func (mptProof *MPTProof) GetSizeOf() uint {
+	ret := util.SIZEOFBOOL + util.SIZEOFINT
+	for _, proof := range mptProof.proofs {
+		ret += proof.GetSizeOf()
+	}
+	return ret
+}
+
+func NewProofElement(level int, proofType int, prefix string, suffix string, value []byte, nextNodeHash []byte, childrenHashes [16][]byte) *ProofElement {
 	return &ProofElement{level, proofType, prefix, suffix, value, nextNodeHash, childrenHashes}
 }
 
@@ -41,7 +63,7 @@ func (mptProof *MPTProof) GetLevels() int {
 	return mptProof.levels
 }
 
-// 打印 MPTProof
+// PrintMPTProof 打印 MPTProof
 func (mptProof *MPTProof) PrintMPTProof() {
 	fmt.Printf("打印MPTProof-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("isExist=%t, levels=%d\n", mptProof.isExist, mptProof.levels)

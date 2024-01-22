@@ -34,6 +34,14 @@ import (
 //	}
 //	return paths, nil
 //}
+func ReadLinesFromFile(filepath string) (lines []string) {
+	content, err := os.ReadFile(filepath)
+	if err != nil {
+		panic(err)
+	}
+	lines = strings.Split(string(content), "\n")
+	return lines
+}
 
 func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []KVPair) {
 	content, err := os.ReadFile(filepath)
@@ -47,7 +55,7 @@ func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []KVPair) {
 		}
 		line_ := Strip(line, "\r")
 		kvs := strings.Split(line_, ",")
-		kvPairs = append(kvPairs, KVPair{kvs[0], kvs[1]})
+		kvPairs = append(kvPairs, KVPair{kvs[1], kvs[2]})
 	}
 	return
 }

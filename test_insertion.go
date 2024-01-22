@@ -142,41 +142,58 @@ func main() {
 	}
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
-		merkleTreeCC int, numOfWorker int) string {
+		merkleTreeCC int, numOfWorker int, mission string) string {
 		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
 			",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
-			strconv.Itoa(numOfWorker) + "."
+			strconv.Itoa(numOfWorker) + "." + mission
 	}
 
-	var insertNum = make([]int, 0)
-	var siModeOptions = make([]string, 0)
-	var numOfWorker = 1
+	//var insertNum = make([]int, 0)
+	//var siModeOptions = make([]string, 0)
+	//var numOfWorker = 1
 	//var phi = 1
 	args := os.Args
-	for _, arg := range args[1:] {
-		if arg == "meht" || arg == "mpt" || arg == "mbt" {
-			siModeOptions = append(siModeOptions, arg)
-			//} else if len(arg) > 4 && arg[:3] == "-phi" {
-			//	if n, err := strconv.Atoi(arg[3:]); err == nil {
-			//		phi = n
-			//	}
-		} else {
-			if n, err := strconv.Atoi(arg); err == nil {
-				if n >= 300000 {
-					insertNum = append(insertNum, n)
-				} else {
-					numOfWorker = n
-				}
-			}
-		}
+
+	//for _, arg := range args[1:] {
+	//	if arg == "meht" || arg == "mpt" || arg == "mbt" {
+	//		siModeOptions = append(siModeOptions, arg)
+	//		//} else if len(arg) > 4 && arg[:3] == "-phi" {
+	//		//	if n, err := strconv.Atoi(arg[3:]); err == nil {
+	//		//		phi = n
+	//		//	}
+	//	} else {
+	//		if n, err := strconv.Atoi(arg); err == nil {
+	//			if n >= 300000 {
+	//				insertNum = append(insertNum, n)
+	//			} else {
+	//				numOfWorker = n
+	//			}
+	//		}
+	//	}
+	//}
+	var insertNum = make([]int, 0)
+	var siModeOptions = make([]string, 0)
+	var numOfWorker = 1 //change
+	var mission string
+	//args simode,insertnum,numofworker,mission
+
+	siModeOptions = append(siModeOptions, args[1])
+	if n, err := strconv.Atoi(args[2]); err == nil {
+		insertNum = append(insertNum, n)
 	}
+	if n, err := strconv.Atoi(args[3]); err == nil {
+		numOfWorker = n
+	}
+
+	mission = args[4]
+
 	sort.Ints(insertNum)
 	sort.Strings(siModeOptions)
 	if len(insertNum) == 0 {
-		insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
+		insertNum = []int{300000, 600000, 900000, 1200000, 1500000} //change
 	}
 	if len(siModeOptions) == 0 {
 		siModeOptions = []string{"meht", "mpt", "mbt"}
@@ -220,12 +237,12 @@ func main() {
 					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
 				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
-					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
+					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, mission)
 			} else {
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
 				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
 					0, 0, 0, 0,
-					numOfWorker)
+					numOfWorker, mission)
 			}
 
 			var duration time.Duration = 0
@@ -238,7 +255,7 @@ func main() {
 			latencyDurationList := make([]time.Duration, numOfWorker)
 			doneCh := make(chan bool)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
+			go allocateNFTOwner("data/Synthesis_U1", num, kvPairCh)
 			batchWg := sync.WaitGroup{}
 			batchWg.Add(1)
 			go batchCommitter(&batchWg, seDB)

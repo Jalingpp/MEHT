@@ -180,7 +180,7 @@ func main() {
 
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
-	var numOfWorker = 4 //change
+	var numOfWorker = 2 //change
 	//var phi = 1
 	//args := os.Args
 	//for _, arg := range args[1:] {
@@ -283,6 +283,8 @@ func main() {
 	txs := util.ReadLinesFromFile("data/Synthesis_U4")
 	txs = txs[:num+1]
 	countNum := 0
+
+	start := time.Now()
 	for i := 0; i < len(txs); i += batchSize {
 		//每次建立一遍
 		var queryList []QueryTransaction
@@ -307,6 +309,7 @@ func main() {
 			}
 		}
 		close(insertKVPairCh)
+
 		//TODO:在这里创建线程池并通过close通道让线程池返回
 		go createWriteWorkerPool(numOfWorker, seDB, insertKVPairCh, &latencyDurationChList, flagChan)
 
@@ -343,6 +346,8 @@ func main() {
 		latencyDuration += du
 	}
 	seDB.WriteSEDBInfoToFile(filePath)
+
+	duration = time.Since(start)
 	util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 		duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 		strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+

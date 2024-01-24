@@ -178,12 +178,15 @@ func main() {
 	}
 	sort.Ints(insertNum)
 	sort.Strings(siModeOptions)
-	if len(insertNum) == 0 {
-		insertNum = []int{300000, 600000, 900000, 1200000, 1500000} //change
-	}
-	if len(siModeOptions) == 0 {
-		siModeOptions = []string{"meht", "mpt", "mbt"}
-	}
+	//if len(insertNum) == 0 {
+	//	insertNum = []int{300000, 600000, 900000, 1200000, 1500000} //change
+	//}
+	//if len(siModeOptions) == 0 {
+	//	siModeOptions = []string{"meht", "mpt", "mbt"}
+	//}
+	fmt.Println(siModeOptions)
+	fmt.Println(insertNum)
+
 	//for _, siMode := range siModeOptions {
 	//	for _, num := range insertNum {
 	siMode := siModeOptions[0]

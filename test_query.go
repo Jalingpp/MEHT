@@ -136,12 +136,15 @@ func main() {
 	}
 	sort.Ints(queryNum)
 	sort.Strings(siModeOptions)
-	if len(queryNum) == 0 {
-		queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	}
-	if len(siModeOptions) == 0 {
-		siModeOptions = []string{"meht", "mpt", "mbt"}
-	}
+	//if len(queryNum) == 0 {
+	//	queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	//}
+	//if len(siModeOptions) == 0 {
+	//	siModeOptions = []string{"meht", "mpt", "mbt"}
+	//}
+	fmt.Println(siModeOptions)
+	fmt.Println(queryNum)
+
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径

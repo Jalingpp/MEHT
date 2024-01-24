@@ -18,11 +18,11 @@ import (
 //	number int
 //	lock   sync.Mutex
 //}
-
-type QueryTransaction struct {
-	queryKey  string
-	stratTime time.Time
-}
+//
+//type QueryTransaction struct {
+//	queryKey  string
+//	stratTime time.Time
+//}
 
 func main() {
 
@@ -147,8 +147,10 @@ func main() {
 			kvPair := *util.NewKVPair(util.StringToHex(line_[1]), util.StringToHex(line_[2]))
 			st := time.Now()
 			if line_[0] == "insertion" || line_[0] == "insert" {
+				fmt.Println(line_)
 				seDB.InsertKVPair(kvPair, false)
 			} else if line_[0] == "update" {
+				fmt.Println(line_)
 				seDB.InsertKVPair(kvPair, true)
 			}
 			du := time.Since(st)

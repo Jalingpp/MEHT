@@ -5,13 +5,9 @@ import (
 	"fmt"
 )
 
-//func (mptProof *MPTProof) PrintMPTProof() {}： 打印 MPTProof
-
 type ProofElement struct {
-	level int // level of proof
-
-	proofType int // 0:leaf node, 1: extension node, 2: branch node
-
+	level          int        // level of proof
+	proofType      int        // 0:leaf node, 1: extension node, 2: branch node
 	prefix         string     // prefix of leaf node or extension node
 	suffix         string     // suffix of leaf node or extension node
 	value          []byte     // value of leaf node or branch node

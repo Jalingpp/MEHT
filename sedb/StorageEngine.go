@@ -14,40 +14,25 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-//func NewStorageEngine(siMode string, rdx int, bc int, bs int) *StorageEngine {}： 返回一个新的StorageEngine
-//func (se *StorageEngine) GetPrimaryIndex(db *leveldb.DB) *mpt.MPT {}： 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
-//func (se *StorageEngine) GetSecondaryIndex_mpt(db *leveldb.DB) *mpt.MPT {}： 返回mpt类型的辅助索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
-//func (se *StorageEngine) Insert(kvPair *util.KVPair, db *leveldb.DB) ([]byte, *mpt.MPTProof, *mpt.MPTProof, *meht.MEHTProof) {}： 向StorageEngine中插入一条记录,返回插入后新的seHash，以及插入的证明
-//func PrintQueryResult(key string, value string, mptProof *mpt.MPTProof) {}： 打印查询结果
-//func (se *StorageEngine) UpdateStorageEngineToDB(db *leveldb.DB) []byte {}： 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
-//func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {}： 打印StorageEngine
-//func SerializeStorageEngine(se *StorageEngine) []byte {}：序列化存储引擎
-//func DeserializeStorageEngine(seString []byte) (*StorageEngine, error) {}： 反序列化存储引擎
-
 type StorageEngine struct {
-	seHash []byte //搜索引擎的哈希值，由主索引根哈希和辅助索引根哈希计算得到
-
-	primaryIndex     *mpt.MPT // mpt类型的主键索引
-	primaryIndexHash []byte   // 主键索引的哈希值，由主键索引根哈希计算得到
-
-	secondaryIndexMode string // 标识当前采用的非主键索引的类型，mpt或meht或mbt
-
+	seHash                 []byte   //搜索引擎的哈希值，由主索引根哈希和辅助索引根哈希计算得到
+	primaryIndex           *mpt.MPT // mpt类型的主键索引
+	primaryIndexHash       []byte   // 主键索引的哈希值，由主键索引根哈希计算得到
+	secondaryIndexMode     string   // 标识当前采用的非主键索引的类型，mpt或meht或mbt
 	secondaryIndexMpt      *mpt.MPT // mpt类型的非主键索引
 	secondaryIndexHashMpt  []byte   //mpt类型的非主键索引根哈希
 	secondaryIndexMbt      *mbt.MBT
 	secondaryIndexHashMbt  []byte
 	secondaryIndexMeht     *meht.MEHT // meht类型的非主键索引，在db中用mehtName+"meht"索引
 	secondaryIndexHashMeht []byte
-
-	mbtArgs  []interface{}
-	mehtArgs []interface{}
-
-	cacheEnable          bool
-	cacheCapacity        []interface{}
-	primaryLatch         sync.RWMutex
-	secondaryLatch       sync.RWMutex
-	updatePrimaryLatch   sync.Mutex
-	updateSecondaryLatch sync.Mutex
+	mbtArgs                []interface{}
+	mehtArgs               []interface{}
+	cacheEnable            bool
+	cacheCapacity          []interface{}
+	primaryLatch           sync.RWMutex
+	secondaryLatch         sync.RWMutex
+	updatePrimaryLatch     sync.Mutex
+	updateSecondaryLatch   sync.Mutex
 }
 
 // NewStorageEngine 返回一个新的StorageEngine
@@ -61,10 +46,6 @@ func NewStorageEngine(siMode string, mbtArgs []interface{}, mehtArgs []interface
 
 // UpdateStorageEngineToDB 更新存储引擎的哈希值，并将更新后的存储引擎写入db中
 func (se *StorageEngine) UpdateStorageEngineToDB() {
-	//删除db中原有的se
-	//if err := db.Delete(se.seHash, nil); err != nil {
-	//	fmt.Println("Delete StorageEngine from DB error:", err)
-	//}
 	//更新seHash的哈希值
 	seHashes := make([]byte, 0)
 	se.updatePrimaryLatch.Lock()
@@ -83,10 +64,6 @@ func (se *StorageEngine) UpdateStorageEngineToDB() {
 	se.seHash = hash[:]
 	se.updateSecondaryLatch.Unlock()
 	se.updatePrimaryLatch.Unlock()
-	//将更新后的se写入db中
-	//if err := db.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
-	//	fmt.Println("Insert StorageEngine to DB error:", err)
-	//}
 }
 
 // GetPrimaryIndex 返回主索引指针，如果内存中不在，则从数据库中查询，都不在则返回nil
@@ -193,12 +170,6 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 	for se.primaryIndex == nil {
 	} // 其余线程等待主索引新建成功
 	//如果主索引中已存在此key，则获取原来的value，并在非主键索引中删除该value-key对
-	//oldValue, oldPrimaryProof := se.GetPrimaryIndex(primaryDb).QueryByKey(kvPair.GetKey(), primaryDb)
-	//if oldValue == kvPair.GetValue() {
-	//	//fmt.Printf("key=%x , value=%x已存在\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
-	//	return oldPrimaryProof, nil, nil
-	//}
-	//runtime.GOMAXPROCS(1)
 	var wG sync.WaitGroup
 	wG.Add(2)
 	oldValueCh := make(chan string)

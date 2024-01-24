@@ -15,14 +15,6 @@ import (
 	"sync"
 )
 
-//NewMEHT(rdx int, bc int, bs int) *MEHT {}: NewMEHT returns a new MEHT
-//Insert(kvPair util.KVPair) (*Bucket, string, *MEHTProof) {}: Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-//PrintMEHT() {}: 打印整个MEHT
-//QueryByKey(key string) (string, MEHTProof) {}: 给定一个key，返回它的value及其证明proof，不存在，则返回nil,nil
-//PrintQueryResult(key string, value string, mehtProof MEHTProof) {}: 打印查询结果
-//VerifyQueryResult(value string, mehtProof MEHTProof) bool {}: 验证查询结果
-//PrintMEHTProof(mehtProof MEHTProof) {}: 打印MEHTProof
-
 type MEHT struct {
 	rdx int // radix of one bit, initial  given，key编码的进制数（基数）
 	bc  int // bucket capacity, initial given，每个bucket的容量
@@ -144,10 +136,6 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 		}
 		//插入KV到SEH,第一个插入的操作一定不能是删除操作,因为此时root还没有bucket
 		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, false)
-		//merkleTree_ := meht.seh.ht[""].merkleTrees[bucketSs[0][0].GetSegmentKey(kvPair.GetKey())]
-		//更新seh到db
-		//meht.seh.UpdateSEHToDB
-		//(db)
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketSs[0][0], db, meht.rdx, meht.cache)
 		//更新mgt的根节点哈希并更新到db
@@ -176,9 +164,6 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
 		meht.mgt.MGTUpdate(bucketSs, db, meht.cache)
-		//更新mgt的根节点哈希并更新到db
-		//meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
-		//meht.mgt.latch.Unlock() // 内部只加锁不释放锁，保证委托线程工作完成后才释放锁
 	}
 	//获取当前KV插入的bucket
 	for {
@@ -286,22 +271,9 @@ func (meht *MEHT) PurgeCache() {
 	}
 }
 
-//// PrintQueryResult 打印查询结果
-//func PrintQueryResult(key string, value string, mehtProof *MEHTProof) {
-//	fmt.Printf("查询结果-------------------------------------------------------------------------------------------\n")
-//	fmt.Printf("key=%s\n", key)
-//	if value == "" {
-//		fmt.Printf("value不存在\n")
-//	} else {
-//		fmt.Printf("value=%s\n", value)
-//	}
-//	mehtProof.PrintMEHTProof()
-//}
-
 // VerifyQueryResult 验证查询结果
 func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	//验证segProof
-	//fmt.Printf("验证查询结果-------------------------------------------------------------------------------------------\n")
 	//计算segRootHash
 	//如果key不存在，则判断segment是否存在，存在则根据segment中所有的值构建segment的默克尔树根
 	var segRootHash []byte
@@ -358,7 +330,6 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 		//fmt.Printf("mgtRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mgtRootHash))
 		return false
 	}
-	//fmt.Printf("验证通过,MGT的根哈希为:%s\n", hex.EncodeToString(mgtRootHash))
 	return true
 }
 
@@ -374,10 +345,9 @@ func (mehtProof *MEHTProof) PrintMEHTProof() {
 }
 
 type SeMEHT struct {
-	Rdx int // radix of one bit, initial  given，key编码的进制数（基数）
-	Bc  int // bucket capacity, initial given，每个bucket的容量
-	Bs  int // bucket segment number, initial given，key中区分segment的位数
-
+	Rdx     int    // radix of one bit, initial  given，key编码的进制数（基数）
+	Bc      int    // bucket capacity, initial given，每个bucket的容量
+	Bs      int    // bucket segment number, initial given，key中区分segment的位数
 	MgtHash []byte // hash of the mgt
 }
 
@@ -413,7 +383,6 @@ func DeserializeMEHT(data []byte, db *leveldb.DB, cacheEnable bool,
 		lMerkleTree, _ := lru.NewWithEvict[string, *mht.MerkleTree](merkleTreeCC, func(k string, v *mht.MerkleTree) {
 			callBackFoo[string, *mht.MerkleTree](k, v, db)
 		})
-		//var c []interface{}
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
 		meht = &MEHT{seMEHT.Rdx, seMEHT.Bc, seMEHT.Bs, nil, nil, seMEHT.MgtHash,

@@ -14,19 +14,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
-//MPT树相关的结构体和方法
-//func (mpt *MPT) GetRoot(db *leveldb.DB) *ShortNode {}：获取MPT的根节点，如果为nil，则从数据库中查询
-//func NewMPT() *MPT {}： NewMPT creates an empty MPT
-//func (mpt *MPT) Insert(kvPair *util.KVPair, db *leveldb.DB) []byte {}: 插入一个KVPair到MPT中,返回新的根节点的哈希值
-//func (mpt *MPT) UpdateMPTInDB(newRootHash []byte, db *leveldb.DB) {}：用newRootHash更新mpt的哈希，并更新至DB中
-//func (mpt *MPT) PrintMPT(db *leveldb.DB) {}: 打印MPT
-//func (mpt *MPT) QueryByKey(key string, db *leveldb.DB) (string, *MPTProof) {}： 根据key查询value，返回value和证明
-//func (mpt *MPT) PrintQueryResult(key string, value string, mptProof *MPTProof) {}: 打印查询结果
-//func (mpt *MPT) VerifyQueryResult(value string, mptProof *MPTProof) bool {}: 验证查询结果
-//func ComputeMPTRoot(value string, mptProof *MPTProof) []byte {}： 根据MPTProof计算MPT根节点哈希
-//func SerializeMPT(mpt *MPT) []byte {}：序列化MPT
-//func DeserializeMPT(data []byte) (*MPT, error) {}： 反序列化MPT
-
 type MPT struct {
 	rootHash []byte         //MPT的哈希值，对根节点哈希值哈希得到
 	root     *FullNode      //根节点
@@ -104,16 +91,12 @@ func (mpt *MPT) Insert(kvPair util.KVPair, db *leveldb.DB, priMpt *MPT, flag boo
 	for mpt.root == nil {
 	} // 等待最先拿到mpt锁的线程新建一个树根
 	_, oldValue, needDelete := mpt.RecursiveInsertFullNode("", kvPair.GetKey(), []byte(kvPair.GetValue()), mpt.GetRoot(db), db, isPrimary, flag)
-	//更新mpt根哈希并更新到数据库
-	//mpt.UpdateMPTInDB(newRoot, db)
 	return oldValue, needDelete
 }
 
 // RecursiveInsertShortNode 递归插入当前MPT Node
 func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []byte, cNode *ShortNode, db *leveldb.DB, isPrimary bool, flag bool) (*ShortNode, string, bool) {
 	//由于该节点的FullNode父节点的孩子锁保证插入串行化，因此不需要再加锁
-	//cNode.latch.RLock()
-	//defer cNode.latch.RUnlock()
 	if cNode.isLeaf { //如果当前节点是叶子节点
 		//判断当前suffix是否和suffix相同，如果相同，更新value，否则新建一个ExtensionNode，一个BranchNode，一个LeafNode，将两个LeafNode插入到FullNode中
 		if strings.Compare(cNode.suffix, suffix) == 0 {
@@ -257,9 +240,6 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		if len(commPrefix) == len(cNode.suffix) {
 			//递归插入到nextNode中
 			_, oldValue, needDelete := mpt.RecursiveInsertFullNode(prefix+commPrefix, suffix[len(commPrefix):], value, cNode.GetNextNode(db, mpt.cache), db, isPrimary, flag)
-			//nextNode.parent = cNode
-			//cNode.nextNode = nextNode
-			//cNode.nextNodeHash = nextNode.nodeHash
 			//fullNode一定是脏的，因此当前节点标记为脏，延迟至批量更新哈希
 			cNode.isDirty = true
 			return cNode, oldValue, needDelete
@@ -423,8 +403,6 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			pFull.isDirty = true
 			pShort = pFull.parent
 		}
-		//cNode.childrenHash[util.ByteToHexIndex(suffix[0])] = childNode_.nodeHash
-		//UpdateFullNodeHash(cNode, db, mpt.cache)
 		return cNode, oldValue, needDelete
 	}
 }
@@ -531,9 +509,6 @@ func (mpt *MPT) RecursivePrintFullNode(cNode *FullNode, level int, db *leveldb.D
 			mpt.RecursivePrintShortNode(childNode, level+1, db)
 		}
 		cNode.childLatch[i].RUnlock()
-		// else {
-		// 	fmt.Printf("childNode[%d]不存在\n", i)
-		// }
 	}
 }
 
@@ -616,15 +591,12 @@ func (mpt *MPT) MPTBatchFix(db *leveldb.DB) {
 			wG.Done()
 			continue
 		}
-
 		child_ := child
-		idx := i
-		go func() {
+		go func(idx int) {
 			shortNodeBatchFixFoo(child_, db, mpt.cache)
 			mpt.root.childrenHash[idx] = child_.nodeHash
 			wG.Done()
-		}()
-
+		}(i)
 	}
 	wG.Wait()
 	mpt.root.UpdateFullNodeHash(db, mpt.cache)

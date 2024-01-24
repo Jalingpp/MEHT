@@ -9,18 +9,6 @@ import (
 	"sync"
 )
 
-//MPT节点相关的结构体和方法
-//func (fn *FullNode) GetChildInFullNode(index int, db *leveldb.DB) *ShortNode {}:获取FullNode的第index个child，如果为nil，则从数据库中查询
-//func (sn *ShortNode) GetNextNode(db *leveldb.DB) *FullNode {}： 获取ShortNode的nextNode，如果为nil，则从数据库中查询
-//func NewShortNode(prefix []byte, isLeaf bool, suffix []byte, nextNode *FullNode, value []byte, db *leveldb.DB) *ShortNode {}: creates a ShortNode and computes its nodeHash
-//func UpdateShortNodeHash(sn *ShortNode, db *leveldb.DB) {}：更新ShortNode的nodeHash
-//func NewFullNode(children [16]*ShortNode, db *leveldb.DB) *FullNode {}: creates a new FullNode and computes its nodeHash
-//func UpdateFullNodeHash(fn *FullNode, db *leveldb.DB) {}: updates the nodeHash of a FullNode
-//func SerializeShortNode(sn *ShortNode) []byte {}： 序列化ShortNode
-//func DeserializeShortNode(sSnString []byte) (*ShortNode, error) {}：反序列化ShortNode
-//func SerializeFullNode(fn *FullNode) []byte {}：序列化FullNode
-// func DeserializeFullNode(sFnString []byte) (*FullNode, error) {}：反序列化FullNode
-
 type FullNode struct {
 	nodeHash     []byte                    //当前节点的哈希值,由childrenHash计算得到
 	parent       *ShortNode                //父节点

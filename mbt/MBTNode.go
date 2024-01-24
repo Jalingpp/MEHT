@@ -137,12 +137,6 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 		fmt.Printf("DeserializeMBTNode error: %v\n", err)
 		return nil, err
 	}
-	//dataHashes := make([][]byte, 0)
-	//dataHashStrings := strings.Split(seMBTNode.DataHashes, ",")
-	//for i := 0; i < len(dataHashStrings); i++ {
-	//	dataHash, _ := hex.DecodeString(dataHashStrings[i])
-	//	dataHashes = append(dataHashes, dataHash)
-	//}
 	bucket := make([]util.KVPair, 0)
 	for _, bk := range seMBTNode.Bucket {
 		bucket = append(bucket, *util.NewKVPair(bk.Key, bk.Value))

@@ -12,23 +12,14 @@ import (
 	"time"
 )
 
-// NewSEH(rdx int, bc int, bs int) *SEH {}:returns a new SEH
-// GetBucketByKey(key string) *Bucket {}: returns the bucket with the given key
-// GetValueByKey(key string) string {}: returns the value of the key-value pair with the given key
-// GetProof(key string) (string, []byte, []mht.ProofPair) {}: returns the proof of the key-value pair with the given key
-// Insert(kvPair util.KVPair) (*Bucket, string, []byte, [][]byte) {}: inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-// PrintSEH() {}: 打印SEH
-
 type SEH struct {
-	gd  int // global depth, initial zero
-	rdx int // rdx, initial  given
-
-	bucketCapacity int // capacity of the bucket, initial given
-	bucketSegNum   int // number of segment bits in the bucket, initial given
-
-	ht            sync.Map // hash table of buckets
-	bucketsNumber int      // number of buckets, initial zero
-	latch         sync.RWMutex
+	gd             int      // global depth, initial zero
+	rdx            int      // rdx, initial  given
+	bucketCapacity int      // capacity of the bucket, initial given
+	bucketSegNum   int      // number of segment bits in the bucket, initial given
+	ht             sync.Map // hash table of buckets
+	bucketsNumber  int      // number of buckets, initial zero
+	latch          sync.RWMutex
 }
 
 // NewSEH returns a new SEH
@@ -196,10 +187,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			}
 		}
 		bucket.latchTimestamp = time.Now().Unix()
-		bucket.DelegationLatch.Unlock() // 允许其他线程委托自己插入
-		//mgtLatch.Lock()                 // 阻塞一直等到获得mgt锁，用以一次性更新并更改mgt树
-		//bucket.RootLatchGainFlag = true      // 告知其他线程准备开始整体更新，让其他线程不要再尝试委托自己
-		//time.Sleep(time.Millisecond * 50)
+		bucket.DelegationLatch.Unlock()      // 允许其他线程委托自己插入
 		bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
 		if bucket.number < bucket.capacity { // 由于插入数目一定不引起桶分裂，顶多插满，因此最后插完的桶就是当前桶
 			for _, kvp := range bucket.DelegationList {
@@ -340,14 +328,12 @@ func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 }
 
 type SeSEH struct {
-	Gd  int // global depth, initial zero
-	Rdx int // rdx, initial  given
-
-	BucketCapacity int // capacity of the bucket, initial given
-	BucketSegNum   int // number of segment bits in the bucket, initial given
-
-	HashTableKeys []string // hash table of buckets
-	BucketsNumber int      // number of buckets, initial zero
+	Gd             int      // global depth, initial zero
+	Rdx            int      // rdx, initial  given
+	BucketCapacity int      // capacity of the bucket, initial given
+	BucketSegNum   int      // number of segment bits in the bucket, initial given
+	HashTableKeys  []string // hash table of buckets
+	BucketsNumber  int      // number of buckets, initial zero
 }
 
 func SerializeSEH(seh *SEH) []byte {

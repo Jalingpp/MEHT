@@ -17,35 +17,18 @@ import (
 	// "MEHT/util"
 )
 
-//NewMGT() *MGT {}: NewMGT creates an empty MGT
-//NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket) *MGTNode {}: NewMGTNode creates a new MGTNode
-//GetLeafNodeAndPath(bucketKey []int) []*MGTNode {}: 根据bucketKey,返回该bucket在MGT中的叶子节点,第0个是叶节点,最后一个是根节点
-//GetOldBucketKey(bucket *Bucket) []int {}: GetOldBucketKey, 给定一个bucket,返回它的旧bucketKey
-//MGTUpdate(newBuckets []*Bucket) *MGT {}: MGT生长,给定新的buckets,返回更新后的MGT
-//MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*Bucket) *MGT {}: MGT生长,给定旧bucketKey和新的buckets,返回更新后的MGT
-//UpdateNodeHash(node *MGTNode) {}: 根据子节点哈希计算当前节点哈希
-//PrintMGT() {}: 打印MGT
-//GetProof(bucketKey []int) ([]byte, []MGTProof) {}: 给定bucketKey，返回它的mgtRootHash和mgtProof，不存在则返回nil
-//ComputeMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {}: 给定segRootHash和mgtProof，返回由它们计算得到的mgtRootHash
-//PrintMGTProof(mgtProof []MGTProof) {}: 打印mgtProof
-
 type MGTNode struct {
-	nodeHash []byte // hash of this node, consisting of the hash of its children
-
-	parent     *MGTNode   // parent node of this node
-	subNodes   []*MGTNode // sub-nodes in the tree, original given
-	dataHashes [][]byte   // hashes of data elements, computed from subNodes
-
+	nodeHash         []byte     // hash of this node, consisting of the hash of its children
+	parent           *MGTNode   // parent node of this node
+	subNodes         []*MGTNode // sub-nodes in the tree, original given
+	dataHashes       [][]byte   // hashes of data elements, computed from subNodes
 	cachedNodes      []*MGTNode // cached nodes
 	cachedDataHashes [][]byte   //dataHashes of cached nodes
-
 	//NOTE：如果cached node是中间节点（isLeaf是false），则表明发生了分裂
-
-	isLeaf    bool    // whether this node is a leaf node
-	isDirty   bool    // whether the hash of this node needs to be updated
-	bucket    *Bucket // bucket related to this leaf node
-	bucketKey []int   // bucket key
-
+	isLeaf           bool    // whether this node is a leaf node
+	isDirty          bool    // whether the hash of this node needs to be updated
+	bucket           *Bucket // bucket related to this leaf node
+	bucketKey        []int   // bucket key
 	latch            sync.RWMutex
 	subNodesLatch    []sync.RWMutex
 	cachedNodesLatch []sync.RWMutex
@@ -55,12 +38,10 @@ type MGT struct {
 	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
 	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
-
 	//cachedLNMap map[string]bool
 	cachedLNMap sync.Map //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有，会被存入DB
 	//cachedINMap map[string]bool
-	cachedINMap sync.Map //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来，会被存入DB
-
+	cachedINMap  sync.Map       //当前被缓存在中间节点的非叶子节点,通常由cachedLN分裂而来，会被存入DB
 	hotnessList  map[string]int //被访问过的叶子节点bucketKey及其被访频次，不会被存入DB
 	accessLength int            //统计MGT中被访问过的所有叶子节点路径长度总和，会被存入DB
 	latch        sync.RWMutex
@@ -299,10 +280,7 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) 
 	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
 		panic(err)
 	}
-	//update nodeHash
 	UpdateNodeHash(mgtNode)
-	//insert node in leveldb
-	// fmt.Printf("When write MGTNode to DB, mgtNode.nodeHash: %x\n", mgtNode.nodeHash)
 	if cache != nil {
 		targetCache.Add(string(mgtNode.nodeHash), mgtNode)
 	} else {
@@ -410,9 +388,6 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 			if p == nil {
 				return nil
 			}
-			//if p.isLeaf { // 当所找bucketKey的长度长于MGT中实际存在的路径，即bucket并不存在时，返回nil
-			//	return nil
-			//}
 			p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
 			//将p插入到result的第0个位置
 			result = append([]*MGTNode{p}, result...)
@@ -477,12 +452,11 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		}
 		wG.Add(1)
 		child_ := child
-		idx := i
-		go func() {
+		go func(idx int) {
 			MGTBatchFixFoo(child_, db, cache)
 			mgt.Root.dataHashes[idx] = child_.nodeHash
 			wG.Done()
-		}()
+		}(i)
 	}
 	for i, child := range mgt.Root.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
@@ -490,12 +464,11 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		}
 		wG.Add(1)
 		child_ := child
-		idx := i
-		go func() {
+		go func(idx int) {
 			MGTBatchFixFoo(child_, db, cache)
 			mgt.Root.cachedDataHashes[idx] = child_.nodeHash
 			wG.Done()
-		}()
+		}(i)
 	}
 	wG.Wait()
 	// 最后更新根节点
@@ -567,8 +540,6 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 					nodePath[1].cachedDataHashes[bk.BucketKey[offset-1]] = nodePath[0].nodeHash
 				}
 			}
-			//nodePath[i].dataHashes[bk.BucketKey[i-1]] = nodePath[i-1].nodeHash
-			//nodePath[i].UpdateMGTNodeToDB(db, cache)
 			// 一整条路径的值都会被修改为dirty，但是不会再重新计算哈希，因为这个操作会由batch调整的时候来做
 			// 如果发现当前路径节点已经是dirty了，那这个节点再往上也一定会是dirty
 			// 而且此函数进行时batch调整一定不会进行，因此也不会出现同一时刻batch调整将此处的dirty置为false的冲突情况
@@ -613,7 +584,7 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	//为每个新的bucket创建叶子节点,并插入到leafNode的subNodes中
 	subNodes := make([]*MGTNode, 0)
 	commonLNKeyLength := 0
-	if len(newBuckets[0].BucketKey) <= len(newBuckets[0].BucketKey) {
+	if len(newBuckets[0].BucketKey) <= len(newBuckets[1].BucketKey) {
 		commonLNKeyLength = len(newBuckets[0].BucketKey)
 	} else {
 		commonLNKeyLength = len(newBuckets[1].BucketKey)
@@ -644,7 +615,6 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	//更新父节点的child为新的父节点
 	if len(nodePath) == 1 { // 此处根节点哈希已经成功更新，因此不需要标为dirty
 		mgt.Root = newFatherNode
-		//mgt.Root.UpdateMGTNodeToDB(db, cache)
 		return mgt
 	}
 	// 同一时刻一个桶只会有一个线程更新，因此对应的，这个mgtNode也只会被一个线程更新，因此此处不会被并发覆盖
@@ -718,24 +688,19 @@ func (mgt *MGT) UpdateHotnessList(op string, bk string, hn int, subNodes []*MGTN
 	defer mgt.updateLatch.Unlock()
 	if op == "new" {
 		mgt.hotnessList[bk] = hn
-		// fmt.Println("new hotness of bucketKey=", bk, "is", mgt.hotnessList[bk])
 	} else if op == "add" {
 		mgt.hotnessList[bk] = mgt.hotnessList[bk] + hn
-		// fmt.Println("add hotness of bucketKey=", bk, "is", mgt.hotnessList[bk])
 	} else if op == "split" {
 		// 此处所有mgtNode对应桶已经上写锁，因此mgtNode本身不会有任何新增修改，bucket.number的读取不会有任何因并发产生的问题
 		originHot := mgt.hotnessList[bk] + hn
 		recordSum := 0
 		for _, node := range subNodes {
 			recordSum += node.bucket.number
-			// fmt.Println("subNodeNum=", node.bucket.number)
 		}
-		// fmt.Println("record_sum=", record_sum)
 		for _, node := range subNodes {
 			subHotness := int(float64(originHot) * (float64(node.bucket.number) / float64(recordSum)))
 			if subHotness != 0 {
 				mgt.hotnessList[util.IntArrayToString(node.bucketKey, mgt.rdx)] = subHotness
-				// fmt.Println("add hotness of subBucketKey=", util.IntArrayToString(node.bucketKey, mgt.rdx), "is", mgt.hotnessList[util.IntArrayToString(node.bucketKey, mgt.rdx)])
 			}
 		}
 		delete(mgt.hotnessList, bk)
@@ -761,11 +726,7 @@ func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
 		accessNum = accessNum + hotnessSlice[i].GetValue()
 	}
 	//计算访问长度阈值
-	// threshold := (a*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx)) + b*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
 	threshold := (a*math.Log(float64(bucketNum)/float64(10))/math.Log(float64(mgt.rdx)) + b*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
-
-	//fmt.Println("threshold =", threshold)
-
 	return float64(mgt.accessLength) > threshold
 }
 
@@ -784,7 +745,6 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 			return true
 		}
 		//将其所在的缓存父节点(nodePath[1])相应的缓存位置空
-		//mgt.PrintCachedPath(nodePath)
 		tempBK := bkINode[:len(bkINode)-len(nodePath[1].bucketKey)]
 		nodePath[1].cachedNodes[tempBK[len(tempBK)-1]] = nil
 		nodePath[1].cachedDataHashes[tempBK[len(tempBK)-1]] = nil
@@ -839,17 +799,14 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 			//mgt.PrintCachedPath(nodePath)
 			continue
 		}
-		//newPath := make([]*MGTNode, 0)
 		//从nodePath的最后一个开始,倒着看是否能够放置
 		identI := len(bucketKey) - 1
 		for i := len(nodePath) - 1; i > 1; i-- {
-			//newPath = append([]*MGTNode{nodePath[i]}, newPath...)
 			//如果当前节点的第bucketKey[identI]个缓存位为空,则放置
 			if nodePath[i].cachedDataHashes[bucketKey[identI]] == nil {
 				//1.放置当前节点(nodePath[0])
 				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
 				nodePath[0].parent = nodePath[i]
-				//newPath = append([]*MGTNode{nodePath[0]}, newPath...)
 				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
 				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
 				//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
@@ -922,7 +879,6 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 			}
 		}
 	}
-
 	//第三步: 清空统计列表
 	mgt.hotnessList = make(map[string]int)
 	mgt.accessLength = 0
@@ -996,9 +952,7 @@ func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB, cache *[]
 	if node == nil {
 		return
 	}
-
 	fmt.Printf("Level: %d--------------------------------------------------------------------------\n", level)
-
 	if node.isLeaf {
 		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash))
 		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey, mgt.rdx))
@@ -1101,9 +1055,8 @@ func PrintMGTProof(mgtProof []MGTProof) {
 }
 
 type SeMGT struct {
-	Rdx         int    //radix of bucket key, decide the number of sub-nodes
-	MgtRootHash []byte // hash of this MGT, equals to the hash of the root node hash
-
+	Rdx         int             //radix of bucket key, decide the number of sub-nodes
+	MgtRootHash []byte          // hash of this MGT, equals to the hash of the root node hash
 	CachedLNMap map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
 	CachedINMap map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
 }
@@ -1145,13 +1098,11 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 }
 
 type SeMGTNode struct {
-	NodeHash   []byte   // hash of this node, consisting of the hash of its children
-	DataHashes [][]byte // hashes of data elements, computed from subNodes, is used for indexing children nodes in leveldb
-
+	NodeHash         []byte   // hash of this node, consisting of the hash of its children
+	DataHashes       [][]byte // hashes of data elements, computed from subNodes, is used for indexing children nodes in leveldb
 	CachedDataHashes [][]byte // hash of cached data elements, computed from cached subNodes
-
-	IsLeaf    bool  // whether this node is a leaf node
-	BucketKey []int // bucketKey related to this leaf node,is used for indexing bucket in leveldb
+	IsLeaf           bool     // whether this node is a leaf node
+	BucketKey        []int    // bucketKey related to this leaf node,is used for indexing bucket in leveldb
 }
 
 func SerializeMGTNode(node *MGTNode) []byte {

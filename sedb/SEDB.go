@@ -14,16 +14,6 @@ import (
 	"sync"
 )
 
-//func NewSEDB(seh []byte, dbPath string, siMode string, rdx int, bc int, bs int) *SEDB {}：新建一个SEDB
-//func (sedb *SEDB) GetStorageEngine() *StorageEngine {}： 获取SEDB中的StorageEngine，如果为空，从db中读取se
-//func (sedb *SEDB) InsertKVPair(kvPair *util.KVPair) *SEDBProof {}： 向SEDB中插入一条记录,返回插入证明
-//func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.KVPair, *SEDBProof) {}: 根据十六进制的非主键HexKeyword查询完整的kvPair
-//func (sedb *SEDB) PrintKVPairsQueryResult(qKey string, qValue string, qResult []*util.KVPair, qProof *SEDBProof) {}: 打印非主键查询结果
-//func (sedb *SEDB) VerifyQueryResult(pk string, result []*util.KVPair, sedbProof *SEDBProof) bool {}: 验证查询结果
-//func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {}： 写seHash和dbPath到文件
-//func ReadSEDBInfoFromFile(filePath string) ([]byte, string) {}： 从文件中读取seHash和dbPath
-//func (sedb *SEDB) PrintSEDB() {}： 打印SEDB
-
 type FullNodeCacheCapacity int                                  //MPT cache capacity identification for fullNode
 type ShortNodeCacheCapacity int                                 //MPT cache capacity identification for shortNode
 var DefaultFullNodeCacheCapacity = FullNodeCacheCapacity(128)   //MPT default cache capacity for shortNode
@@ -58,14 +48,13 @@ type SEDB struct {
 	secondaryDb     *leveldb.DB    //辅助索引底层存储的指针
 	primaryDbPath   string         //主索引底层存储的文件路径
 	secondaryDbPath string         //辅助索引底层存储的文件路径
-
-	siMode        string        //se的参数，辅助索引类型，meht或mpt或mbt
-	mbtArgs       []interface{} //mbt的参数，包含mbt的桶总数与分叉数
-	mehtArgs      []interface{} //meht的参数，包含meht的分叉数、桶容量及段容量
-	cacheEnable   bool          //是否使用缓存标识
-	cacheCapacity []interface{} //缓存参数，包含各结构的缓存数目上界
-	latch         sync.RWMutex  //当前结构体实例的全局锁
-	updateLatch   sync.Mutex    //用于读锁升级为写锁
+	siMode          string         //se的参数，辅助索引类型，meht或mpt或mbt
+	mbtArgs         []interface{}  //mbt的参数，包含mbt的桶总数与分叉数
+	mehtArgs        []interface{}  //meht的参数，包含meht的分叉数、桶容量及段容量
+	cacheEnable     bool           //是否使用缓存标识
+	cacheCapacity   []interface{}  //缓存参数，包含各结构的缓存数目上界
+	latch           sync.RWMutex   //当前结构体实例的全局锁
+	updateLatch     sync.Mutex     //用于读锁升级为写锁
 }
 
 // NewSEDB 返回一个新的SEDB
@@ -136,14 +125,6 @@ func (sedb *SEDB) InsertKVPair(kvPair util.KVPair, isUpdate bool) *SEDBProof {
 	//primaryProof, secondaryMPTProof, secondaryMEHTProof := sedb.GetStorageEngine().Insert(kvPair, sedb.db)
 	sedb.GetStorageEngine().Insert(kvPair, isUpdate, sedb.primaryDb, sedb.secondaryDb)
 	//更新seHash，并将se更新至db
-	//sedb.se.UpdateStorageEngineToDB(sedb.primaryDb) // 保证sedb留存的seHash与se实际的Hash一致
-	//sedb.updateLatch.Lock()
-	//sedb.se.updatePrimaryLatch.Lock()
-	//sedb.se.updateSecondaryLatch.Lock()
-	//sedb.seHash = sedb.se.seHash
-	//sedb.se.updateSecondaryLatch.Unlock()
-	//sedb.se.updatePrimaryLatch.Unlock()
-	//sedb.updateLatch.Unlock()
 	//var pProof []*mpt.MPTProof
 	//pProof = append(pProof, primaryProof)
 	//sedbProof := NewSEDBProof(pProof, secondaryMPTProof, secondaryMEHTProof)
@@ -262,7 +243,6 @@ func (sedb *SEDB) PrintKVPairsQueryResult(qKey string, qValue string, qResult []
 	for i := 0; i < len(qResult); i++ {
 		fmt.Printf("查询结果[%d]:key=%s,value=%s\n", i, util.HexToString(qResult[i].GetKey()), util.HexToString(qResult[i].GetValue()))
 	}
-	//fmt.Printf("查询证明为:\n")
 	if qProof != nil {
 		//qProof.PrintSEDBProof()
 	} else {
@@ -327,8 +307,6 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 		wG.Add(2)
 		go func() {
 			sedb.GetStorageEngine().GetPrimaryIndex(sedb.primaryDb).PurgeCache()
-			//root := se.primaryIndex.GetRoot(sedb.primaryDb)
-			//FTraverse(root, sedb.primaryDb, se.primaryIndex.GetCache())
 			wG.Done()
 		}()
 		go func() {

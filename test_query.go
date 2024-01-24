@@ -43,7 +43,9 @@ func main() {
 		queries := util.ReadQueryFromFile(dirPath, opNum)
 		for i, query := range queries {
 			queryCh <- query
-			fmt.Println(i)
+			if i%10000 == 0 {
+				fmt.Println(i)
+			}
 		}
 		close(queryCh)
 	}

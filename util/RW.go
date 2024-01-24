@@ -86,10 +86,15 @@ func ReadQueryFromFile(dirPath string, num int) (ret []string) {
 	}
 	lines := strings.Split(string(content), "\n")
 	for i, line := range lines {
+
 		if len(line) == 0 || i == num {
 			break
 		}
-		ret = append(ret, Strip(line, "\r"))
+
+		//fmt.Println(line)
+		lineSplit := strings.Split(line, ",")
+		//fmt.Println(Strip(lineSplit[1], "\r"))
+		ret = append(ret, Strip(lineSplit[1], "\r"))
 	}
 	return
 }

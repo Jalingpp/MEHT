@@ -235,8 +235,8 @@ func main() {
 	mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs))
 	seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 	var seDB *sedb.SEDB
-	cacheEnable := false
-	//cacheEnable := true
+	//cacheEnable := false
+	cacheEnable := true
 	argsString := ""
 	if cacheEnable {
 		shortNodeCacheCapacity := 50000

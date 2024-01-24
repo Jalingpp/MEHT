@@ -126,7 +126,7 @@ func main() {
 			siModeOptions = append(siModeOptions, arg)
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
-				if n >= 300000 {
+				if n >= 10000 {
 					queryNum = append(queryNum, n)
 				} else {
 					numOfWorker = n
@@ -145,6 +145,7 @@ func main() {
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
+			fmt.Println(filePath)
 			mbtBucketNum := 1280
 			mbtAggregation := 16
 			mbtArgs := make([]interface{}, 0)

@@ -48,13 +48,13 @@ func main() {
 	//	wG.Wait()
 	//	close(kvPairCh)
 	//}
-	var batchSize = 10000
-	var batchTimeout float64 = 100
+	var batchSize = 10000          //change
+	var batchTimeout float64 = 100 //change
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
 	var stopBatchCommitterFlag = true
-	var a = 0.9
-	var b = 0.1
+	//var a = 0.9
+	//var b = 0.1
 	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
 		// PHI 代表分割分位数
 		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
@@ -62,7 +62,10 @@ func main() {
 			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
 			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
 			kvPairCh <- kvPair
-			fmt.Println(i)
+
+			if i%10000 == 0 {
+				fmt.Println(i)
+			}
 		}
 		close(kvPairCh)
 	}
@@ -75,8 +78,7 @@ func main() {
 				}
 				// 批量提交，即一并更新辅助索引的脏数据
 				seDB.BatchCommit()
-				seDB.CacheAdjust(a, b)
-				seDB.BatchCommit()
+				//seDB.CacheAdjust(a, b)
 				// 重置计数器
 				curFinishNum.number = 0
 				curStartNum.number = 0
@@ -86,6 +88,7 @@ func main() {
 		}
 		// 所有查询与插入操作已全部结束，将尾部数据批量提交
 		seDB.BatchCommit()
+		//seDB.CacheAdjust(a, b)
 		wG.Done()
 	}
 	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {
@@ -153,7 +156,7 @@ func main() {
 
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
-	var numOfWorker = 1
+	var numOfWorker = 1 //change
 	//var phi = 1
 	args := os.Args
 	for _, arg := range args[1:] {
@@ -165,7 +168,7 @@ func main() {
 			//	}
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
-				if n >= 300000 {
+				if n >= 10000 {
 					insertNum = append(insertNum, n)
 				} else {
 					numOfWorker = n
@@ -176,88 +179,90 @@ func main() {
 	sort.Ints(insertNum)
 	sort.Strings(siModeOptions)
 	if len(insertNum) == 0 {
-		insertNum = []int{300000, 600000, 900000, 1200000, 1500000}
+		insertNum = []int{300000, 600000, 900000, 1200000, 1500000} //change
 	}
 	if len(siModeOptions) == 0 {
 		siModeOptions = []string{"meht", "mpt", "mbt"}
 	}
-	for _, siMode := range siModeOptions {
-		for _, num := range insertNum {
-			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
-			dirs := strings.Split(filePath, "/")
-			if _, err := os.Stat(strings.Join(dirs[:len(dirs)-1], "/")); os.IsNotExist(err) {
-				if err := os.MkdirAll(strings.Join(dirs[:len(dirs)-1], "/"), 0750); err != nil {
-					log.Fatal(err)
-				}
-			}
-			if _, err := os.Stat(filePath); os.IsNotExist(err) {
-				util.WriteStringToFile(filePath, ",data/levelDB/PrimaryDB"+strconv.Itoa(num)+siMode+
-					",data/levelDB/SecondaryDB"+strconv.Itoa(num)+siMode+"\n")
-			}
-			mbtBucketNum := 1280
-			mbtAggregation := 16
-			mbtArgs := make([]interface{}, 0)
-			mbtArgs = append(mbtArgs, sedb.MBTBucketNum(mbtBucketNum), sedb.MBTAggregation(mbtAggregation))
-			mehtRdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-			mehtBc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
-			mehtBs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
-			mehtArgs := make([]interface{}, 0)
-			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs))
-			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
-			var seDB *sedb.SEDB
-			//cacheEnable := false
-			cacheEnable := true
-			argsString := ""
-			if cacheEnable {
-				shortNodeCacheCapacity := 50000000
-				fullNodeCacheCapacity := 50000000
-				mgtNodeCacheCapacity := 100000000
-				bucketCacheCapacity := 128000000
-				segmentCacheCapacity := mehtBs * bucketCacheCapacity
-				merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
-				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
-					sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
-					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
-					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
-				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
-					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
-			} else {
-				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
-				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
-					0, 0, 0, 0,
-					numOfWorker)
-			}
-
-			var duration time.Duration = 0
-			var latencyDuration time.Duration = 0
-			kvPairCh := make(chan util.KVPair)
-			latencyDurationChList := make([]chan time.Duration, numOfWorker)
-			for i := 0; i < numOfWorker; i++ {
-				latencyDurationChList[i] = make(chan time.Duration)
-			}
-			latencyDurationList := make([]time.Duration, numOfWorker)
-			doneCh := make(chan bool)
-			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-			go allocateNFTOwner("data/nft-owner", num, kvPairCh)
-			batchWg := sync.WaitGroup{}
-			batchWg.Add(1)
-			go batchCommitter(&batchWg, seDB)
-			start := time.Now()
-			createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
-			<-doneCh
-			for _, du := range latencyDurationList {
-				latencyDuration += du
-			}
-			batchWg.Wait()
-			seDB.WriteSEDBInfoToFile(filePath)
-			duration = time.Since(start)
-			util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
-				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
-				strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
-				", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.\n")
-			fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
-				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
-			seDB = nil
+	//for _, siMode := range siModeOptions {
+	//	for _, num := range insertNum {
+	siMode := siModeOptions[0]
+	num := insertNum[0]
+	filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
+	dirs := strings.Split(filePath, "/")
+	if _, err := os.Stat(strings.Join(dirs[:len(dirs)-1], "/")); os.IsNotExist(err) {
+		if err := os.MkdirAll(strings.Join(dirs[:len(dirs)-1], "/"), 0750); err != nil {
+			log.Fatal(err)
 		}
 	}
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		util.WriteStringToFile(filePath, ",data/levelDB/PrimaryDB"+strconv.Itoa(num)+siMode+
+			",data/levelDB/SecondaryDB"+strconv.Itoa(num)+siMode+"\n")
+	}
+	mbtBucketNum := 1280 //change
+	mbtAggregation := 16 //change
+	mbtArgs := make([]interface{}, 0)
+	mbtArgs = append(mbtArgs, sedb.MBTBucketNum(mbtBucketNum), sedb.MBTAggregation(mbtAggregation))
+	mehtRdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+	mehtBc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数    //change
+	mehtBs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment    //change
+	mehtArgs := make([]interface{}, 0)
+	mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs))
+	seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
+	var seDB *sedb.SEDB
+	//cacheEnable := false
+	cacheEnable := true
+	argsString := ""
+	if cacheEnable {
+		shortNodeCacheCapacity := 50000
+		fullNodeCacheCapacity := 50000
+		mgtNodeCacheCapacity := 100000000
+		bucketCacheCapacity := 128000000
+		segmentCacheCapacity := mehtBs * bucketCacheCapacity
+		merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
+		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
+			sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
+			sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
+			sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
+		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
+			segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
+	} else {
+		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
+		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
+			0, 0, 0, 0,
+			numOfWorker)
+	}
+
+	var duration time.Duration = 0
+	var latencyDuration time.Duration = 0
+	kvPairCh := make(chan util.KVPair)
+	latencyDurationChList := make([]chan time.Duration, numOfWorker)
+	for i := 0; i < numOfWorker; i++ {
+		latencyDurationChList[i] = make(chan time.Duration)
+	}
+	latencyDurationList := make([]time.Duration, numOfWorker)
+	doneCh := make(chan bool)
+	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
+	go allocateNFTOwner("data/Synthesis_U1", num, kvPairCh)
+	batchWg := sync.WaitGroup{}
+	batchWg.Add(1)
+	go batchCommitter(&batchWg, seDB)
+	start := time.Now()
+	createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
+	duration = time.Since(start)
+	<-doneCh
+	for _, du := range latencyDurationList {
+		latencyDuration += du
+	}
+	batchWg.Wait()
+	seDB.WriteSEDBInfoToFile(filePath)
+	util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
+		duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
+		strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
+		", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.\n")
+	fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
+		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
+	seDB = nil
+	//	}
+	//}
 }

@@ -613,7 +613,7 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	//为每个新的bucket创建叶子节点,并插入到leafNode的subNodes中
 	subNodes := make([]*MGTNode, 0)
 	commonLNKeyLength := 0
-	if len(newBuckets[0].BucketKey) <= len(newBuckets[0].BucketKey) {
+	if len(newBuckets[0].BucketKey) <= len(newBuckets[1].BucketKey) {
 		commonLNKeyLength = len(newBuckets[0].BucketKey)
 	} else {
 		commonLNKeyLength = len(newBuckets[1].BucketKey)

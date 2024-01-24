@@ -67,7 +67,7 @@ func main() {
 					break
 				}
 			}
-			fmt.Println("insert " + line)
+			//fmt.Println("insert " + line)
 			//解析line是insert还是update
 			line_ := strings.Split(line, ",")
 			kvPair := *util.NewKVPair(util.StringToHex(line_[1]), util.StringToHex(line_[2]))
@@ -88,10 +88,10 @@ func main() {
 
 	queryWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voCh chan uint, durationCh chan time.Duration) {
 		for qTxn := range queryTxnCh {
-			fmt.Println("query " + qTxn.queryKey)
+			//fmt.Println("query " + qTxn.queryKey)
 			st := qTxn.stratTime
 			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qTxn.queryKey))
-			fmt.Println("query result " + qTxn.queryKey)
+			//fmt.Println("query result " + qTxn.queryKey)
 			du := time.Since(st)
 			durationCh <- du
 			vo := proof.GetSizeOf()
@@ -180,36 +180,38 @@ func main() {
 
 	var insertNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
-	var numOfWorker = 2 //change
+	var numOfWorker = 1 //change
 	//var phi = 1
-	//args := os.Args
-	//for _, arg := range args[1:] {
-	//	if arg == "meht" || arg == "mpt" || arg == "mbt" {
-	//		siModeOptions = append(siModeOptions, arg)
-	//		//} else if len(arg) > 4 && arg[:3] == "-phi" {
-	//		//	if n, err := strconv.Atoi(arg[3:]); err == nil {
-	//		//		phi = n
-	//		//	}
-	//	} else {
-	//		if n, err := strconv.Atoi(arg); err == nil {
-	//			if n >= 100 {
-	//				insertNum = append(insertNum, n)
-	//			} else {
-	//				numOfWorker = n
-	//			}
-	//		}
-	//	}
-	//}
+	args := os.Args
+	for _, arg := range args[1:] {
+		if arg == "meht" || arg == "mpt" || arg == "mbt" {
+			siModeOptions = append(siModeOptions, arg)
+			//} else if len(arg) > 4 && arg[:3] == "-phi" {
+			//	if n, err := strconv.Atoi(arg[3:]); err == nil {
+			//		phi = n
+			//	}
+		} else {
+			if n, err := strconv.Atoi(arg); err == nil {
+				if n >= 10000 {
+					insertNum = append(insertNum, n)
+				} else {
+					numOfWorker = n
+				}
+			}
+		}
+	}
 	sort.Ints(insertNum)
 	sort.Strings(siModeOptions)
-	if len(insertNum) == 0 {
-		insertNum = []int{200000} //change
-	}
-	if len(siModeOptions) == 0 {
-		siModeOptions = []string{"mpt"}
-	}
+	//if len(insertNum) == 0 {
+	//	insertNum = []int{200000} //change
+	//}
+	//if len(siModeOptions) == 0 {
+	//	siModeOptions = []string{"mpt"}
+	//}
 
 	mission := "test0123"
+	fmt.Println(siModeOptions)
+	fmt.Println(insertNum)
 
 	siMode := siModeOptions[0]
 	num := insertNum[0]
@@ -298,9 +300,9 @@ func main() {
 			}
 			tx := txs[i+j]
 			countNum = i + j
-			//if countNum%1000 == 0 {
-			fmt.Println(countNum)
-			//}
+			if countNum%10000 == 0 {
+				fmt.Println(countNum)
+			}
 			tx_ := strings.Split(tx, ",")
 			if tx_[0] == "insertion" || tx_[0] == "update" || tx_[0] == "insert" {
 				insertKVPairCh <- txs[i+j]

@@ -459,11 +459,5 @@ func ComputePathFoo(aggregation int, gd int, cur int, ld int) []int {
 	if ld == gd-1 {
 		return []int{-1}
 	}
-	tmp := cur % aggregation
-	tmpp := cur / aggregation
-	if tmp != 0 {
-		tmpp++
-	}
-	return append(ComputePathFoo(aggregation, gd, tmpp, ld+1), []int{tmp}...)
-	//return append(ComputePathFoo(aggregation, gd, cur/aggregation, ld+1), []int{cur % aggregation}...)
+	return append(ComputePathFoo(aggregation, gd, cur/aggregation, ld+1), []int{cur % aggregation}...)
 }

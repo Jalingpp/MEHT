@@ -73,14 +73,15 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 			if s%aggregation != 0 {
 				parSize++
 			}
-			for i := 0; i < parSize; i++ {
+			for i := 0; i < parSize && s > 0; i++ {
 				sSubNodes := make([]*MBTNode, 0)
 				dDataHashes := make([][]byte, 0)
-				for j := 0; j < aggregation && !queue.Empty(); j++ {
+				for j := 0; j < aggregation && !queue.Empty() && s > 0; j++ {
 					cNode_, _ := queue.Dequeue()
 					cNode := cNode_.(*MBTNode)
 					sSubNodes = append(sSubNodes, cNode)
 					dDataHashes = append(dDataHashes, cNode.nodeHash)
+					s--
 				}
 				queue.Enqueue(NewMBTNode([]byte("Branch"+strconv.Itoa(offset+i)), sSubNodes, dDataHashes, false, db, c))
 			}
@@ -129,7 +130,8 @@ func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
 
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) {
 	mbt.GetRoot(db) //保证根不是nil
-	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db, isDelete)
+	path := ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey())
+	mbt.RecursivelyInsertMBTNode(path, 0, kvPair, mbt.Root, db, isDelete)
 	//mbt.UpdateMBTInDB(mbt.Root.nodeHash, db) //由于结构不变，因此根永远不会变动，变动的只会是根哈希，因此只需要向上更新mbt的树根哈希即可
 }
 
@@ -320,11 +322,12 @@ func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
 		}
 		wG.Add(1)
 		child_ := child
-		go func(idx int) {
+		idx := i
+		go func() {
 			mbtBatchFixFoo(child_, db, mbt.cache)
 			mbt.Root.dataHashes[idx] = child_.nodeHash
 			wG.Done()
-		}(i)
+		}()
 	}
 	wG.Wait()
 	mbt.Root.UpdateMBTNodeHash(db, mbt.cache)
@@ -456,5 +459,11 @@ func ComputePathFoo(aggregation int, gd int, cur int, ld int) []int {
 	if ld == gd-1 {
 		return []int{-1}
 	}
-	return append(ComputePathFoo(aggregation, gd, cur/aggregation, ld+1), []int{cur % aggregation}...)
+	tmp := cur % aggregation
+	tmpp := cur / aggregation
+	if tmp != 0 {
+		tmpp++
+	}
+	return append(ComputePathFoo(aggregation, gd, tmpp, ld+1), []int{tmp}...)
+	//return append(ComputePathFoo(aggregation, gd, cur/aggregation, ld+1), []int{cur % aggregation}...)
 }

@@ -12,7 +12,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"log"
 	"reflect"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -73,14 +72,15 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 			if s%aggregation != 0 {
 				parSize++
 			}
-			for i := 0; i < parSize; i++ {
+			for i := 0; i < parSize && s > 0; i++ {
 				sSubNodes := make([]*MBTNode, 0)
 				dDataHashes := make([][]byte, 0)
-				for j := 0; j < aggregation && !queue.Empty(); j++ {
+				for j := 0; j < aggregation && !queue.Empty() && s > 0; j++ {
 					cNode_, _ := queue.Dequeue()
 					cNode := cNode_.(*MBTNode)
 					sSubNodes = append(sSubNodes, cNode)
 					dDataHashes = append(dDataHashes, cNode.nodeHash)
+					s--
 				}
 				queue.Enqueue(NewMBTNode([]byte("Branch"+strconv.Itoa(offset+i)), sSubNodes, dDataHashes, false, db, c))
 			}
@@ -129,7 +129,8 @@ func (mbt *MBT) GetUpdateLatch() *sync.Mutex {
 
 func (mbt *MBT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) {
 	mbt.GetRoot(db) //保证根不是nil
-	mbt.RecursivelyInsertMBTNode(ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey()), 0, kvPair, mbt.Root, db, isDelete)
+	path := ComputePath(mbt.bucketNum, mbt.aggregation, mbt.gd, kvPair.GetKey())
+	mbt.RecursivelyInsertMBTNode(path, 0, kvPair, mbt.Root, db, isDelete)
 	//mbt.UpdateMBTInDB(mbt.Root.nodeHash, db) //由于结构不变，因此根永远不会变动，变动的只会是根哈希，因此只需要向上更新mbt的树根哈希即可
 }
 
@@ -141,9 +142,14 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 		defer cNode.latch.Unlock()
 		var oldVal string
 		var pos = -1
+		var found = false
 		for idx, kv := range cNode.bucket { //全桶扫描
 			if kv.GetKey() == key {
 				oldVal = kv.GetValue()
+				pos = idx
+				found = true
+				break
+			} else if strings.Compare(kv.GetKey(), key) > 0 {
 				pos = idx
 				break
 			}
@@ -151,34 +157,38 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 		newVal := kvPair.GetValue()
 		kvPair.SetValue(oldVal)
 		if isDelete {
-			if pos == -1 { //删除失败，将要删除的kv队加入延迟删除记录表
-				cNode.toDelMap[kvPair.GetKey()][newVal]++
+			if !found { //删除失败，将要删除的kv队加入延迟删除记录表
+				cNode.toDelMap[key][newVal]++
 				return
 			} else {
 				if isChange := kvPair.DelValue(newVal); !isChange { //删除失败，将要删除的kv队加入延迟删除记录表
-					cNode.toDelMap[kvPair.GetKey()][newVal]++
+					cNode.toDelMap[key][newVal]++
 					return
 				} else {
 					cNode.bucket[pos] = kvPair
 				}
 			}
 		} else {
-			if cNode.toDelMap[kvPair.GetKey()][newVal] > 0 { //删除记录表中有则删除，即跳过本次插入操作
-				cNode.toDelMap[kvPair.GetKey()][newVal]--
+			if cNode.toDelMap[key][newVal] > 0 { //删除记录表中有则删除，即跳过本次插入操作
+				cNode.toDelMap[key][newVal]--
 				return
 			}
 			isChange := kvPair.AddValue(newVal)
 			if !isChange { //重复插入，直接返回
 				return
 			}
-			if pos != -1 { //key有则用新值覆盖
+			if found { //key有则用新值覆盖
 				cNode.bucket[pos] = kvPair
 			} else { //无则新建
-				cNode.bucket = append(cNode.bucket, kvPair)
+				if pos == 0 {
+					cNode.bucket = append([]util.KVPair{kvPair}, cNode.bucket...)
+				} else if pos == -1 {
+					cNode.bucket = append(cNode.bucket, kvPair)
+				} else {
+					tmp := append([]util.KVPair{}, cNode.bucket[pos:]...)
+					cNode.bucket = append(append(cNode.bucket[:pos], kvPair), tmp...)
+				}
 				cNode.num++
-				sort.Slice(cNode.bucket, func(i, j int) bool { //保证全局有序
-					return strings.Compare(cNode.bucket[i].GetKey(), cNode.bucket[j].GetKey()) <= 0
-				})
 			}
 		}
 		cNode.UpdateMBTNodeHash(db, mbt.cache) //更新节点哈希并更新节点到db

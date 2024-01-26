@@ -124,8 +124,7 @@ func main() {
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
-			fmt.Println(filePath)
-			mbtBucketNum, _ := strconv.Atoi(args[4]) //change
+			mbtBucketNum, _ := strconv.Atoi(args[4])                                //change
 			mbtAggregation := 16
 			mbtArgs := make([]interface{}, 0)
 			mbtArgs = append(mbtArgs, sedb.MBTBucketNum(mbtBucketNum), sedb.MBTAggregation(mbtAggregation))

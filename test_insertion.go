@@ -201,7 +201,7 @@ func main() {
 	latencyDurationList := make([]time.Duration, numOfWorker)
 	doneCh := make(chan bool)
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-	txs := util.ReadLinesFromFile("../Synthesis/" + args[8])
+	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
 	//../Synthesis/
 	txs = txs[:num+1]
 	countNum := 0

@@ -12,38 +12,15 @@ import (
 )
 
 func main() {
-	//测试SEDB查询
-	//allocateQuery := func(dirPath string, opNum int, queryCh chan string, phi int) {
-	//	// PHI 代表分割分位数
-	//	queries := util.ReadQueryFromFile(dirPath, opNum)
-	//	wG := sync.WaitGroup{}
-	//	wG.Add(phi)
-	//	batchNum := len(queries)/phi + 1
-	//	for i := 0; i < phi; i++ {
-	//		idx := i
-	//		go func() {
-	//			st := idx * batchNum
-	//			var ed int
-	//			if idx != phi-1 {
-	//				ed = (idx + 1) * batchNum
-	//			} else {
-	//				ed = len(queries)
-	//			}
-	//			for _, query := range queries[st:ed] {
-	//				queryCh <- query
-	//			}
-	//			wG.Done()
-	//		}()
-	//	}
-	//	wG.Wait()
-	//	close(queryCh)
-	//}
+	args := os.Args
 	allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
 		// PHI 代表分割分位数
 		queries := util.ReadQueryFromFile(dirPath, opNum)
 		for i, query := range queries {
 			queryCh <- query
-			fmt.Println(i)
+			if i%10000 == 0 {
+				fmt.Println(i)
+			}
 		}
 		close(queryCh)
 	}
@@ -120,13 +97,12 @@ func main() {
 	var queryNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
 	var numOfWorker = 1
-	args := os.Args
-	for _, arg := range args[1:] {
+	for _, arg := range args[1:4] {
 		if arg == "meht" || arg == "mpt" || arg == "mbt" {
 			siModeOptions = append(siModeOptions, arg)
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
-				if n >= 300000 {
+				if n >= 10000 {
 					queryNum = append(queryNum, n)
 				} else {
 					numOfWorker = n
@@ -136,22 +112,26 @@ func main() {
 	}
 	sort.Ints(queryNum)
 	sort.Strings(siModeOptions)
-	if len(queryNum) == 0 {
-		queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	}
-	if len(siModeOptions) == 0 {
-		siModeOptions = []string{"meht", "mpt", "mbt"}
-	}
+	//if len(queryNum) == 0 {
+	//	queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	//}
+	//if len(siModeOptions) == 0 {
+	//	siModeOptions = []string{"meht", "mpt", "mbt"}
+	//}
+	fmt.Println(siModeOptions)
+	fmt.Println(queryNum)
+
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
-			mbtBucketNum := 1280
+			fmt.Println(filePath)
+			mbtBucketNum, _ := strconv.Atoi(args[4]) //change
 			mbtAggregation := 16
 			mbtArgs := make([]interface{}, 0)
 			mbtArgs = append(mbtArgs, sedb.MBTBucketNum(mbtBucketNum), sedb.MBTAggregation(mbtAggregation))
-			mehtRdx := 16  //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
-			mehtBc := 1280 //meht中bucket的容量，即每个bucket中最多存储的KVPair数
-			mehtBs := 1    //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			mehtRdx := 16                      //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+			mehtBc, _ := strconv.Atoi(args[5]) //change
+			mehtBs, _ := strconv.Atoi(args[6])
 			mehtArgs := make([]interface{}, 0)
 			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs)) //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
@@ -162,8 +142,8 @@ func main() {
 			if cacheEnable {
 				shortNodeCacheCapacity := mehtRdx * num / 12 * 7
 				fullNodeCacheCapacity := mehtRdx * num / 12 * 7
-				mgtNodeCacheCapacity := 100000000
-				bucketCacheCapacity := 128000000
+				mgtNodeCacheCapacity := 100000
+				bucketCacheCapacity := 128000
 				segmentCacheCapacity := mehtBs * bucketCacheCapacity
 				merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
@@ -193,7 +173,7 @@ func main() {
 			voList := make([]uint, numOfWorker)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go countVo(&voList, &voChList, doneCh)
-			go allocateQuery("data/", num, queryCh)
+			go allocateQuery("data/Synthesis_U3", num, queryCh)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList)
 			duration = time.Since(start)

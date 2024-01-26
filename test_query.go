@@ -43,7 +43,9 @@ func main() {
 		queries := util.ReadQueryFromFile(dirPath, opNum)
 		for i, query := range queries {
 			queryCh <- query
-			fmt.Println(i)
+			if i%10000 == 0 {
+				fmt.Println(i)
+			}
 		}
 		close(queryCh)
 	}
@@ -126,7 +128,7 @@ func main() {
 			siModeOptions = append(siModeOptions, arg)
 		} else {
 			if n, err := strconv.Atoi(arg); err == nil {
-				if n >= 300000 {
+				if n >= 10000 {
 					queryNum = append(queryNum, n)
 				} else {
 					numOfWorker = n
@@ -136,15 +138,19 @@ func main() {
 	}
 	sort.Ints(queryNum)
 	sort.Strings(siModeOptions)
-	if len(queryNum) == 0 {
-		queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
-	}
-	if len(siModeOptions) == 0 {
-		siModeOptions = []string{"meht", "mpt", "mbt"}
-	}
+	//if len(queryNum) == 0 {
+	//	queryNum = []int{300000, 600000, 900000, 1200000, 1500000}
+	//}
+	//if len(siModeOptions) == 0 {
+	//	siModeOptions = []string{"meht", "mpt", "mbt"}
+	//}
+	fmt.Println(siModeOptions)
+	fmt.Println(queryNum)
+
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
 			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
+			fmt.Println(filePath)
 			mbtBucketNum := 1280
 			mbtAggregation := 16
 			mbtArgs := make([]interface{}, 0)
@@ -193,7 +199,7 @@ func main() {
 			voList := make([]uint, numOfWorker)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go countVo(&voList, &voChList, doneCh)
-			go allocateQuery("data/", num, queryCh)
+			go allocateQuery("data/Synthesis_U3", num, queryCh)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList)
 			duration = time.Since(start)

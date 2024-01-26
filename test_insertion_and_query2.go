@@ -19,83 +19,46 @@ type IntegerWithLock struct {
 	lock   sync.Mutex
 }
 
+type QueryTransaction struct {
+	queryKey  string
+	stratTime time.Time
+}
+
 func main() {
-	//测试辅助索引查询
-	//allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair, phi int) {
-	//	// PHI 代表分割分位数
-	//	kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-	//	wG := sync.WaitGroup{}
-	//	wG.Add(phi)
-	//	batchNum := len(kvPairs)/phi + 1
-	//	for i := 0; i < phi; i++ {
-	//		idx := i
-	//		go func() {
-	//			st := idx * batchNum
-	//			var ed int
-	//			if idx != phi-1 {
-	//				ed = (idx + 1) * batchNum
-	//			} else {
-	//				ed = len(kvPairs)
-	//			}
-	//			for _, kvPair := range kvPairs[st:ed] {
-	//				kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
-	//				kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
-	//				kvPairCh <- kvPair
-	//			}
-	//			wG.Done()
-	//		}()
-	//	}
-	//	wG.Wait()
-	//	close(kvPairCh)
-	//}
-	var batchSize = 10000          //change
-	var batchTimeout float64 = 100 //change
+
+	var batchSize = 10000 //change
+	//var batchTimeout float64 = 100 //change
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
-	var stopBatchCommitterFlag = true
+	//var stopBatchCommitterFlag = true
 	//var a = 0.9
 	//var b = 0.1
-	allocateNFTOwner := func(filepath string, opNum int, kvPairCh chan util.KVPair) {
-		// PHI 代表分割分位数
-		kvPairs := util.ReadNFTOwnerFromFile(filepath, opNum)
-		for i, kvPair := range kvPairs {
-			kvPair.SetKey(util.StringToHex(kvPair.GetKey()))
-			kvPair.SetValue(util.StringToHex(kvPair.GetValue()))
-			kvPairCh <- kvPair
 
-			if i%10000 == 0 {
-				fmt.Println(i)
-			}
+	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool) {
+		//for {
+		curStartNum.lock.Lock()                         //阻塞新插入或查询操作
+		for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
 		}
-		close(kvPairCh)
-	}
-	batchCommitter := func(wG *sync.WaitGroup, seDB *sedb.SEDB) {
-		sT := time.Now()
-		for stopBatchCommitterFlag {
-			for curStartNum.number >= batchSize || time.Since(sT).Seconds() >= batchTimeout {
-				curStartNum.lock.Lock()                         //阻塞新插入或查询操作
-				for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
-				}
-				// 批量提交，即一并更新辅助索引的脏数据
-				seDB.BatchCommit()
-				//seDB.CacheAdjust(a, b)
-				// 重置计数器
-				curFinishNum.number = 0
-				curStartNum.number = 0
-				curStartNum.lock.Unlock()
-				sT = time.Now()
-			}
-		}
-		// 所有查询与插入操作已全部结束，将尾部数据批量提交
+		// 批量提交，即一并更新辅助索引的脏数据
 		seDB.BatchCommit()
 		//seDB.CacheAdjust(a, b)
-		wG.Done()
+		// 重置计数器
+		curFinishNum.number = 0
+		curStartNum.number = 0
+		curStartNum.lock.Unlock()
+
+		flagChan <- true
+		//}
+
+		//seDB.CacheAdjust(a, b)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationCh chan time.Duration) {
-		for kvPair := range kvPairCh {
+
+	writeWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, insertKVPairCh chan string, durationCh chan time.Duration) {
+		for line := range insertKVPairCh {
 			for {
 				if curStartNum.number < batchSize && curStartNum.lock.TryLock() {
 					if curStartNum.number == batchSize {
+
 						curStartNum.lock.Unlock()
 						continue
 					}
@@ -104,16 +67,39 @@ func main() {
 					break
 				}
 			}
+			//fmt.Println("insert " + line)
+			//解析line是insert还是update
+			line_ := strings.Split(line, ",")
+			kvPair := *util.NewKVPair(util.StringToHex(line_[1]), util.StringToHex(line_[2]))
 			st := time.Now()
-			seDB.InsertKVPair(kvPair, false)
+			if line_[0] == "insertion" || line_[0] == "insert" {
+				seDB.InsertKVPair(kvPair, false)
+			} else if line_[0] == "update" {
+				seDB.InsertKVPair(kvPair, true)
+			}
 			du := time.Since(st)
+			durationCh <- du
 			curFinishNum.lock.Lock()
 			curFinishNum.number++
 			curFinishNum.lock.Unlock()
-			durationCh <- du
 		}
 		wg.Done()
 	}
+
+	queryWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voCh chan uint, durationCh chan time.Duration) {
+		for qTxn := range queryTxnCh {
+			//fmt.Println("query " + qTxn.queryKey)
+			st := qTxn.stratTime
+			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qTxn.queryKey))
+			//fmt.Println("query result " + qTxn.queryKey)
+			du := time.Since(st)
+			durationCh <- du
+			vo := proof.GetSizeOf()
+			voCh <- vo
+		}
+		wg.Done()
+	}
+
 	countLatency := func(rets *[]time.Duration, durationChList *[]chan time.Duration, done chan bool) {
 		wG := sync.WaitGroup{}
 		wG.Add(len(*rets))
@@ -125,28 +111,66 @@ func main() {
 				for du := range ch {
 					(*rets)[idx] += du
 				}
+				//结束时间
 				wG.Done()
 			}()
 		}
 		wG.Wait()
 		done <- true
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, kvPairCh chan util.KVPair, durationChList *[]chan time.Duration) {
+	createWriteWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, insertKVPairCh chan string, durationChList *[]chan time.Duration, flagChan chan bool) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go worker(&wg, seDB, kvPairCh, (*durationChList)[i])
+			go writeWorker(&wg, seDB, insertKVPairCh, (*durationChList)[i])
 		}
 		wg.Wait()
-		stopBatchCommitterFlag = false
-		for _, duCh := range *durationChList {
-			close(duCh)
-		}
+
+		batchCommitterForMix(seDB, flagChan)
+		//stopBatchCommitterFlag = false
+		//for _, duCh := range *durationChList {
+		//	close(duCh)
+		//}
 	}
+
+	createQueryWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voChList *[]chan uint, durationChList *[]chan time.Duration, queryChanFlag chan bool) {
+		var wg sync.WaitGroup
+		for i := 0; i < numOfWorker; i++ {
+			wg.Add(1)
+			go queryWorker(&wg, seDB, queryTxnCh, (*voChList)[i], (*durationChList)[i])
+		}
+		wg.Wait()
+		//for _, voCh := range *voChList {
+		//	close(voCh)
+		//}
+		//for _, duCh := range *durationChList {
+		//	close(duCh)
+		//}
+		queryChanFlag <- true
+	}
+
+	countVo := func(voList *[]uint, voChList *[]chan uint, done chan bool) {
+		wG := sync.WaitGroup{}
+		size := len(*voList)
+		wG.Add(size)
+		for i := 0; i < size; i++ {
+			idx := i
+			go func() {
+				ch := (*voChList)[idx]
+				for vo := range ch {
+					(*voList)[idx] += vo
+				}
+				wG.Done()
+			}()
+		}
+		wG.Wait()
+		done <- true
+	}
+
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
-		merkleTreeCC int, numOfWorker int) string {
-		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
+		merkleTreeCC int, numOfWorker int, mission string) string {
+		return "mission: " + mission + ",\tsiMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
 			",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
@@ -179,16 +203,16 @@ func main() {
 	sort.Ints(insertNum)
 	sort.Strings(siModeOptions)
 	//if len(insertNum) == 0 {
-	//	insertNum = []int{300000, 600000, 900000, 1200000, 1500000} //change
+	//	insertNum = []int{200000} //change
 	//}
 	//if len(siModeOptions) == 0 {
-	//	siModeOptions = []string{"meht", "mpt", "mbt"}
+	//	siModeOptions = []string{"mpt"}
 	//}
+
+	mission := "test0123"
 	fmt.Println(siModeOptions)
 	fmt.Println(insertNum)
 
-	//for _, siMode := range siModeOptions {
-	//	for _, num := range insertNum {
 	siMode := siModeOptions[0]
 	num := insertNum[0]
 	filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
@@ -228,37 +252,104 @@ func main() {
 			sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 			sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
 		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
-			segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
+			segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, mission)
 	} else {
 		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
 		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
 			0, 0, 0, 0,
-			numOfWorker)
+			numOfWorker, mission)
 	}
 
 	var duration time.Duration = 0
 	var latencyDuration time.Duration = 0
-	kvPairCh := make(chan util.KVPair)
+
 	latencyDurationChList := make([]chan time.Duration, numOfWorker)
 	for i := 0; i < numOfWorker; i++ {
-		latencyDurationChList[i] = make(chan time.Duration)
+		latencyDurationChList[i] = make(chan time.Duration, 10000)
 	}
-	latencyDurationList := make([]time.Duration, numOfWorker)
-	doneCh := make(chan bool)
+	latencyDurationList := make([]time.Duration, numOfWorker) //用于保存每个Worker的延迟时间
+	doneCh := make(chan bool)                                 //用于通知VO大小和延迟累加完成的通道
+	voChList := make([]chan uint, numOfWorker)
+	voList := make([]uint, numOfWorker)
+
+	for i := 0; i < numOfWorker; i++ {
+		latencyDurationChList[i] = make(chan time.Duration)
+		voChList[i] = make(chan uint)
+		voList[i] = 0
+	}
+
+	go countVo(&voList, &voChList, doneCh)
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-	go allocateNFTOwner("data/Synthesis_U1", num, kvPairCh)
-	batchWg := sync.WaitGroup{}
-	batchWg.Add(1)
-	go batchCommitter(&batchWg, seDB)
+
+	//allocate code
+	txs := util.ReadLinesFromFile("data/Synthesis_U4")
+	txs = txs[:num+1]
+	countNum := 0
+
 	start := time.Now()
-	createWorkerPool(numOfWorker, seDB, kvPairCh, &latencyDurationChList)
-	duration = time.Since(start)
+	for i := 0; i < len(txs); i += batchSize {
+		//每次建立一遍
+		var queryList []QueryTransaction
+		insertKVPairCh := make(chan string, batchSize)
+		queryTxnCh := make(chan QueryTransaction, batchSize)
+		flagChan := make(chan bool)      //用于通知数据提交完成的通道
+		queryChanFlag := make(chan bool) //用于通知数据分发者查询已完成的通道
+		for j := 0; j < batchSize; j++ {
+			if i+j >= len(txs) {
+				break
+			}
+			tx := txs[i+j]
+			countNum = i + j
+			if countNum%10000 == 0 {
+				fmt.Println(countNum)
+			}
+			tx_ := strings.Split(tx, ",")
+			if tx_[0] == "insertion" || tx_[0] == "update" || tx_[0] == "insert" {
+				insertKVPairCh <- txs[i+j]
+			} else if tx_[0] == "query" {
+				queryList = append(queryList, QueryTransaction{tx_[1], time.Now()})
+			}
+		}
+		close(insertKVPairCh)
+
+		//TODO:在这里创建线程池并通过close通道让线程池返回
+		go createWriteWorkerPool(numOfWorker, seDB, insertKVPairCh, &latencyDurationChList, flagChan)
+
+		<-flagChan //阻塞等待接收提交完成通知
+		fmt.Println("insert over")
+		close(flagChan)
+
+		fmt.Println(len(queryList))
+		for _, queryTxn := range queryList {
+			queryTxnCh <- queryTxn
+		}
+		close(queryTxnCh)
+		queryList = queryList[:0]
+		//TODO:在这里创建线程池并通过close通道让线程池返回
+		go createQueryWorkerPool(numOfWorker, seDB, queryTxnCh, &voChList, &latencyDurationChList, queryChanFlag)
+
+		<-queryChanFlag //阻塞等待接收查询完成通知
+		fmt.Println("query over")
+		close(queryChanFlag)
+
+	}
+
+	for _, duCh := range latencyDurationChList {
+		close(duCh)
+	}
+
+	for _, voCh := range voChList {
+		close(voCh)
+	}
+
+	<-doneCh
 	<-doneCh
 	for _, du := range latencyDurationList {
 		latencyDuration += du
 	}
-	batchWg.Wait()
 	seDB.WriteSEDBInfoToFile(filePath)
+
+	duration = time.Since(start)
 	util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 		duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 		strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
@@ -266,6 +357,5 @@ func main() {
 	fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
 		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
 	seDB = nil
-	//	}
-	//}
+
 }

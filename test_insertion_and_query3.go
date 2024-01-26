@@ -31,9 +31,9 @@ func main() {
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
 	//var stopBatchCommitterFlag = true
-	//var a = 0.9
-	//var b = 0.1
-
+	var a = 0.9
+	var b = 0.1
+	var cmmitTime = 0
 	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool) {
 		//for {
 		curStartNum.lock.Lock()                         //阻塞新插入或查询操作
@@ -41,7 +41,13 @@ func main() {
 		}
 		// 批量提交，即一并更新辅助索引的脏数据
 		seDB.BatchCommit()
-		//seDB.CacheAdjust(a, b)
+		cmmitTime++
+		if cmmitTime == 5 {
+			seDB.CacheAdjust(a, b)
+			seDB.BatchCommit()
+			cmmitTime = 0
+		}
+
 		// 重置计数器
 		curFinishNum.number = 0
 		curStartNum.number = 0
@@ -306,7 +312,7 @@ func main() {
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 
 	//allocate code
-	txs := util.ReadLinesFromFile("data/" + args[8])
+	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
 	txs = txs[:num+1]
 	countNum := 0
 

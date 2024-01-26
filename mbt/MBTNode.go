@@ -25,21 +25,22 @@ type MBTNode struct {
 	num      int // num of kvPairs in bucket
 	toDelMap map[string]map[string]int
 
-	latch       sync.RWMutex
-	updateLatch sync.Mutex
+	latch         sync.RWMutex
+	subNodesLatch []sync.RWMutex
 }
 
 func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bool, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) (ret *MBTNode) {
 	//由于MBT结构固定，因此此函数只会在MBt初始化时被调用，因此此时dataHashes一定为空，此时nodeHash一定仅包含name
 	if isLeaf {
 		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, make([]util.KVPair, 0),
-			0, make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}
+			0, make(map[string]map[string]int), sync.RWMutex{}, make([]sync.RWMutex, 0)}
 	} else {
 		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, nil, -1,
-			make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}
+			make(map[string]map[string]int), sync.RWMutex{}, make([]sync.RWMutex, 0)}
 	}
 	for _, node := range ret.subNodes {
 		node.parent = ret
+		ret.subNodesLatch = append(ret.subNodesLatch, sync.RWMutex{})
 	}
 	if cache != nil {
 		cache.Add(string(ret.nodeHash), ret)
@@ -56,9 +57,11 @@ func (mbtNode *MBTNode) GetName() string {
 }
 
 func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) *MBTNode {
-	mbtNode.updateLatch.Lock()
-	defer mbtNode.updateLatch.Unlock()
-	if mbtNode.subNodes[index] == nil {
+	if mbtNode.subNodes[index] == nil && mbtNode.subNodesLatch[index].TryLock() {
+		if mbtNode.subNodes[index] != nil {
+			mbtNode.subNodesLatch[index].Unlock()
+			return mbtNode.subNodes[index]
+		}
 		var node *MBTNode
 		var ok bool
 		if cache != nil {
@@ -74,6 +77,9 @@ func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[s
 				node.parent = mbtNode
 			}
 		}
+		mbtNode.subNodesLatch[index].Unlock()
+	}
+	for mbtNode.subNodes[index] == nil {
 	}
 	return mbtNode.subNodes[index]
 }
@@ -143,9 +149,13 @@ func DeserializeMBTNode(data []byte) (*MBTNode, error) {
 	}
 	if seMBTNode.IsLeaf {
 		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, nil, seMBTNode.DataHashes, true, false,
-			bucket, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}, nil
+			bucket, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, nil}, nil
 	} else {
-		return &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(seMBTNode.DataHashes)), seMBTNode.DataHashes, false,
-			false, nil, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, sync.Mutex{}}, nil
+		ret := &MBTNode{seMBTNode.NodeHash, seMBTNode.Name, nil, make([]*MBTNode, len(seMBTNode.DataHashes)), seMBTNode.DataHashes, false,
+			false, nil, len(seMBTNode.Bucket), make(map[string]map[string]int), sync.RWMutex{}, make([]sync.RWMutex, 0)}
+		for i := 0; i < len(seMBTNode.DataHashes); i++ {
+			ret.subNodesLatch = append(ret.subNodesLatch, sync.RWMutex{})
+		}
+		return ret, nil
 	}
 }

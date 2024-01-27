@@ -396,7 +396,7 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 	} else {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			//获取当前节点的第identI号缓存子节点
-			cachedNode := p.GetCachedNode(identI, db, mgt.rdx, cache)
+			cachedNode := p.GetCachedNode(bucketKey[identI], db, mgt.rdx, cache)
 			if cachedNode != nil {
 				//判断缓存子节点是否是中间节点
 				if !cachedNode.isLeaf {
@@ -410,7 +410,7 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 						result = append([]*MGTNode{cachedNode}, result...)
 						//p指向cachedNode，并递归其SubNode
 						p = cachedNode
-						for identI = identI - 1; identI >= 0; identI-- {
+						for identI = len(bucketKey) - len(cachedNode.bucketKey) - 1; identI >= 0; identI-- {
 							p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
 							//将p插入到result的第0个位置
 							result = append([]*MGTNode{p}, result...)

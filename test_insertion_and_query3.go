@@ -33,8 +33,8 @@ func main() {
 	//var stopBatchCommitterFlag = true
 	var a = 0.9
 	var b = 0.1
+	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool) {
 
-	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool, batchTime int, phaselo *util.PhaseLatency) {
 		//for {
 		curStartNum.lock.Lock()                         //阻塞新插入或查询操作
 		for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
@@ -312,7 +312,7 @@ func main() {
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 
 	//allocate code
-	txs := util.ReadLinesFromFile("data/" + args[8])
+	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
 	txs = txs[:num+1]
 	countNum := 0
 

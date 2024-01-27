@@ -33,21 +33,20 @@ func main() {
 	//var stopBatchCommitterFlag = true
 	var a = 0.9
 	var b = 0.1
-	var cmmitTime = 0
 	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool) {
+
 		//for {
 		curStartNum.lock.Lock()                         //阻塞新插入或查询操作
 		for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
 		}
 		// 批量提交，即一并更新辅助索引的脏数据
 		seDB.BatchCommit()
-		cmmitTime++
-		if cmmitTime == 5 {
-			seDB.CacheAdjust(a, b)
-			seDB.BatchCommit()
-			cmmitTime = 0
+		if batchTime%5 == 0 {
+			st := time.Now()                               //add0126 for phase latency
+			seDB.CacheAdjust(a, b)                         //add0126 for phase latency
+			du := time.Since(st)                           //add0126 for phase latency
+			phaselo.RecordLatencyObject("cacheadjust", du) //add0126 for phase latency
 		}
-
 		// 重置计数器
 		curFinishNum.number = 0
 		curStartNum.number = 0
@@ -59,7 +58,7 @@ func main() {
 		//seDB.CacheAdjust(a, b)
 	}
 
-	writeWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, insertKVPairCh chan string, durationCh chan time.Duration, completeInsertCh chan int) {
+	writeWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, insertKVPairCh chan string, durationCh chan time.Duration, completeInsertCh chan int, phaselo *util.PhaseLatency) {
 		for line := range insertKVPairCh {
 			for {
 				if curStartNum.number < batchSize && curStartNum.lock.TryLock() {
@@ -84,6 +83,7 @@ func main() {
 				seDB.InsertKVPair(kvPair, true)
 			}
 			du := time.Since(st)
+			phaselo.RecordLatencyObject("update", du) //add0126 for phase latency
 			durationCh <- du
 			orderNum, _ := strconv.Atoi(line_[3]) //add
 			completeInsertCh <- orderNum          //add
@@ -94,11 +94,11 @@ func main() {
 		wg.Done()
 	}
 
-	queryWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voCh chan uint, durationCh chan time.Duration) {
+	queryWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voCh chan uint, durationCh chan time.Duration, phaselo *util.PhaseLatency) {
 		for qTxn := range queryTxnCh {
 			//fmt.Println("query " + qTxn.queryKey)
 			st := qTxn.stratTime
-			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qTxn.queryKey))
+			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qTxn.queryKey), phaselo)
 			//fmt.Println("query result " + qTxn.queryKey)
 			du := time.Since(st)
 			durationCh <- du
@@ -126,26 +126,26 @@ func main() {
 		wG.Wait()
 		done <- true
 	}
-	createWriteWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, insertKVPairCh chan string, durationChList *[]chan time.Duration, flagChan chan bool, completeInsertCh chan int) {
+	createWriteWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, insertKVPairCh chan string, durationChList *[]chan time.Duration, flagChan chan bool, completeInsertCh chan int, batchTime int, phaselo *util.PhaseLatency) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go writeWorker(&wg, seDB, insertKVPairCh, (*durationChList)[i], completeInsertCh)
+			go writeWorker(&wg, seDB, insertKVPairCh, (*durationChList)[i], completeInsertCh, phaselo)
 		}
 		wg.Wait()
 
-		batchCommitterForMix(seDB, flagChan)
+		batchCommitterForMix(seDB, flagChan, batchTime, phaselo)
 		//stopBatchCommitterFlag = false
 		//for _, duCh := range *durationChList {
 		//	close(duCh)
 		//}
 	}
 
-	createQueryWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voChList *[]chan uint, durationChList *[]chan time.Duration, queryChanFlag chan bool) {
+	createQueryWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voChList *[]chan uint, durationChList *[]chan time.Duration, queryChanFlag chan bool, phaselo *util.PhaseLatency) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go queryWorker(&wg, seDB, queryTxnCh, (*voChList)[i], (*durationChList)[i])
+			go queryWorker(&wg, seDB, queryTxnCh, (*voChList)[i], (*durationChList)[i], phaselo)
 		}
 		wg.Wait()
 		//for _, voCh := range *voChList {
@@ -319,8 +319,12 @@ func main() {
 	queryMap := make(map[int]QueryTransaction)          //add
 	go resetQueryStartTime(queryMap, completedInsertCh) //add
 
+	batchTime := 0                         //记录已完成的批次提交的次数  add0126 for phase latency
+	PhaseLatency := util.NewPhaseLatency() //创建统计各阶段延迟的对象  add0126 for phase latency
+
 	start := time.Now()
 	for i := 0; i < len(txs); i += batchSize {
+		batchTime++ //记录已完成的批次提交的次数  add0126 for phase latency
 		//每次建立一遍
 		insertKVPairCh := make(chan string, batchSize)
 		queryTxnCh := make(chan QueryTransaction, batchSize)
@@ -346,7 +350,7 @@ func main() {
 		close(insertKVPairCh)
 
 		//TODO:在这里创建线程池并通过close通道让线程池返回
-		go createWriteWorkerPool(numOfWorker, seDB, insertKVPairCh, &latencyDurationChList, flagChan, completedInsertCh) //add
+		go createWriteWorkerPool(numOfWorker, seDB, insertKVPairCh, &latencyDurationChList, flagChan, completedInsertCh, batchTime, PhaseLatency) //add
 
 		<-flagChan //阻塞等待接收提交完成通知
 		//fmt.Println("insert over")
@@ -359,7 +363,7 @@ func main() {
 		close(queryTxnCh)
 		queryMap = make(map[int]QueryTransaction) //add
 		//TODO:在这里创建线程池并通过close通道让线程池返回
-		go createQueryWorkerPool(numOfWorker, seDB, queryTxnCh, &voChList, &latencyDurationChList, queryChanFlag)
+		go createQueryWorkerPool(numOfWorker, seDB, queryTxnCh, &voChList, &latencyDurationChList, queryChanFlag, PhaseLatency)
 
 		<-queryChanFlag //阻塞等待接收查询完成通知
 		//fmt.Println("query over")
@@ -387,12 +391,26 @@ func main() {
 	fmt.Println(duration)
 	fmt.Println(duration2)
 
+	//统计各阶段的延迟
+	PhaseLatency.CompPhaseLatency() //add0126 for phase latency
+
 	util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 		duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 		strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
-		", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.\n")
+		", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt,"+
+		"update average Latency is "+strconv.FormatFloat(float64(PhaseLatency.UpdateLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"getkey average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetKeyLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"getvalue average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetValueLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"getproof average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetProofLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"cacheadjust average Latency is "+strconv.FormatFloat(float64(PhaseLatency.CacheAdjustLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt.")
 	fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
-		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
+		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt,"+
+		"update average Latency is "+strconv.FormatFloat(float64(PhaseLatency.UpdateLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"getkey average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetKeyLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"getvalue average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetValueLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"getproof average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetProofLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt,"+
+		"cacheadjust average Latency is "+strconv.FormatFloat(float64(PhaseLatency.CacheAdjustLOs[0].Duration.Milliseconds()), 'f', -1, 64)+" mspt.")
+
 	seDB = nil
 
 }

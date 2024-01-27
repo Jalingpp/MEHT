@@ -6,9 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
-	"sync"
 )
 
 type Bucket struct {

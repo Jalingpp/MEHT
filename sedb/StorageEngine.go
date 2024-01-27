@@ -140,7 +140,7 @@ func (se *StorageEngine) GetSecondaryIndexMeht(db *leveldb.DB) *meht.MEHT {
 			_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
 			se.secondaryIndexMeht, _ = meht.DeserializeMEHT(secondaryIndexString, db, se.cacheEnable, mgtNodeCC,
 				bucketCC, segmentCC, merkleTreeCC)
-			se.secondaryIndexMeht.GetMGT(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
+			se.secondaryIndexMeht.GetMGT(db).GetRoot(db) // 保证从磁盘读取MEHT成功后MGT也被同步从磁盘中读取出
 		}
 		se.secondaryLatch.Unlock()
 	}

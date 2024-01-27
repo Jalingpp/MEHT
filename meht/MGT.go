@@ -8,12 +8,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/syndtr/goleveldb/leveldb"
 	"math"
 	"sort"
 	"strings"
 	"sync"
+
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/syndtr/goleveldb/leveldb"
 	// "MEHT/util"
 )
 
@@ -396,7 +397,7 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 	} else {
 		for identI := len(bucketKey) - 1; identI >= 0; identI-- {
 			//获取当前节点的第identI号缓存子节点
-			cachedNode := p.GetCachedNode(identI, db, mgt.rdx, cache)
+			cachedNode := p.GetCachedNode(bucketKey[identI], db, mgt.rdx, cache)
 			if cachedNode != nil {
 				//判断缓存子节点是否是中间节点
 				if !cachedNode.isLeaf {
@@ -410,7 +411,7 @@ func (mgt *MGT) GetInternalNodeAndPath(bucketKey []int, db *leveldb.DB, cache *[
 						result = append([]*MGTNode{cachedNode}, result...)
 						//p指向cachedNode，并递归其SubNode
 						p = cachedNode
-						for identI = identI - 1; identI >= 0; identI-- {
+						for identI = len(bucketKey) - len(cachedNode.bucketKey) - 1; identI >= 0; identI-- {
 							p = p.GetSubNode(bucketKey[identI], db, mgt.rdx, cache)
 							//将p插入到result的第0个位置
 							result = append([]*MGTNode{p}, result...)
@@ -726,7 +727,11 @@ func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
 		accessNum = accessNum + hotnessSlice[i].GetValue()
 	}
 	//计算访问长度阈值
-	threshold := (a*math.Log(float64(bucketNum)/float64(10))/math.Log(float64(mgt.rdx)) + b*math.Log(float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
+	threshold := (a*math.Log(b*float64(bucketNum))/math.Log(float64(mgt.rdx)) + (1-a)*math.Log((1-b)*float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
+	println("accessNum=", accessNum)
+	println("bucketNum=", bucketNum)
+	println("threshold=", int(threshold))
+	println("accessLength=", mgt.accessLength)
 	return float64(mgt.accessLength) > threshold
 }
 
@@ -879,7 +884,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 			}
 		}
 	}
-	//第三步: 清空统计列表
+	// //第三步: 清空统计列表
 	mgt.hotnessList = make(map[string]int)
 	mgt.accessLength = 0
 }

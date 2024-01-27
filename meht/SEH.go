@@ -210,7 +210,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 					newLd = ld2 + len(bucketSs) - 1
 				}
 				seh.latch.Lock()
-				seh.bucketsNumber += len(bucketSs)*(bucket.rdx-1) + 1 //除第一层外每一层都是rdx-1个桶，这是因为第一层以外的桶都是上一层的某一个桶分裂出来的，因此要减去1
+				seh.bucketsNumber += len(bucketSs) * (bucket.rdx - 1) //除第一层外每一层都是rdx-1个桶，这是因为第一层以外的桶都是上一层的某一个桶分裂出来的，因此要减去1
 				if seh.gd < newLd {
 					seh.gd = newLd
 				}

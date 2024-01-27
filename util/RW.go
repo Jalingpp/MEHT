@@ -6,40 +6,44 @@ import (
 	"strings"
 )
 
-//// GetDirAllFilePathsFollowSymlink gets all the file paths in the specified directory recursively.
-//func GetDirAllFilePathsFollowSymlink(dirname string) ([]string, error) {
-//	// Remove the trailing path separator if dirname has.
-//	dirname = strings.TrimSuffix(dirname, string(os.PathSeparator))
-//	infos, err := os.ReadDir(dirname)
-//	if err != nil {
-//		return nil, err
-//	}
-//	paths := make([]string, 0, len(infos))
-//	for _, info := range infos {
-//		path := dirname + string(os.PathSeparator) + info.Name()
-//		realInfo, err := os.Stat(path)
+// // GetDirAllFilePathsFollowSymlink gets all the file paths in the specified directory recursively.
+//
+//	func GetDirAllFilePathsFollowSymlink(dirname string) ([]string, error) {
+//		// Remove the trailing path separator if dirname has.
+//		dirname = strings.TrimSuffix(dirname, string(os.PathSeparator))
+//		infos, err := os.ReadDir(dirname)
 //		if err != nil {
 //			return nil, err
 //		}
-//		if realInfo.IsDir() {
-//			tmp, err := GetDirAllFilePathsFollowSymlink(path)
+//		paths := make([]string, 0, len(infos))
+//		for _, info := range infos {
+//			path := dirname + string(os.PathSeparator) + info.Name()
+//			realInfo, err := os.Stat(path)
 //			if err != nil {
 //				return nil, err
 //			}
-//			paths = append(paths, tmp...)
-//			continue
+//			if realInfo.IsDir() {
+//				tmp, err := GetDirAllFilePathsFollowSymlink(path)
+//				if err != nil {
+//					return nil, err
+//				}
+//				paths = append(paths, tmp...)
+//				continue
+//			}
+//			paths = append(paths, path)
 //		}
-//		paths = append(paths, path)
+//		return paths, nil
 //	}
-//	return paths, nil
-//}
 func ReadLinesFromFile(filepath string) (lines []string) {
 	content, err := os.ReadFile(filepath)
 	if err != nil {
 		panic(err)
 	}
-	lines = strings.Split(string(content), "\n")
-	return lines
+	lines_ := strings.Split(string(content), "\n")
+	for _, line := range lines_ {
+		lines = append(lines, Strip(line, "\r\t\n"))
+	}
+	return
 }
 
 func ReadNFTOwnerFromFile(filepath string, num int) (kvPairs []KVPair) {
@@ -86,7 +90,6 @@ func ReadQueryFromFile(dirPath string, num int) (ret []string) {
 	}
 	lines := strings.Split(string(content), "\n")
 	for i, line := range lines {
-
 		if len(line) == 0 || i == num {
 			break
 		}

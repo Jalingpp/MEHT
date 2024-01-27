@@ -158,10 +158,16 @@ func (mbt *MBT) RecursivelyInsertMBTNode(path []int, level int, kvPair util.KVPa
 		kvPair.SetValue(oldVal)
 		if isDelete {
 			if !found { //删除失败，将要删除的kv队加入延迟删除记录表
+				if _, ok := cNode.toDelMap[key]; !ok {
+					cNode.toDelMap[key] = make(map[string]int)
+				}
 				cNode.toDelMap[key][newVal]++
 				return
 			} else {
 				if isChange := kvPair.DelValue(newVal); !isChange { //删除失败，将要删除的kv队加入延迟删除记录表
+					if _, ok := cNode.toDelMap[key]; !ok {
+						cNode.toDelMap[key] = make(map[string]int)
+					}
 					cNode.toDelMap[key][newVal]++
 					return
 				} else {

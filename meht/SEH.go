@@ -152,6 +152,9 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
 			if isDelete {
 				if isChange := newValKvp.DelValue(kvPair.GetValue()); !isChange { // 删除失败，延迟删除
+					if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
+						bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+					}
 					bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
 				} else { // 删除成功，更新桶
 					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
@@ -170,6 +173,9 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
 				newValKvp := util.NewKVPair(kvPair.GetKey(), value)
 				if isChange := newValKvp.DelValue(kvPair.GetValue()); !isChange { // 删除失败，延迟删除
+					if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
+						bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+					}
 					bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
 				} else { // 删除成功，更新桶
 					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
@@ -272,6 +278,9 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 					newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
 					if isDelete {
 						if isChange := newValKvp.DelValue(kvPair.GetValue()); !isChange { // 删除失败，延迟删除
+							if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
+								bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+							}
 							bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
 						} else { // 删除成功，更新桶
 							bucket.DelegationList[kvPair.GetKey()] = *newValKvp
@@ -287,6 +296,9 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 					}
 				} else {
 					if isDelete { // 删除失败，延迟删除
+						if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
+							bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+						}
 						bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
 					} else {
 						if bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入

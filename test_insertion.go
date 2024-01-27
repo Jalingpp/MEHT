@@ -14,6 +14,7 @@ import (
 	"MEHT/sedb"
 )
 
+<<<<<<< HEAD
 type IntegerWithLock struct {
 	number int
 	lock   sync.Mutex
@@ -83,6 +84,74 @@ func main() {
 		for i := 0; i < len(*rets); i++ {
 			idx := i
 
+=======
+
+
+func main() {
+	args := os.Args
+	var batchSize, _ = strconv.Atoi(args[4]) //change
+	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
+	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
+	//var a = 0.9
+	//var b = 0.1
+	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool) {
+		//for {
+		curStartNum.lock.Lock()                         //阻塞新插入或查询操作
+		for curStartNum.number != curFinishNum.number { //等待所有旧插入或查询操作完成
+		}
+		// 批量提交，即一并更新辅助索引的脏数据
+		seDB.BatchCommit()
+		//seDB.CacheAdjust(a, b)
+		// 重置计数器
+		curFinishNum.number = 0
+		curStartNum.number = 0
+		curStartNum.lock.Unlock()
+
+		flagChan <- true
+		//}
+
+		//seDB.CacheAdjust(a, b)
+	}
+	writeWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, insertKVPairCh chan string, durationCh chan time.Duration) {
+		for line := range insertKVPairCh {
+			for {
+				if curStartNum.number < batchSize && curStartNum.lock.TryLock() {
+					if curStartNum.number == batchSize {
+
+						curStartNum.lock.Unlock()
+						continue
+					}
+					curStartNum.number++
+					curStartNum.lock.Unlock()
+					break
+				}
+			}
+			//fmt.Println("insert " + line)
+			//解析line是insert还是update
+			line_ := strings.Split(line, ",")
+			kvPair := *util.NewKVPair(util.StringToHex(line_[1]), util.StringToHex(line_[2]))
+			st := time.Now()
+			if line_[0] == "insertion" || line_[0] == "insert" {
+				seDB.InsertKVPair(kvPair, false)
+			} else if line_[0] == "update" {
+				seDB.InsertKVPair(kvPair, true)
+			}
+			du := time.Since(st)
+			durationCh <- du //add
+			curFinishNum.lock.Lock()
+			curFinishNum.number++
+			curFinishNum.lock.Unlock()
+		}
+		wg.Done()
+	}
+
+	countLatency := func(rets *[]time.Duration, durationChList *[]chan time.Duration, done chan bool) {
+		wG := sync.WaitGroup{}
+		wG.Add(len(*rets))
+		for i := 0; i < len(*rets); i++ {
+			idx := i
+
+>>>>>>> 5137e27dd90817a9eb72c47070fbee0267affc34
 			go func() {
 				ch := (*durationChList)[idx]
 				for du := range ch {
@@ -201,7 +270,11 @@ func main() {
 	latencyDurationList := make([]time.Duration, numOfWorker)
 	doneCh := make(chan bool)
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
+<<<<<<< HEAD
 	txs := util.ReadLinesFromFile("data/" + args[8])
+=======
+	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
+>>>>>>> 5137e27dd90817a9eb72c47070fbee0267affc34
 	//../Synthesis/
 	txs = txs[:num+1]
 	countNum := 0
@@ -256,4 +329,8 @@ func main() {
 	fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
 		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
 	seDB = nil
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 5137e27dd90817a9eb72c47070fbee0267affc34

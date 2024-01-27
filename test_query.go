@@ -120,6 +120,10 @@ func main() {
 	//}
 	fmt.Println(siModeOptions)
 	fmt.Println(queryNum)
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> fb9cef418ab091abbd2c0b33bf0315e8ba78baff
 
 	for _, siMode := range siModeOptions {
 		for _, num := range queryNum {
@@ -194,3 +198,83 @@ func main() {
 		}
 	}
 }
+<<<<<<< HEAD
+=======
+=======
+
+	for _, siMode := range siModeOptions {
+		for _, num := range queryNum {
+			filePath := "data/levelDB/config" + strconv.Itoa(num) + siMode + ".txt" //存储seHash和dbPath的文件路径
+			mbtBucketNum, _ := strconv.Atoi(args[4])                                //change
+			mbtAggregation := 16
+			mbtArgs := make([]interface{}, 0)
+			mbtArgs = append(mbtArgs, sedb.MBTBucketNum(mbtBucketNum), sedb.MBTAggregation(mbtAggregation))
+			mehtRdx := 16                      //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
+			mehtBc, _ := strconv.Atoi(args[5]) //change
+			mehtBs, _ := strconv.Atoi(args[6])
+			mehtArgs := make([]interface{}, 0)
+			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs)) //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
+			var seDB *sedb.SEDB
+			//cacheEnable := false
+			cacheEnable := true
+			argsString := ""
+			if cacheEnable {
+				shortNodeCacheCapacity := mehtRdx * num / 12 * 7
+				fullNodeCacheCapacity := mehtRdx * num / 12 * 7
+				mgtNodeCacheCapacity := 100000
+				bucketCacheCapacity := 128000
+				segmentCacheCapacity := mehtBs * bucketCacheCapacity
+				merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
+				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
+					sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
+					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
+					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
+				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
+					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
+			} else {
+				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
+				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
+					0, 0, 0, 0,
+					numOfWorker)
+			}
+			var duration time.Duration = 0
+			var latencyDuration time.Duration = 0
+			var voSize uint = 0
+			queryCh := make(chan string)
+			doneCh := make(chan bool)
+			voChList := make([]chan uint, numOfWorker)
+			latencyDurationChList := make([]chan time.Duration, numOfWorker)
+			for i := 0; i < numOfWorker; i++ {
+				latencyDurationChList[i] = make(chan time.Duration)
+				voChList[i] = make(chan uint)
+			}
+			latencyDurationList := make([]time.Duration, numOfWorker)
+			voList := make([]uint, numOfWorker)
+			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
+			go countVo(&voList, &voChList, doneCh)
+			go allocateQuery("../Synthetic/"+args[7], num, queryCh)
+			start := time.Now()
+			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList)
+			duration = time.Since(start)
+			<-doneCh
+			<-doneCh
+			for i := 0; i < numOfWorker; i++ {
+				latencyDuration += latencyDurationList[i]
+				voSize += voList[i]
+			}
+			//seDB.WriteSEDBInfoToFile(filePath)
+			util.WriteResultToFile("data/qresult"+siMode, argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
+				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
+				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+
+				"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+"B, average vo = "+
+				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt.\n")
+			fmt.Println("Query ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(),
+				" tps, average latency is ", strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64), " mspt.")
+			seDB = nil
+		}
+	}
+}
+
+>>>>>>> 5137e27dd90817a9eb72c47070fbee0267affc34
+>>>>>>> fb9cef418ab091abbd2c0b33bf0315e8ba78baff

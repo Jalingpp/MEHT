@@ -114,6 +114,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				}
 				if !isChange { //无变化，直接返回
 					if flag { //删除早于插入，因此记录要删除的值
+						if _, ok := cNode.toDelMap[prefix+suffix]; !ok {
+							cNode.toDelMap[prefix+suffix] = make(map[string]int)
+						}
 						cNode.toDelMap[prefix+suffix][string(value)]++
 					}
 					return cNode, "", false
@@ -138,6 +141,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 		} else {
 			if !isPrimary {
 				if flag { //若删除，则一定找不到要删除的值，延迟删除
+					if _, ok := cNode.toDelMap[prefix+suffix]; !ok {
+						cNode.toDelMap[prefix+suffix] = make(map[string]int)
+					}
 					cNode.toDelMap[prefix+suffix][string(value)]++
 					return cNode, "", false
 				} else if cNode.toDelMap[prefix+suffix][string(value)] > 0 { //只有辅助索引才有延迟删除的情况
@@ -322,6 +328,9 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			}
 			if !isChange { //无变化，直接返回
 				if flag { //删除早于插入，因此记录要删除的值
+					if _, ok := cNode.toDelMap[prefix+suffix]; !ok {
+						cNode.toDelMap[prefix+suffix] = make(map[string]int)
+					}
 					cNode.toDelMap[prefix+suffix][string(value)]++
 				}
 				return cNode, "", false

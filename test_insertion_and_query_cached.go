@@ -31,8 +31,8 @@ func main() {
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
 	//var stopBatchCommitterFlag = true
-	// var a = 0.9
-	// var b = 0.1
+	var a = 0.9
+	var b = 0.1
 
 	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool, batchTime int, phaselo *util.PhaseLatency) {
 		//for {
@@ -41,12 +41,12 @@ func main() {
 		}
 		// 批量提交，即一并更新辅助索引的脏数据
 		seDB.BatchCommit()
-		if batchTime%10 == 0 {
-			// st := time.Now() //add0126 for phase latency
-			// seDB.CacheAdjust(a, b)                         //add0126 for phase latency
-			// du := time.Since(st)                           //add0126 for phase latency
-			phaselo.RecordLatencyObject("cacheadjust", time.Duration(0)) //add0126 for phase latency
-			seDB.BatchCommit()                                           //add0126 for phase latency
+		if batchTime%100 == 0 {
+			st := time.Now()                               //add0126 for phase latency
+			seDB.CacheAdjust(a, b)                         //add0126 for phase latency
+			du := time.Since(st)                           //add0126 for phase latency
+			phaselo.RecordLatencyObject("cacheadjust", du) //add0126 for phase latency
+			seDB.BatchCommit()                             //add0126 for phase latency
 		}
 		// 重置计数器
 		curFinishNum.number = 0

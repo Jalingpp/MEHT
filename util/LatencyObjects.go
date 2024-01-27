@@ -60,41 +60,36 @@ func (pl *PhaseLatency) RecordLatencyObject(lo_type string, dur time.Duration) {
 	}
 }
 
-//将pl中各阶段的latecy取平均后放入第0号元素
+//将pl中各阶段的latecy求和后放入第0号元素
 func (pl *PhaseLatency) CompPhaseLatency() {
 	//update
 	sum := time.Duration(0)
 	for i := 0; i < len(pl.UpdateLOs); i++ {
 		sum += pl.UpdateLOs[i].Duration
 	}
-	avg := sum / time.Duration(len(pl.UpdateLOs))
-	pl.UpdateLOs[0].Duration = avg
+	pl.UpdateLOs[0].Duration = sum
 	//getkey
 	sum = time.Duration(0)
 	for i := 0; i < len(pl.GetKeyLOs); i++ {
 		sum += pl.GetKeyLOs[i].Duration
 	}
-	avg = sum / time.Duration(len(pl.GetKeyLOs))
-	pl.GetKeyLOs[0].Duration = avg
+	pl.GetKeyLOs[0].Duration = sum
 	//getvalue
 	sum = time.Duration(0)
 	for i := 0; i < len(pl.GetValueLOs); i++ {
 		sum += pl.GetValueLOs[i].Duration
 	}
-	avg = sum / time.Duration(len(pl.GetValueLOs))
-	pl.GetValueLOs[0].Duration = avg
+	pl.GetValueLOs[0].Duration = sum
 	//getproof
 	sum = time.Duration(0)
 	for i := 0; i < len(pl.GetProofLOs); i++ {
 		sum += pl.GetProofLOs[i].Duration
 	}
-	avg = sum / time.Duration(len(pl.GetProofLOs))
-	pl.GetProofLOs[0].Duration = avg
+	pl.GetProofLOs[0].Duration = sum
 	//cacheadjust
 	sum = time.Duration(0)
 	for i := 0; i < len(pl.CacheAdjustLOs); i++ {
 		sum += pl.CacheAdjustLOs[i].Duration
 	}
-	avg = sum / time.Duration(len(pl.CacheAdjustLOs))
-	pl.CacheAdjustLOs[0].Duration = avg
+	pl.CacheAdjustLOs[0].Duration = sum
 }

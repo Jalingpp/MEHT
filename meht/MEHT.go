@@ -8,11 +8,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/syndtr/goleveldb/leveldb"
 	"reflect"
 	"strconv"
 	"sync"
+
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 type MEHT struct {
@@ -190,6 +191,7 @@ func (meht *MEHT) MGTCacheAdjust(db *leveldb.DB, a float64, b float64) {
 	if !meht.mgt.IsNeedCacheAdjust(meht.GetSEH(db).bucketsNumber, a, b) {
 		return
 	}
+	println("cacheAdjust")
 	meht.mgt.CacheAdjust(db, meht.cache)
 }
 

@@ -1,20 +1,23 @@
 package main
 
-// import (
-// 	"MEHT/util"
-// 	"fmt"
-// 	"log"
-// 	"os"
-// 	"sort"
-// 	"strconv"
-// 	"strings"
-// 	"sync"
-// 	"time"
+import (
+	"MEHT/util"
+	"fmt"
+	"log"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 
-// 	"MEHT/sedb"
-// )
+	"MEHT/sedb"
+)
 
-
+//type IntegerWithLock struct {
+//	number int
+//	lock   sync.Mutex
+//}
 
 func main() {
 	args := os.Args

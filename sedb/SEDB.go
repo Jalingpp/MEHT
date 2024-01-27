@@ -7,13 +7,11 @@ import (
 	"MEHT/util"
 	"encoding/hex"
 	"fmt"
+	"github.com/syndtr/goleveldb/leveldb"
 	"log"
 	"os"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 type FullNodeCacheCapacity int                                  //MPT cache capacity identification for fullNode
@@ -172,7 +170,7 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 var sum = 0
 
 // QueryKVPairsByHexKeyword 根据十六进制的非主键HexKeyword查询完整的kvPair
-func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.PhaseLatency) (string, []*util.KVPair, *SEDBProof) {
+func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
 		//fmt.Println("SEDB is empty!")
 		return "", nil, nil
@@ -187,10 +185,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.Phas
 	var lock sync.Mutex
 	primaryKeyCh := make(chan string)
 	if sedb.siMode == "mpt" {
-		st := time.Now() //add0126 for phase latency
 		primaryKey, secondaryMPTProof = sedb.GetStorageEngine().GetSecondaryIndexMpt(sedb.secondaryDb).QueryByKey(HexKeyword, sedb.secondaryDb)
-		du := time.Since(st)                      //add 0126 for phase latency
-		phaselo.RecordLatencyObject("getkey", du) // add0126 for phase latency
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			sum++
@@ -198,60 +193,42 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.Phas
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
 		primaryKeys := strings.Split(primaryKey, ",")
-		st = time.Now() // add0126 for phase latency
 		go generatePrimaryKey(primaryKeys, primaryKeyCh)
 		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
-		du = time.Since(st)                         // add0126 for phase latency
-		phaselo.RecordLatencyObject("getvalue", du) // add0126 for phase latency
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
-		st := time.Now() // add0126 for phase latency
 		pKey, qBucket, segKey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(HexKeyword, sedb.secondaryDb)
-		du := time.Since(st)                      // add0126 for phase latency
-		phaselo.RecordLatencyObject("getkey", du) // add0126 for phase latency
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
 		go func(ch chan *meht.MEHTProof) {
-			st = time.Now() // add0126 for phase latency
 			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).GetQueryProof(qBucket, segKey, isSegExist, index, sedb.secondaryDb)
 			ch <- seMEHTProof
-			du = time.Since(st) // add0126 for phase latency
-			phaselo.RecordLatencyObject("getproof", du)
 		}(ch)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			sum++
 			fmt.Println("No such key in meht!", "     ", sum)
 		} else {
-			st = time.Now() // add0126 for phase latency
 			primaryKeys := strings.Split(primaryKey, ",")
 			go generatePrimaryKey(primaryKeys, primaryKeyCh)
 			createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
-			du = time.Since(st)                         // add0126 for phase latency
-			phaselo.RecordLatencyObject("getvalue", du) // add0126 for phase latency
 		}
 		secondaryMEHTProof = <-ch
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "mbt" {
-		st := time.Now() // add0126 for phase latency
 		mbtIndex := sedb.GetStorageEngine().GetSecondaryIndexMbt(sedb.secondaryDb)
 		path := mbt.ComputePath(mbtIndex.GetBucketNum(), mbtIndex.GetAggregation(), mbtIndex.GetGd(), HexKeyword)
 		primaryKey, secondaryMBTProof = mbtIndex.QueryByKey(HexKeyword, path, sedb.secondaryDb)
-		du := time.Since(st)                      // add0126 for phase latency
-		phaselo.RecordLatencyObject("getkey", du) // add0126 for phase latency
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			sum++
 			fmt.Println("No such key in mbt!", "     ", sum)
 			return "", nil, NewSEDBProof(nil, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 		}
-		st = time.Now() // add0126 for phase latency
 		primaryKeys := strings.Split(primaryKey, ",")
 		go generatePrimaryKey(primaryKeys, primaryKeyCh)
 		createWorkerPool(len(primaryKeys)/2+1, sedb, primaryKeyCh, &lock, &queryResult, &primaryProof)
-		du = time.Since(st)                         // add0126 for phase latency
-		phaselo.RecordLatencyObject("getvalue", du) // add0126 for phase latency
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else {
 		fmt.Println("siMode is wrong!")

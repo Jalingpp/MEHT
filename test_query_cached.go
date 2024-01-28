@@ -167,6 +167,8 @@ func main() {
 			voChList := make([]chan uint, numOfWorker)
 			latencyDurationChList := make([]chan time.Duration, numOfWorker)
 
+			PhaseLatency := util.NewPhaseLatency() //创建统计各阶段延迟的对象  add0128 for phase latency
+
 			for i := 0; i < numOfWorker; i++ {
 				latencyDurationChList[i] = make(chan time.Duration)
 				voChList[i] = make(chan uint)
@@ -177,7 +179,7 @@ func main() {
 			go countVo(&voList, &voChList, doneCh)
 			go allocateQuery("data/"+args[7], num, queryCh)
 			start := time.Now()
-			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, nil)
+			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, PhaseLatency)
 			duration = time.Since(start)
 			<-doneCh
 			<-doneCh
@@ -187,13 +189,33 @@ func main() {
 			}
 			//seDB.WriteSEDBInfoToFile(filePath)
 
+			a := 0.9
+			b := 0.1
+			st := time.Now()                                    //add0128 for phase latency
+			seDB.CacheAdjust(a, b)                              //add0128 for phase latency
+			du := time.Since(st)                                //add0128 for phase latency
+			PhaseLatency.RecordLatencyObject("cacheadjust", du) //add0128 for phase latency
+			seDB.BatchCommit()                                  //add0128 for phase latency
+			seDB.WriteSEDBInfoToFile(filePath)
+
+			//统计各阶段的延迟
+			PhaseLatency.CompPhaseLatency() //add0126 for phase latency
+
 			util.WriteResultToFile("data/qresult"+siMode, argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
 				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+
 				"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+"B, average vo = "+
-				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt.\n")
+				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt,"+
+				"getkey average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetKeyLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetKeyLOs)), 'f', -1, 64)+" mspt,"+
+				"getvalue average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetValueLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetValueLOs)), 'f', -1, 64)+" mspt,"+
+				"getproof average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetProofLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetProofLOs)), 'f', -1, 64)+" mspt,"+
+				"cacheadjust average Latency is "+strconv.FormatFloat(float64(PhaseLatency.CacheAdjustLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.CacheAdjustLOs)), 'f', -1, 64)+" mspt.\n")
 			fmt.Println("Query ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(),
-				" tps, average latency is ", strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64), " mspt.")
+				" tps, average latency is ", strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64), " mspt,"+
+					"getkey average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetKeyLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetKeyLOs)), 'f', -1, 64)+" mspt,"+
+					"getvalue average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetValueLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetValueLOs)), 'f', -1, 64)+" mspt,"+
+					"getproof average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetProofLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetProofLOs)), 'f', -1, 64)+" mspt,"+
+					"cacheadjust average Latency is "+strconv.FormatFloat(float64(PhaseLatency.CacheAdjustLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.CacheAdjustLOs)), 'f', -1, 64)+" mspt.")
 			seDB = nil
 		}
 	}

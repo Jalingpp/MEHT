@@ -516,7 +516,7 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 	if len(newBucketSs[0]) == 1 {
 		bk := newBucketSs[0][0]
 		nodePath = mgt.GetLeafNodeAndPath(bk.BucketKey, db, cache)
-		targetMerkleTrees := bk.GetMerkleTrees()
+		// targetMerkleTrees := bk.GetMerkleTrees()
 		//更新叶子节点的dataHashes
 		nodePath[0].dataHashes = make([][]byte, 0)
 		segKeyInorder := make([]string, 0)
@@ -526,8 +526,9 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 		})
 		sort.Strings(segKeyInorder)
 		for _, key := range segKeyInorder {
-			targetMerkleTree, _ := targetMerkleTrees.Load(key)
-			nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTree.(*mht.MerkleTree).GetRootHash())
+			// targetMerkleTree, _ := targetMerkleTrees.Load(key)
+			// nodePath[0].dataHashes = append(nodePath[0].dataHashes, targetMerkleTree.(*mht.MerkleTree).GetRootHash())
+			nodePath[0].dataHashes = append(nodePath[0].dataHashes, bk.GetMerkleTree(key, db, cache).GetRootHash())
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
 		nodePath[0].UpdateMGTNodeToDB(db, cache)

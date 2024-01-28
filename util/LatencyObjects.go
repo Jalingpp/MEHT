@@ -67,7 +67,11 @@ func (pl *PhaseLatency) CompPhaseLatency() {
 	for i := 0; i < len(pl.UpdateLOs); i++ {
 		sum += pl.UpdateLOs[i].Duration
 	}
-	pl.UpdateLOs[0].Duration = sum
+	if len(pl.UpdateLOs) > 0 {
+		pl.UpdateLOs[0].Duration = sum
+	} else {
+		pl.UpdateLOs = append(pl.UpdateLOs, UpdateLO{Duration: sum})
+	}
 	//getkey
 	sum = time.Duration(0)
 	for i := 0; i < len(pl.GetKeyLOs); i++ {
@@ -91,5 +95,10 @@ func (pl *PhaseLatency) CompPhaseLatency() {
 	for i := 0; i < len(pl.CacheAdjustLOs); i++ {
 		sum += pl.CacheAdjustLOs[i].Duration
 	}
-	pl.CacheAdjustLOs[0].Duration = sum
+	if len(pl.CacheAdjustLOs) > 0 {
+		pl.CacheAdjustLOs[0].Duration = sum
+	} else {
+		pl.CacheAdjustLOs = append(pl.CacheAdjustLOs, CacheAdjustLO{Duration: sum})
+	}
+
 }

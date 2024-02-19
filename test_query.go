@@ -7,17 +7,21 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 func main() {
 	args := os.Args
-	allocateQuery := func(dirPath string, opNum int, queryCh chan string) {
-		// PHI 代表分割分位数
-		queries := util.ReadQueryFromFile(dirPath, opNum)
+	allocateQuery := func(path string, queryCh chan string) {
+		queries := util.ReadLinesFromFile(path)
 		for i, query := range queries {
-			queryCh <- query
+			query_ := strings.Split(query, ",")
+			if len(query_) < 2 {
+				continue
+			}
+			queryCh <- query_[1]
 			if i%10000 == 0 {
 				fmt.Println(i)
 			}
@@ -84,11 +88,11 @@ func main() {
 		}
 	}
 
-	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
+	serializeArgs := func(siMode string, rdx int, bc int, bs int, mbtBN int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
 		merkleTreeCC int, numOfWorker int) string {
 		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
-			",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
+			",\tbs: " + strconv.Itoa(bs) + ",\tmbtBN: " + strconv.Itoa(mbtBN) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
@@ -141,21 +145,21 @@ func main() {
 			cacheEnable := true
 			argsString := ""
 			if cacheEnable {
-				shortNodeCacheCapacity := mehtRdx * num / 12 * 7
-				fullNodeCacheCapacity := mehtRdx * num / 12 * 7
+				shortNodeCacheCapacity := 5000
+				fullNodeCacheCapacity := 5000
 				mgtNodeCacheCapacity := 100000
 				bucketCacheCapacity := 128000
-				segmentCacheCapacity := mehtBs * bucketCacheCapacity
-				merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
+				segmentCacheCapacity := bucketCacheCapacity
+				merkleTreeCacheCapacity := bucketCacheCapacity
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
 					sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
 					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
-				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
+				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
 					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
 			} else {
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
-				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
+				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, 0, 0,
 					0, 0, 0, 0,
 					numOfWorker)
 			}
@@ -175,7 +179,7 @@ func main() {
 			voList := make([]uint, numOfWorker)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go countVo(&voList, &voChList, doneCh)
-			go allocateQuery("data/"+args[7], num, queryCh)
+			go allocateQuery("../Synthetic/"+args[7], queryCh)
 			start := time.Now()
 			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, nil)
 			duration = time.Since(start)
@@ -190,7 +194,7 @@ func main() {
 			util.WriteResultToFile("data/qresult"+siMode, argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
 				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+
-				"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+"B, average vo = "+
+				"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+" B, average vo = "+
 				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt.\n")
 			fmt.Println("Query ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(),
 				" tps, average latency is ", strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64), " mspt.")

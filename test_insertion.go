@@ -108,11 +108,11 @@ func main() {
 		//	close(duCh)
 		//}
 	}
-	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
+	serializeArgs := func(siMode string, rdx int, bc int, bs int, mbtBN int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
 		merkleTreeCC int, numOfWorker int) string {
 		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
-			",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
+			",\tbs: " + strconv.Itoa(bs) + ",\tmbtBN: " + strconv.Itoa(mbtBN) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
@@ -173,21 +173,21 @@ func main() {
 	cacheEnable := true
 	argsString := ""
 	if cacheEnable {
-		shortNodeCacheCapacity := 50000
-		fullNodeCacheCapacity := 50000
+		shortNodeCacheCapacity := 5000
+		fullNodeCacheCapacity := 5000
 		mgtNodeCacheCapacity := 100000
 		bucketCacheCapacity := 128000
-		segmentCacheCapacity := mehtBs * bucketCacheCapacity
-		merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
+		segmentCacheCapacity := bucketCacheCapacity
+		merkleTreeCacheCapacity := bucketCacheCapacity
 		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
 			sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
 			sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 			sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
-		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
+		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
 			segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
 	} else {
 		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
-		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
+		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, 0, 0,
 			0, 0, 0, 0,
 			numOfWorker)
 	}
@@ -201,9 +201,7 @@ func main() {
 	latencyDurationList := make([]time.Duration, numOfWorker)
 	doneCh := make(chan bool)
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
-	txs := util.ReadLinesFromFile("data/" + args[8])
-	//../Synthesis/
-	txs = txs[:num+1]
+	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
 	countNum := 0
 
 	start := time.Now()

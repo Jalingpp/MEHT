@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	"MEHT/sedb"
@@ -24,16 +26,19 @@ type QueryTransaction struct {
 	stratTime time.Time
 }
 
-func main() {
-	args := os.Args
+func TestIQ(t *testing.T) {
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	args := make([]string, 0)
+	args = append(args, "", "meht", "1000000", "16", "10000", "9000", "500", "1", "nft-trans-100W")
+
 	var batchSize, _ = strconv.Atoi(args[4]) //change
 	//var batchTimeout float64 = 100 //change
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
 	var curFinishNum = IntegerWithLock{0, sync.Mutex{}}
 	//var stopBatchCommitterFlag = true
-	var a = 0.9
-	var b = 0.1
-	var cmmitTime = 0
+	// var a = 0.9
+	// var b = 0.1
+
 	batchCommitterForMix := func(seDB *sedb.SEDB, flagChan chan bool) {
 		//for {
 		curStartNum.lock.Lock()                         //阻塞新插入或查询操作
@@ -41,13 +46,6 @@ func main() {
 		}
 		// 批量提交，即一并更新辅助索引的脏数据
 		seDB.BatchCommit()
-		cmmitTime++
-		if cmmitTime == 5 {
-			seDB.CacheAdjust(a, b)
-			seDB.BatchCommit()
-			cmmitTime = 0
-		}
-
 		// 重置计数器
 		curFinishNum.number = 0
 		curStartNum.number = 0
@@ -175,15 +173,15 @@ func main() {
 		done <- true
 	}
 
-	serializeArgs := func(siMode string, rdx int, bc int, bs int, cacheEnable bool,
+	serializeArgs := func(siMode string, rdx int, bc int, bs int, mbtBN int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
 		merkleTreeCC int, numOfWorker int, mission string) string {
 		return "mission: " + mission + ",\tsiMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
-			",\tbs: " + strconv.Itoa(bs) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
+			",\tbs: " + strconv.Itoa(bs) + ",\tmbtBN: " + strconv.Itoa(mbtBN) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
-			strconv.Itoa(numOfWorker) + "."
+			strconv.Itoa(numOfWorker) + ",\tbatchSize: " + strconv.Itoa(batchSize) + "."
 	}
 
 	resetQueryStartTime := func(queryMap map[int]QueryTransaction, completeInsertCh chan int) {
@@ -273,17 +271,17 @@ func main() {
 		fullNodeCacheCapacity := 5000
 		mgtNodeCacheCapacity := 100000
 		bucketCacheCapacity := 128000
-		segmentCacheCapacity := mehtBs * bucketCacheCapacity
-		merkleTreeCacheCapacity := mehtBs * bucketCacheCapacity
+		segmentCacheCapacity := bucketCacheCapacity
+		merkleTreeCacheCapacity := bucketCacheCapacity
 		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable,
 			sedb.ShortNodeCacheCapacity(shortNodeCacheCapacity), sedb.FullNodeCacheCapacity(fullNodeCacheCapacity),
 			sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 			sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
-		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
+		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
 			segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, mission)
 	} else {
 		seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
-		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, cacheEnable, 0, 0,
+		argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, 0, 0,
 			0, 0, 0, 0,
 			numOfWorker, mission)
 	}
@@ -312,15 +310,14 @@ func main() {
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 
 	//allocate code
-	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
-	txs = txs[:num+1]
+	txs := util.ReadLinesFromFile("../../p10/nft_crawl/Synthetic/" + args[8])
 	countNum := 0
 
 	queryMap := make(map[int]QueryTransaction)          //add
 	go resetQueryStartTime(queryMap, completedInsertCh) //add
 
 	start := time.Now()
-	for i := 0; i < len(txs); i += batchSize {
+	for i := 0; i < len(txs)/2; i += batchSize {
 		//每次建立一遍
 		insertKVPairCh := make(chan string, batchSize)
 		queryTxnCh := make(chan QueryTransaction, batchSize)
@@ -382,17 +379,24 @@ func main() {
 	}
 	duration = time.Since(start)
 
-	seDB.WriteSEDBInfoToFile(filePath)
+	//seDB.WriteSEDBInfoToFile(filePath)
 	duration2 := time.Since(start)
 	fmt.Println(duration)
 	fmt.Println(duration2)
-
+	var voSize uint = 0
+	for i := 0; i < numOfWorker; i++ {
+		latencyDuration += latencyDurationList[i]
+		voSize += voList[i]
+	}
 	util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 		duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 		strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
-		", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.\n")
+		", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+
+		"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+" B, average vo = "+
+		strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt.\n")
 	fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
 		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt.")
+
 	seDB = nil
 
 }

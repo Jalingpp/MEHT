@@ -65,6 +65,24 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	return ret
 }
 
+func (seh *SEH) GetBucketByKeyCon(key string) string {
+	stride := util.ComputeStrideByBase(seh.rdx)
+	if len(key) < seh.gd {
+		key = strings.Repeat("0", seh.gd*stride-len(key)) + key
+	}
+	in := make(chan string)
+	for i := 0; i < len(key)/stride; i++ {
+		go func(i int) {
+			key_ := key[:i*stride]
+			_, ok := seh.ht.Load(key_)
+			if ok {
+				in <- key_
+			}
+		}(i)
+	}
+	return <-in
+}
+
 // GetBucketByKey GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
@@ -72,12 +90,14 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{})
 		return seh.GetBucket("", db, cache)
 	}
 	var bKey string
-	if len(key) >= seh.gd {
-		bKey = key[len(key)-seh.gd*util.ComputeStrideByBase(seh.rdx):]
+	e := seh.gd * util.ComputeStrideByBase(seh.rdx)
+	if len(key) >= e {
+		bKey = key[len(key)-e:]
 	} else {
-		bKey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
+		bKey = strings.Repeat("0", e-len(key)) + key
 	}
 	return seh.GetBucket(bKey, db, cache)
+	//return seh.GetBucket(seh.GetBucketByKeyCon(key), db, cache)
 }
 
 // GetGD returns the global depth of the SEH

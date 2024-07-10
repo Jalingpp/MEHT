@@ -541,7 +541,14 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *Sho
 	//当前节点是叶子节点
 	if cNode.isLeaf {
 		//构造当前节点的证明
-		proofElement := NewProofElement(level, 0, cNode.prefix, cNode.suffix, cNode.value, nil, [16][]byte{})
+		if cNode.proofBuf == nil {
+			cNode.proofBuf = NewProofElement(level, 0, cNode.prefix, cNode.suffix, cNode.value, nil, [16][]byte{})
+		} else {
+			cNode.proofBuf.prefix = cNode.prefix
+			cNode.proofBuf.suffix = cNode.suffix
+			cNode.proofBuf.value = cNode.value
+		}
+		proofElement := cNode.proofBuf
 		//找到对应key的value
 		if strings.Compare(cNode.suffix, key[p:]) == 0 {
 			return string(cNode.value), &MPTProof{true, level, []*ProofElement{proofElement}}
@@ -551,6 +558,13 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *Sho
 	} else {
 		//当前节点是ExtensionNode
 		//构造当前节点的证明
+		if cNode.proofBuf == nil {
+			cNode.proofBuf = NewProofElement(level, 1, cNode.prefix, cNode.suffix, nil, cNode.nextNodeHash, [16][]byte{})
+		} else {
+			cNode.proofBuf.prefix = cNode.prefix
+			cNode.proofBuf.suffix = cNode.suffix
+			cNode.proofBuf.nextNodeHash = cNode.nextNodeHash
+		}
 		proofElement := NewProofElement(level, 1, cNode.prefix, cNode.suffix, nil, cNode.nextNodeHash, [16][]byte{})
 		//当前节点的suffix被key的suffix完全包含，则继续递归查询nextNode，将子查询结果与当前结果合并返回
 		if cNode.suffix == "" || p < len(key) && len(util.CommPrefix(cNode.suffix, key[p:])) == len(cNode.suffix) {
@@ -567,7 +581,14 @@ func (mpt *MPT) RecursiveQueryShortNode(key string, p int, level int, cNode *Sho
 func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cNode *FullNode, db *leveldb.DB) (string, *MPTProof) {
 	cNode.latch.RLock()
 	defer cNode.latch.RUnlock()
-	proofElement := NewProofElement(level, 2, "", "", cNode.value, nil, cNode.childrenHash)
+	if cNode.proofBuf == nil {
+		cNode.proofBuf = NewProofElement(level, 2, "", "", cNode.value, nil, cNode.childrenHash)
+	} else {
+		cNode.proofBuf.value = cNode.value
+		cNode.proofBuf.childrenHashes = cNode.childrenHash
+	}
+	proofElement := cNode.proofBuf
+	//proofElement := NewProofElement(level, 2, "", "", cNode.value, nil, cNode.childrenHash)
 	if p >= len(key) {
 		//判断当前FullNode是否有value，如果有，构造存在证明返回
 		if cNode.value != nil {

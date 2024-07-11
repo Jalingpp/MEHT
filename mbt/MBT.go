@@ -21,7 +21,7 @@ type MBT struct {
 	bucketNum   int
 	aggregation int
 	gd          int
-	rootHash    []byte
+	rootHash    [32]byte
 	Root        *MBTNode
 	cache       *lru.Cache[string, *MBTNode]
 	cacheEnable bool
@@ -43,11 +43,11 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 		panic("BucketNum of MBT must exceed 0.")
 	} else if bucketNum == 1 {
 		gd++
-		root = NewMBTNode([]byte("Root"), nil, make([][]byte, 1), true, db, c)
+		root = NewMBTNode([]byte("Root"), nil, make([][32]byte, 1), true, db, c)
 	} else {
 		queue := arrayqueue.New()
 		for i := 0; i < bucketNum; i++ {
-			queue.Enqueue(NewMBTNode([]byte("LeafNode"+strconv.Itoa(i)), nil, make([][]byte, 1), true, db, c))
+			queue.Enqueue(NewMBTNode([]byte("LeafNode"+strconv.Itoa(i)), nil, make([][32]byte, 1), true, db, c))
 		}
 		offset := 0
 		for !queue.Empty() {
@@ -57,13 +57,14 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 				root_, _ := queue.Dequeue()
 				root = root_.(*MBTNode)
 				oldHash := root.nodeHash
-				root.nodeHash = []byte("Root")
-				root.name = root.nodeHash
+				root.nodeHash = [32]byte{}
+				copy(root.nodeHash[:], "Root")
+				root.name = root.nodeHash[:]
 				if c != nil {
-					c.Remove(string(oldHash))
-					c.Add(string(root.nodeHash), root)
+					c.Remove(string(oldHash[:]))
+					c.Add(string(root.nodeHash[:]), root)
 				}
-				if err := db.Delete(oldHash, nil); err != nil {
+				if err := db.Delete(oldHash[:], nil); err != nil {
 					fmt.Println("Error in NewMBT: ", err)
 				}
 				break
@@ -74,7 +75,7 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 			}
 			for i := 0; i < parSize && s > 0; i++ {
 				sSubNodes := make([]*MBTNode, 0)
-				dDataHashes := make([][]byte, 0)
+				dDataHashes := make([][32]byte, 0)
 				for j := 0; j < aggregation && !queue.Empty() && s > 0; j++ {
 					cNode_, _ := queue.Dequeue()
 					cNode := cNode_.(*MBTNode)
@@ -91,23 +92,23 @@ func NewMBT(bucketNum int, aggregation int, db *leveldb.DB, cacheEnable bool, mb
 }
 
 func (mbt *MBT) GetRoot(db *leveldb.DB) *MBTNode {
-	if mbt.Root == nil && len(mbt.rootHash) != 0 && mbt.updateLatch.TryLock() {
+	if mbt.Root == nil && mbt.updateLatch.TryLock() {
 		if mbt.Root != nil {
 			mbt.updateLatch.Unlock()
 			return mbt.Root
 		}
-		if mbtString, err := db.Get(mbt.rootHash, nil); err == nil {
+		if mbtString, err := db.Get(mbt.rootHash[:], nil); err == nil {
 			m, _ := DeserializeMBTNode(mbtString)
 			mbt.Root = m
 		}
 		mbt.updateLatch.Unlock()
 	}
-	for mbt.Root == nil && len(mbt.rootHash) != 0 {
+	for mbt.Root == nil {
 	}
 	return mbt.Root
 }
 
-func (mbt *MBT) GetRootHash() []byte {
+func (mbt *MBT) GetRootHash() [32]byte {
 	return mbt.rootHash
 }
 
@@ -241,11 +242,11 @@ func (mbt *MBT) RecursivelyQueryMBTNode(key string, path []int, level int, cNode
 		return "", &MBTProof{false, []*ProofElement{proofElement}}
 	} else {
 		nextNode := cNode.GetSubNode(path[level+1], db, mbt.cache)
-		var nextNodeHash []byte
+		var nextNodeHash [32]byte
 		if nextNode != nil {
 			nextNodeHash = nextNode.nodeHash
 		}
-		proofElement := NewProofElement(level, 1, cNode.name, cNode.nodeHash, nextNodeHash, cNode.dataHashes)
+		proofElement := NewProofElement(level, 1, cNode.name, cNode.nodeHash, nextNodeHash[:], cNode.dataHashes)
 		valueStr, mbtProof := mbt.RecursivelyQueryMBTNode(key, path, level+1, nextNode, db)
 		proofElements := append(mbtProof.GetProofs(), proofElement)
 		return valueStr, &MBTProof{mbtProof.GetExist(), proofElements}
@@ -267,7 +268,7 @@ func (mbt *MBT) PrintQueryResult(key string, value string, mbtProof *MBTProof) {
 // VerifyQueryResult 验证查询结果
 func (mbt *MBT) VerifyQueryResult(value string, mbtProof *MBTProof) bool {
 	computedMBTRoot := ComputeMBTRoot(value, mbtProof)
-	if !bytes.Equal(computedMBTRoot, mbt.Root.nodeHash) {
+	if !bytes.Equal(computedMBTRoot[:], mbt.Root.nodeHash[:]) {
 		fmt.Printf("根哈希值%x计算错误,验证不通过\n", computedMBTRoot)
 		return false
 	}
@@ -275,9 +276,10 @@ func (mbt *MBT) VerifyQueryResult(value string, mbtProof *MBTProof) bool {
 	return true
 }
 
-func ComputeMBTRoot(value string, mbtProof *MBTProof) []byte {
+func ComputeMBTRoot(value string, mbtProof *MBTProof) [32]byte {
 	proofs := mbtProof.GetProofs()
-	nodeHash0 := []byte(value)
+	nodeHash0 := [32]byte{}
+	copy(nodeHash0[:], value)
 	nodeHash1 := make([]byte, 0)
 	for _, proof := range proofs {
 		switch proof.proofType {
@@ -286,22 +288,20 @@ func ComputeMBTRoot(value string, mbtProof *MBTProof) []byte {
 			if mbtProof.isExist {
 				nodeHash1 = append(nodeHash1, []byte(value)...)
 			} else { // 为减少字段，LeafNode的Value是childrenHashes的0号元素
-				nodeHash1 = append(nodeHash1, proof.childrenHashes[0]...)
+				nodeHash1 = append(nodeHash1, proof.childrenHashes[0][:]...)
 			}
-			hash := sha256.Sum256(nodeHash1)
-			nodeHash0 = hash[:]
+			nodeHash0 = sha256.Sum256(nodeHash1)
 			nodeHash1 = nil
 		case 1:
-			if !bytes.Equal(nodeHash0, proof.nextNodeHash) {
+			if !bytes.Equal(nodeHash0[:], proof.nextNodeHash[:]) {
 				fmt.Printf("level %d nextNodeHash=%x计算错误,验证不通过\n", proof.level, nodeHash0)
-				return nil
+				return [32]byte{}
 			}
 			nodeHash1 = append(nodeHash1, proof.name...)
 			for _, childrenHash := range proof.childrenHashes {
-				nodeHash1 = append(nodeHash1, childrenHash...)
+				nodeHash1 = append(nodeHash1, childrenHash[:]...)
 			}
-			hash := sha256.Sum256(nodeHash1)
-			nodeHash0 = hash[:]
+			nodeHash0 = sha256.Sum256(nodeHash1)
 			nodeHash1 = nil
 		default:
 			log.Fatal("Unknown proofType " + strconv.Itoa(proof.proofType) + " in ComputeMBTRoot")
@@ -310,10 +310,10 @@ func ComputeMBTRoot(value string, mbtProof *MBTProof) []byte {
 	return nodeHash0
 }
 
-func (mbt *MBT) UpdateMBTInDB(newRootHash []byte, db *leveldb.DB) {
-	hash := sha256.Sum256(newRootHash)
+func (mbt *MBT) UpdateMBTInDB(newRootHash [32]byte, db *leveldb.DB) {
+	hash := sha256.Sum256(newRootHash[:])
 	mbt.updateLatch.Lock()
-	oldHash := sha256.Sum256(mbt.rootHash)
+	oldHash := sha256.Sum256(mbt.rootHash[:])
 	if err := db.Delete(oldHash[:], nil); err != nil {
 		panic(err)
 	}
@@ -410,16 +410,16 @@ func (mbt *MBT) RecursivePrintMBTNode(node *MBTNode, level int, db *leveldb.DB) 
 	}
 	fmt.Printf("Level: %d--------------------------------------------------------------------------\n", level)
 	if node.isLeaf {
-		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash))
+		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash[:]))
 	} else {
-		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash))
+		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash[:]))
 	}
 	fmt.Printf("dataHashes:\n")
 	for _, dataHash := range node.dataHashes {
-		fmt.Printf("%s\n", hex.EncodeToString(dataHash))
+		fmt.Printf("%s\n", hex.EncodeToString(dataHash[:]))
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
-		if !node.isLeaf && node.dataHashes[i] != nil {
+		if !node.isLeaf && node.dataHashes[i] != [32]byte{} {
 			mbt.RecursivePrintMBTNode(node.GetSubNode(i, db, mbt.cache), level+1, db)
 		}
 	}
@@ -429,7 +429,7 @@ type SeMBT struct {
 	BucketNum   int
 	Aggregation int
 	Gd          int
-	MBTRootHash []byte
+	MBTRootHash [32]byte
 }
 
 func SerializeMBT(mbt *MBT) []byte {

@@ -12,12 +12,12 @@ import (
 )
 
 type MBTNode struct {
-	nodeHash []byte
+	nodeHash [32]byte
 	name     []byte
 
 	parent     *MBTNode
 	subNodes   []*MBTNode
-	dataHashes [][]byte
+	dataHashes [][32]byte
 
 	isLeaf   bool
 	isDirty  bool
@@ -29,23 +29,24 @@ type MBTNode struct {
 	subNodesLatch []sync.RWMutex
 }
 
-func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][]byte, isLeaf bool, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) (ret *MBTNode) {
+func NewMBTNode(name []byte, subNodes []*MBTNode, dataHashes [][32]byte, isLeaf bool, db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) (ret *MBTNode) {
 	//由于MBT结构固定，因此此函数只会在MBt初始化时被调用，因此此时dataHashes一定为空，此时nodeHash一定仅包含name
 	if isLeaf {
-		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, make([]util.KVPair, 0),
+		ret = &MBTNode{[32]byte{}, name, nil, subNodes, dataHashes, isLeaf, false, make([]util.KVPair, 0),
 			0, make(map[string]map[string]int), sync.RWMutex{}, make([]sync.RWMutex, 0)}
 	} else {
-		ret = &MBTNode{name, name, nil, subNodes, dataHashes, isLeaf, false, nil, -1,
+		ret = &MBTNode{[32]byte{}, name, nil, subNodes, dataHashes, isLeaf, false, nil, -1,
 			make(map[string]map[string]int), sync.RWMutex{}, make([]sync.RWMutex, 0)}
 	}
+	copy(ret.name[:], name)
 	for _, node := range ret.subNodes {
 		node.parent = ret
 		ret.subNodesLatch = append(ret.subNodesLatch, sync.RWMutex{})
 	}
 	if cache != nil {
-		cache.Add(string(ret.nodeHash), ret)
+		cache.Add(string(ret.nodeHash[:]), ret)
 	} else {
-		if err := db.Put(ret.nodeHash, SerializeMBTNode(ret), nil); err != nil {
+		if err := db.Put(ret.nodeHash[:], SerializeMBTNode(ret), nil); err != nil {
 			log.Fatal("Insert MBTNode to DB error:", err)
 		}
 	}
@@ -65,13 +66,13 @@ func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[s
 		var node *MBTNode
 		var ok bool
 		if cache != nil {
-			if node, ok = cache.Get(string(mbtNode.dataHashes[index])); ok {
+			if node, ok = cache.Get(string(mbtNode.dataHashes[index][:])); ok {
 				mbtNode.subNodes[index] = node
 				node.parent = mbtNode
 			}
 		}
 		if !ok {
-			if nodeString, err := db.Get(mbtNode.dataHashes[index], nil); err == nil {
+			if nodeString, err := db.Get(mbtNode.dataHashes[index][:], nil); err == nil {
 				node, _ = DeserializeMBTNode(nodeString)
 				mbtNode.subNodes[index] = node
 				node.parent = mbtNode
@@ -86,9 +87,9 @@ func (mbtNode *MBTNode) GetSubNode(index int, db *leveldb.DB, cache *lru.Cache[s
 
 func (mbtNode *MBTNode) UpdateMBTNodeHash(db *leveldb.DB, cache *lru.Cache[string, *MBTNode]) {
 	if cache != nil { //删除旧值
-		cache.Remove(string(mbtNode.nodeHash))
+		cache.Remove(string(mbtNode.nodeHash[:]))
 	}
-	if err := db.Delete(mbtNode.nodeHash, nil); err != nil {
+	if err := db.Delete(mbtNode.nodeHash[:], nil); err != nil {
 		fmt.Println("Error in UpdateMBTNodeHash: ", err)
 	}
 	nodeHash := make([]byte, len(mbtNode.name))
@@ -98,27 +99,26 @@ func (mbtNode *MBTNode) UpdateMBTNodeHash(db *leveldb.DB, cache *lru.Cache[strin
 		for _, kv := range mbtNode.bucket {
 			dataHash = append(dataHash, []byte(kv.GetValue())...)
 		}
-		dataHash_ := sha256.Sum256(dataHash)
-		mbtNode.dataHashes[0] = dataHash_[:]
+		//hash_ := sha256.Sum256(dataHash)
+		mbtNode.dataHashes[0] = sha256.Sum256(dataHash)
 	}
 	for _, hash := range mbtNode.dataHashes {
-		nodeHash = append(nodeHash, hash...)
+		nodeHash = append(nodeHash, hash[:]...)
 	}
-	newHash := sha256.Sum256(nodeHash)
-	mbtNode.nodeHash = newHash[:]
+	mbtNode.nodeHash = sha256.Sum256(nodeHash)
 	if cache != nil { //存入新值
-		cache.Add(string(mbtNode.nodeHash), mbtNode)
+		cache.Add(string(mbtNode.nodeHash[:]), mbtNode)
 	} else {
-		if err := db.Put(mbtNode.nodeHash, SerializeMBTNode(mbtNode), nil); err != nil {
+		if err := db.Put(mbtNode.nodeHash[:], SerializeMBTNode(mbtNode), nil); err != nil {
 			log.Fatal("Insert MBTNode to DB error:", err)
 		}
 	}
 }
 
 type SeMBTNode struct {
-	NodeHash   []byte
+	NodeHash   [32]byte
 	Name       []byte
-	DataHashes [][]byte
+	DataHashes [][32]byte
 	IsLeaf     bool
 	Bucket     []util.SeKVPair
 }

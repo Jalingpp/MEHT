@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,9 +26,8 @@ type QueryTransaction struct {
 }
 
 func TestIQ(t *testing.T) {
-	runtime.GOMAXPROCS(runtime.NumCPU())
 	args := make([]string, 0)
-	args = append(args, "", "meht", "1000000", "16", "10000", "9000", "500", "1", "nft-trans-100W")
+	args = append(args, "", "meht", "1000000", "32", "1000", "9000", "500", "1", "nft-trans-100W")
 
 	var batchSize, _ = strconv.Atoi(args[4]) //change
 	//var batchTimeout float64 = 100 //change
@@ -141,6 +139,7 @@ func TestIQ(t *testing.T) {
 
 	createQueryWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voChList *[]chan uint, durationChList *[]chan time.Duration, queryChanFlag chan bool) {
 		var wg sync.WaitGroup
+
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
 			go queryWorker(&wg, seDB, queryTxnCh, (*voChList)[i], (*durationChList)[i])

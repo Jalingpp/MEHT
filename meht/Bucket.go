@@ -482,55 +482,50 @@ func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{},
 }
 
 // GetProof 给定一个key, 返回它所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segKey及其segRootHash
-func (b *Bucket) GetProof(segKey string, isSegExist bool, index int, db *leveldb.DB, cache *[]interface{}) ([]byte, *mht.MHTProof) {
+func (b *Bucket) GetProof(segKey string, isSegExist bool, index int, db *leveldb.DB, cache *[]interface{}) ([32]byte, *mht.MHTProof) {
 	b.latch.RLock()
 	defer b.latch.RUnlock()
 	segHash := b.GetMerkleTree(segKey, db, cache) // 为bucket加读锁后树最多更新一次
 	if index != -1 {
-		segHashRoot := segHash.GetRootHash()
-		proof := segHash.GetProof(index)
-		return segHashRoot, proof
+		return segHash.GetRootHash(), segHash.GetProof(index)
 	} else if isSegExist {
 		//segment存在,但key不存在,返回此seg中所有值及其哈希
 		kvPairs := b.GetSegment(segKey, db, cache)
-		values := make([]string, 0)
+		values := make([]string, len(kvPairs))
 		for i := 0; i < len(kvPairs); i++ {
-			values = append(values, kvPairs[i].GetValue())
+			values[i] = kvPairs[i].GetValue()
 		}
-		segHashRoot := segHash.GetRootHash()
-		return segHashRoot, mht.NewMHTProof(false, nil, true, values, nil, nil)
+		return segHash.GetRootHash(), mht.NewMHTProof(false, nil, true, values, nil, nil)
 	} else {
 		//segment不存在,返回所有segKey及其segRootHash
 		segKeys := make([]string, 0)
-		segRootHashes := make([][]byte, 0)
+		segRootHashes := make([][32]byte, 0)
 		b.merkleTrees.Range(func(key, value interface{}) bool {
 			segKeys = append(segKeys, key.(string))
 			segRootHashes = append(segRootHashes, b.GetMerkleTree(key.(string), db, cache).GetRootHash())
 			return true
 		})
-		return nil, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)
+		return [32]byte{}, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)
 	}
 }
 
 // ComputeSegHashRoot 给定value和segProof，返回由它们计算得到的segHashRoot
-func ComputeSegHashRoot(value string, proofPairs []mht.ProofPair) []byte {
+func ComputeSegHashRoot(value string, proofPairs []mht.ProofPair) [32]byte {
 	fmt.Printf("value: %s\n", value)
 	fmt.Printf("value byte:%x\n", []byte(value))
 	//对value求hash
-	valueHash := sha256.Sum256([]byte(value))
-	data := valueHash[:]
+	data := sha256.Sum256([]byte(value))
 	//逐层计算segHashRoot
 	for i := 0; i < len(proofPairs); i++ {
 		parentHash := make([]byte, 0)
 		if proofPairs[i].Index == 0 {
-			parentHash = append(proofPairs[i].Hash, data...)
+			parentHash = append(proofPairs[i].Hash[:], data[:]...)
 		} else {
 			fmt.Printf("data: %x\n", data)
 			fmt.Printf("proofHash:%x\n", proofPairs[i].Hash)
-			parentHash = append(data, proofPairs[i].Hash...)
+			parentHash = append(data[:], proofPairs[i].Hash[:]...)
 		}
-		hash := sha256.Sum256(parentHash)
-		data = hash[:]
+		data = sha256.Sum256(parentHash)
 	}
 	return data
 }

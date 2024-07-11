@@ -43,7 +43,7 @@ var DefaultMEHTBs = MEHTBs(1)                                    //MEHT default 
 
 type SEDB struct {
 	se              *StorageEngine //搜索引擎的指针
-	seHash          []byte         //搜索引擎序列化后的哈希值
+	seHash          [32]byte       //搜索引擎序列化后的哈希值
 	primaryDb       *leveldb.DB    //主索引底层存储的指针
 	secondaryDb     *leveldb.DB    //辅助索引底层存储的指针
 	primaryDbPath   string         //主索引底层存储的文件路径
@@ -58,7 +58,7 @@ type SEDB struct {
 }
 
 // NewSEDB 返回一个新的SEDB
-func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode string, mbtArgs []interface{}, mehtArgs []interface{}, cacheEnabled bool, cacheCapacity ...interface{}) *SEDB {
+func NewSEDB(seh [32]byte, primaryDbPath string, secondaryDbPath string, siMode string, mbtArgs []interface{}, mehtArgs []interface{}, cacheEnabled bool, cacheCapacity ...interface{}) *SEDB {
 	//打开或创建数据库
 	primaryDb, err := leveldb.OpenFile(primaryDbPath, nil)
 	if err != nil {
@@ -76,18 +76,18 @@ func NewSEDB(seh []byte, primaryDbPath string, secondaryDbPath string, siMode st
 // GetStorageEngine 获取SEDB中的StorageEngine，如果为空，从db中读取se
 func (sedb *SEDB) GetStorageEngine() *StorageEngine {
 	//如果se为空，从db中读取se
-	if sedb.se == nil && sedb.seHash != nil && len(sedb.seHash) != 0 && sedb.latch.TryLock() { // 只允许一个线程重构se
+	if sedb.se == nil && sedb.seHash != [32]byte{} && sedb.latch.TryLock() { // 只允许一个线程重构se
 		if sedb.se != nil { //可能在在TryLock之前刚好有se已经被从磁盘中读取并重构，因此需要判断是否还需要重构se
 			sedb.latch.Unlock()
 			return sedb.se
 		}
-		if seString, error_ := sedb.primaryDb.Get(sedb.seHash, nil); error_ == nil {
+		if seString, error_ := sedb.primaryDb.Get(sedb.seHash[:], nil); error_ == nil {
 			se, _ := DeserializeStorageEngine(seString, sedb.cacheEnable, sedb.cacheCapacity)
 			sedb.se = se
 		}
 		sedb.latch.Unlock()
 	}
-	for sedb.se == nil && sedb.seHash != nil && len(sedb.seHash) != 0 {
+	for sedb.se == nil && sedb.seHash != [32]byte{} {
 	} // 其余线程等待se重构
 	return sedb.se
 }
@@ -299,7 +299,7 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 	se.UpdateStorageEngineToDB()
 
 	sedb.seHash = se.seHash
-	if err := sedb.primaryDb.Put(se.seHash, SerializeStorageEngine(se), nil); err != nil {
+	if err := sedb.primaryDb.Put(se.seHash[:], SerializeStorageEngine(se), nil); err != nil {
 		fmt.Println("Insert StorageEngine to DB error:", err)
 	}
 	if sedb.cacheEnable {
@@ -325,19 +325,21 @@ func (sedb *SEDB) WriteSEDBInfoToFile(filePath string) {
 		}()
 		wG.Wait()
 	}
-	data := hex.EncodeToString(sedb.seHash) + "," + sedb.primaryDbPath + "," + sedb.secondaryDbPath + "\n"
+	data := hex.EncodeToString(sedb.seHash[:]) + "," + sedb.primaryDbPath + "," + sedb.secondaryDbPath + "\n"
 	util.WriteStringToFile(filePath, data)
 }
 
 // ReadSEDBInfoFromFile 从文件中读取seHash和dbPath
-func ReadSEDBInfoFromFile(filePath string) ([]byte, string, string) {
+func ReadSEDBInfoFromFile(filePath string) ([32]byte, string, string) {
 	data, _ := util.ReadStringFromFile(filePath)
 	sehDbpath := strings.Split(data, ",")
 	if len(sehDbpath) != 3 {
 		fmt.Println("seHash and dbPath don't exist!")
-		return nil, "", ""
+		return [32]byte{}, "", ""
 	}
-	seh, _ := hex.DecodeString(sehDbpath[0])
+	seh_, _ := hex.DecodeString(sehDbpath[0])
+	seh := [32]byte{}
+	copy(seh[:], seh_)
 	primaryDbPath := util.Strip(sehDbpath[1], "\n\t\r")
 	secondaryDbPath := util.Strip(sehDbpath[2], "\n\t\r")
 	if _, err := os.Stat(primaryDbPath); os.IsNotExist(err) {
@@ -356,7 +358,7 @@ func ReadSEDBInfoFromFile(filePath string) ([]byte, string, string) {
 // PrintSEDB 打印SEDB
 func (sedb *SEDB) PrintSEDB() {
 	fmt.Println("打印SEDB-----------------------------------------------------------------------")
-	fmt.Printf("seHash:%s\n", hex.EncodeToString(sedb.seHash))
+	fmt.Printf("seHash:%s\n", hex.EncodeToString(sedb.seHash[:]))
 	fmt.Println("dbPath:", sedb.primaryDbPath)
 	sedb.GetStorageEngine().PrintStorageEngine(sedb.primaryDb)
 }

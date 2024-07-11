@@ -18,7 +18,7 @@ import (
 )
 
 type MGTNode struct {
-	nodeHash         []byte     // hash of this node, consisting of the hash of its children
+	nodeHash         [32]byte   // hash of this node, consisting of the hash of its children
 	parent           *MGTNode   // parent node of this node
 	subNodes         []*MGTNode // sub-nodes in the tree, original given
 	dataHashes       [][]byte   // hashes of data elements, computed from subNodes
@@ -37,7 +37,7 @@ type MGTNode struct {
 type MGT struct {
 	rdx         int      //radix of bucket key, decide the number of sub-nodes
 	Root        *MGTNode // root node of the tree
-	mgtRootHash []byte   // hash of this MGT, equals to the root node hash
+	mgtRootHash [32]byte // hash of this MGT, equals to the root node hash
 	//cachedLNMap map[string]bool
 	cachedLNMap sync.Map //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有，会被存入DB
 	//cachedINMap map[string]bool
@@ -50,7 +50,7 @@ type MGT struct {
 
 // NewMGT creates an empty MGT
 func NewMGT(rdx int) *MGT {
-	return &MGT{rdx, nil, nil, sync.Map{}, sync.Map{}, make(map[string]int), 0, sync.RWMutex{}, sync.Mutex{}}
+	return &MGT{rdx, nil, [32]byte{}, sync.Map{}, sync.Map{}, make(map[string]int), 0, sync.RWMutex{}, sync.Mutex{}}
 }
 
 func (mgt *MGT) GetRdx() int {
@@ -65,7 +65,7 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 		if mgt.Root != nil { // 可能刚好进到if之后但lock之前root被别的线程更新了
 			return mgt.Root
 		}
-		if mgtString, error_ := db.Get(mgt.mgtRootHash, nil); error_ == nil {
+		if mgtString, error_ := db.Get(mgt.mgtRootHash[:], nil); error_ == nil {
 			m, _ := DeserializeMGTNode(mgtString, mgt.rdx)
 			mgt.Root = m
 			//此处由于root尚未被其他地方引用，因此getBucket无需加锁
@@ -75,7 +75,7 @@ func (mgt *MGT) GetRoot(db *leveldb.DB) *MGTNode {
 	return mgt.Root
 }
 
-func (mgtNode *MGTNode) GetNodeHash() []byte {
+func (mgtNode *MGTNode) GetNodeHash() [32]byte {
 	return mgtNode.nodeHash
 }
 
@@ -113,13 +113,13 @@ func (mgtNode *MGTNode) GetSubNode(index int, db *leveldb.DB, rdx int, cache *[]
 		var ok bool
 		if cache != nil {
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
-			if node, ok = targetCache.Get(string(mgtNode.dataHashes[index])); ok {
+			if node, ok = targetCache.Get(string(mgtNode.dataHashes[index][:])); ok {
 				mgtNode.subNodes[index] = node
 				node.parent = mgtNode
 			}
 		}
 		if !ok {
-			if nodeString, error_ := db.Get(mgtNode.dataHashes[index], nil); error_ == nil {
+			if nodeString, error_ := db.Get(mgtNode.dataHashes[index][:], nil); error_ == nil {
 				node, _ = DeserializeMGTNode(nodeString, rdx)
 				node.parent = mgtNode
 				mgtNode.subNodes[index] = node
@@ -138,7 +138,7 @@ func (mgtNode *MGTNode) GetSubNode(index int, db *leveldb.DB, rdx int, cache *[]
 
 // GetCachedNode 获取cachedNode,如果cachedNode为空,则从leveldb中读取
 func (mgtNode *MGTNode) GetCachedNode(index int, db *leveldb.DB, rdx int, cache *[]interface{}) *MGTNode {
-	if mgtNode.cachedNodes[index] == nil && len(mgtNode.cachedDataHashes[index]) != 0 && mgtNode.cachedNodesLatch[index].TryLock() { // 既然进入这个函数那么是一定能找到节点的
+	if mgtNode.cachedNodes[index] == nil && mgtNode.cachedDataHashes[index] != nil && mgtNode.cachedNodesLatch[index].TryLock() { // 既然进入这个函数那么是一定能找到节点的
 		if mgtNode.cachedNodes[index] != nil {
 			mgtNode.cachedNodesLatch[index].Unlock()
 			return mgtNode.cachedNodes[index]
@@ -147,13 +147,13 @@ func (mgtNode *MGTNode) GetCachedNode(index int, db *leveldb.DB, rdx int, cache 
 		var ok bool
 		if cache != nil {
 			targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
-			if node, ok = targetCache.Get(string(mgtNode.cachedDataHashes[index])); ok {
+			if node, ok = targetCache.Get(string(mgtNode.cachedDataHashes[index][:])); ok {
 				mgtNode.cachedNodes[index] = node
 				node.parent = mgtNode
 			}
 		}
 		if !ok {
-			if nodeString, error_ := db.Get(mgtNode.cachedDataHashes[index], nil); error_ == nil {
+			if nodeString, error_ := db.Get(mgtNode.cachedDataHashes[index][:], nil); error_ == nil {
 				node, _ = DeserializeMGTNode(nodeString, rdx)
 				node.parent = mgtNode
 				mgtNode.cachedNodes[index] = node
@@ -165,7 +165,7 @@ func (mgtNode *MGTNode) GetCachedNode(index int, db *leveldb.DB, rdx int, cache 
 		}
 		mgtNode.cachedNodesLatch[index].Unlock()
 	}
-	for mgtNode.cachedNodes[index] == nil && len(mgtNode.cachedDataHashes[index]) != 0 { // 其余线程等待subNode重
+	for mgtNode.cachedNodes[index] == nil && mgtNode.cachedDataHashes[index] != nil { // 其余线程等待subNode重
 	}
 	return mgtNode.cachedNodes[index]
 }
@@ -192,9 +192,9 @@ func (mgtNode *MGTNode) GetBucket(rdx int, name string, db *leveldb.DB, cache *[
 }
 
 // UpdateMGTToDB 更新mgtRootHash,并将mgt存入leveldb
-func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
+func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) [32]byte {
 	//get the old mgtHash
-	hash := sha256.Sum256(mgt.mgtRootHash)
+	hash := sha256.Sum256(mgt.mgtRootHash[:])
 	oldMgtHash := hash[:]
 	//delete the old mgt in leveldb
 	if err := db.Delete(oldMgtHash, nil); err != nil {
@@ -203,9 +203,8 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 	// update mgtRootHash
 	mgt.mgtRootHash = mgt.GetRoot(db).nodeHash
 	//insert mgt in leveldb
-	hash = sha256.Sum256(mgt.mgtRootHash)
-	mgtHash := hash[:]
-	if err := db.Put(mgtHash, SerializeMGT(mgt), nil); err != nil {
+	mgtHash := sha256.Sum256(mgt.mgtRootHash[:])
+	if err := db.Put(mgtHash[:], SerializeMGT(mgt), nil); err != nil {
 		panic(err)
 	}
 	return mgtHash
@@ -213,13 +212,15 @@ func (mgt *MGT) UpdateMGTToDB(db *leveldb.DB) []byte {
 
 // NewMGTNode creates a new MGTNode
 func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB, rdx int, cache *[]interface{}, commonKeyLength ...int) *MGTNode {
-	nodeHash := make([]byte, 0)
+	hash := make([]byte, 0)
 	dataHashes := make([][]byte, 0)
 	//如果是叶子节点,遍历其所有segment,将每个segment的根hash加入dataHashes
 	if isLeaf {
 		bucket.GetMerkleTrees().Range(func(key, value interface{}) bool {
-			dataHashes = append(dataHashes, value.(*mht.MerkleTree).GetRootHash())
-			nodeHash = append(nodeHash, value.(*mht.MerkleTree).GetRootHash()...)
+			rootHash := value.(*mht.MerkleTree).GetRootHash()
+			dataHashes = append(dataHashes, rootHash[:])
+			hash_ := value.(*mht.MerkleTree).GetRootHash()
+			hash = append(hash, hash_[:]...)
 			return true
 		})
 	} else {
@@ -228,13 +229,12 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 			dataHashes = make([][]byte, rdx)
 		}
 		for i := 0; i < len(subNodes); i++ {
-			dataHashes = append(dataHashes, subNodes[i].nodeHash)
-			nodeHash = append(nodeHash, subNodes[i].nodeHash...)
+			dataHashes = append(dataHashes, subNodes[i].nodeHash[:])
+			hash = append(hash, subNodes[i].nodeHash[:]...)
 		}
 	}
 	//对dataHashes求hash,得到nodeHash
-	hash := sha256.Sum256(nodeHash)
-	nodeHash = hash[:]
+	nodeHash := sha256.Sum256(hash)
 	var mgtNode *MGTNode
 	//通过判断是否是叶子节点决定bucket是否需要
 	if !isLeaf {
@@ -258,10 +258,10 @@ func NewMGTNode(subNodes []*MGTNode, isLeaf bool, bucket *Bucket, db *leveldb.DB
 	//将mgtNode存入leveldb
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
-		targetCache.Add(string(nodeHash), mgtNode)
+		targetCache.Add(string(nodeHash[:]), mgtNode)
 	} else {
 		nodeString := SerializeMGTNode(mgtNode)
-		if err := db.Put(nodeHash, nodeString, nil); err != nil {
+		if err := db.Put(nodeHash[:], nodeString, nil); err != nil {
 			panic(err)
 		}
 	}
@@ -275,16 +275,16 @@ func (mgtNode *MGTNode) UpdateMGTNodeToDB(db *leveldb.DB, cache *[]interface{}) 
 	var targetCache *lru.Cache[string, *MGTNode]
 	if cache != nil {
 		targetCache, _ = (*cache)[0].(*lru.Cache[string, *MGTNode])
-		targetCache.Remove(string(mgtNode.nodeHash))
+		targetCache.Remove(string(mgtNode.nodeHash[:]))
 	}
-	if err := db.Delete(mgtNode.nodeHash, nil); err != nil {
+	if err := db.Delete(mgtNode.nodeHash[:], nil); err != nil {
 		panic(err)
 	}
 	UpdateNodeHash(mgtNode)
 	if cache != nil {
-		targetCache.Add(string(mgtNode.nodeHash), mgtNode)
+		targetCache.Add(string(mgtNode.nodeHash[:]), mgtNode)
 	} else {
-		if err := db.Put(mgtNode.nodeHash, SerializeMGTNode(mgtNode), nil); err != nil {
+		if err := db.Put(mgtNode.nodeHash[:], SerializeMGTNode(mgtNode), nil); err != nil {
 			panic(err)
 		}
 	}
@@ -454,7 +454,7 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		child_ := child
 		go func(idx int) {
 			MGTBatchFixFoo(child_, db, cache)
-			mgt.Root.dataHashes[idx] = child_.nodeHash
+			mgt.Root.dataHashes[idx] = child_.nodeHash[:]
 			wG.Done()
 		}(i)
 	}
@@ -466,7 +466,7 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		child_ := child
 		go func(idx int) {
 			MGTBatchFixFoo(child_, db, cache)
-			mgt.Root.cachedDataHashes[idx] = child_.nodeHash
+			mgt.Root.cachedDataHashes[idx] = child_.nodeHash[:]
 			wG.Done()
 		}(i)
 	}
@@ -486,14 +486,14 @@ func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
 			continue
 		}
 		MGTBatchFixFoo(child, db, cache)
-		mgtNode.dataHashes[idx] = child.nodeHash
+		mgtNode.dataHashes[idx] = child.nodeHash[:]
 	}
 	for idx, child := range mgtNode.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
 		MGTBatchFixFoo(child, db, cache)
-		mgtNode.cachedDataHashes[idx] = child.nodeHash
+		mgtNode.cachedDataHashes[idx] = child.nodeHash[:]
 	}
 	mgtNode.UpdateMGTNodeToDB(db, cache)
 	mgtNode.isDirty = false
@@ -524,7 +524,8 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 		})
 		sort.Strings(segKeyInorder)
 		for _, key := range segKeyInorder {
-			nodePath[0].dataHashes = append(nodePath[0].dataHashes, bk.GetMerkleTree(key, db, cache).GetRootHash())
+			rootHash := bk.GetMerkleTree(key, db, cache).GetRootHash()
+			nodePath[0].dataHashes = append(nodePath[0].dataHashes, rootHash[:])
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
 		nodePath[0].UpdateMGTNodeToDB(db, cache)
@@ -533,9 +534,9 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 			if i == 1 {
 				offset := len(bk.BucketKey) - len(nodePath[1].bucketKey)
 				if offset == 1 {
-					nodePath[1].dataHashes[bk.BucketKey[0]] = nodePath[0].nodeHash
+					nodePath[1].dataHashes[bk.BucketKey[0]] = nodePath[0].nodeHash[:]
 				} else {
-					nodePath[1].cachedDataHashes[bk.BucketKey[offset-1]] = nodePath[0].nodeHash
+					nodePath[1].cachedDataHashes[bk.BucketKey[offset-1]] = nodePath[0].nodeHash[:]
 				}
 			}
 			// 一整条路径的值都会被修改为dirty，但是不会再重新计算哈希，因为这个操作会由batch调整的时候来做
@@ -618,17 +619,17 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 	// 同一时刻一个桶只会有一个线程更新，因此对应的，这个mgtNode也只会被一个线程更新，因此此处不会被并发覆盖
 	if len(nodePath[1].bucketKey)+1 == len(nodePath[0].bucketKey) {
 		nodePath[1].subNodes[oldBucketKey[0]] = newFatherNode
-		nodePath[1].dataHashes[oldBucketKey[0]] = newFatherNode.nodeHash
+		nodePath[1].dataHashes[oldBucketKey[0]] = newFatherNode.nodeHash[:]
 	} else {
 		delta := len(oldBucketKey) - len(nodePath) + 1
 		nodePath[1].cachedNodes[oldBucketKey[delta]] = newFatherNode
-		nodePath[1].cachedDataHashes[oldBucketKey[delta]] = newFatherNode.nodeHash
+		nodePath[1].cachedDataHashes[oldBucketKey[delta]] = newFatherNode.nodeHash[:]
 	}
 	if cache != nil {
 		targetCache, _ := (*cache)[0].(*lru.Cache[string, *MGTNode])
-		targetCache.Remove(string(nodePath[0].nodeHash))
+		targetCache.Remove(string(nodePath[0].nodeHash[:]))
 	}
-	if err := db.Delete(nodePath[0].nodeHash, nil); err != nil {
+	if err := db.Delete(nodePath[0].nodeHash[:], nil); err != nil {
 		panic(err)
 	}
 	newFatherNode.parent = nodePath[1]
@@ -659,7 +660,7 @@ func UpdateNodeHash(node *MGTNode) {
 		return i < j
 	})
 	for _, key := range keys {
-		nodeHash = append(nodeHash, node.dataHashes[key]...)
+		nodeHash = append(nodeHash, node.dataHashes[key][:]...)
 	}
 
 	var keys2 []int
@@ -670,10 +671,9 @@ func UpdateNodeHash(node *MGTNode) {
 		return i < j
 	})
 	for _, key := range keys2 {
-		nodeHash = append(nodeHash, node.cachedDataHashes[key]...)
+		nodeHash = append(nodeHash, node.cachedDataHashes[key][:]...)
 	}
-	hash := sha256.Sum256(nodeHash)
-	node.nodeHash = hash[:]
+	node.nodeHash = sha256.Sum256(nodeHash)
 }
 
 // UpdateHotnessList 访问频次统计
@@ -767,7 +767,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 		//将其父节点的相应孩子位置为该节点
 		nodePathFather[0].subNodes[bkINode[0]] = nodePath[0]
 		nodePath[0].parent = nodePathFather[0]
-		nodePathFather[0].dataHashes[bkINode[0]] = nodePath[0].nodeHash
+		nodePathFather[0].dataHashes[bkINode[0]] = nodePath[0].nodeHash[:]
 		//nodePathFather[0]可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
 		for i := 0; i < len(nodePathFather); i++ {
 			if !nodePathFather[i].isDirty {
@@ -805,7 +805,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 				//1.放置当前节点(nodePath[0])
 				nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
 				nodePath[0].parent = nodePath[i]
-				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
+				nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash[:]
 				//2.如果nodePath是缓存路径，则将nodePath[1]相应缓存位清空
 				//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
 				for k := 1; k < len(nodePath); k++ {
@@ -838,7 +838,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 					//将cachedLN放入其父节点的子节点中
 					npFather[0].subNodes[cachedLN.bucketKey[0]] = cachedLN
 					cachedLN.parent = npFather[0]
-					npFather[0].dataHashes[cachedLN.bucketKey[0]] = cachedLN.nodeHash
+					npFather[0].dataHashes[cachedLN.bucketKey[0]] = cachedLN.nodeHash[:]
 					//2.更新np_father上所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
 					for k := 0; k < len(npFather); k++ {
 						if !npFather[k].isDirty {
@@ -850,7 +850,7 @@ func (mgt *MGT) CacheAdjust(db *leveldb.DB, cache *[]interface{}) {
 					//3.再将当前节点放入nodePath[i]的缓存目录中
 					nodePath[i].cachedNodes[bucketKey[identI]] = nodePath[0]
 					nodePath[0].parent = nodePath[i]
-					nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash
+					nodePath[i].cachedDataHashes[bucketKey[identI]] = nodePath[0].nodeHash[:]
 					//更新nodePath[1]及以后的所有节点，由于可能有多个孩子都被更新，因此为避免自底向上的多次更新，直接标记为脏
 					for k := 1; k < len(nodePath); k++ {
 						if !nodePath[k].isDirty {
@@ -952,18 +952,18 @@ func (mgt *MGT) PrintMGTNode(node *MGTNode, level int, db *leveldb.DB, cache *[]
 	}
 	fmt.Printf("Level: %d--------------------------------------------------------------------------\n", level)
 	if node.isLeaf {
-		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash))
+		fmt.Printf("Leaf Node: %s\n", hex.EncodeToString(node.nodeHash[:]))
 		fmt.Printf("bucketKey: %s\n", util.IntArrayToString(node.bucketKey, mgt.rdx))
 	} else {
-		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash))
+		fmt.Printf("Internal Node: %s\n", hex.EncodeToString(node.nodeHash[:]))
 	}
 	fmt.Printf("dataHashes:\n")
 	for _, dataHash := range node.dataHashes {
-		fmt.Printf("%s\n", hex.EncodeToString(dataHash))
+		fmt.Printf("%s\n", hex.EncodeToString(dataHash[:]))
 	}
 	fmt.Printf("cachedDataHashes:\n")
 	for _, cachedDataHash := range node.cachedDataHashes {
-		fmt.Printf("%s\n", hex.EncodeToString(cachedDataHash))
+		fmt.Printf("%s\n", hex.EncodeToString(cachedDataHash[:]))
 	}
 	for i := 0; i < len(node.dataHashes); i++ {
 		if !node.isLeaf && node.dataHashes[i] != nil {
@@ -988,7 +988,7 @@ func (mgtProof *MGTProof) GetSizeOf() uint {
 }
 
 // GetProof 给定bucketKey，返回它的mgtRootHash和mgtProof，不存在则返回nil
-func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, cache *[]interface{}) ([]byte, []MGTProof) {
+func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, cache *[]interface{}) ([32]byte, []MGTProof) {
 	//跳转到此函数时已对MGT加锁
 	//根据bucketKey,找到叶子节点和路径
 	nodePath := mgt.GetLeafNodeAndPath(bucketKey, db, cache)
@@ -1010,7 +1010,7 @@ func (mgt *MGT) GetProof(bucketKey []int, db *leveldb.DB, cache *[]interface{}) 
 }
 
 // ComputeMGTRootHash 给定segRootHash和mgtProof，返回由它们计算得到的mgtRootHash
-func ComputeMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {
+func ComputeMGTRootHash(segRootHash [32]byte, mgtProof []MGTProof) [32]byte {
 	//遍历mgtProof中前segNum个元素，如果segRootHash不存在，则返回nil，否则计算得到第0个node的nodeHash
 	//同样遍历第i层的所有元素，如果第i-1层的nodeHash不在其中，则返回nil，否则计算得到第i层node的nodeHash
 	isSRHExist := false
@@ -1020,27 +1020,25 @@ func ComputeMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {
 	for i := 0; i <= len(mgtProof)-1; i++ {
 		if mgtProof[i].level != level {
 			if !isSRHExist {
-				return nil
+				return [32]byte{}
 			} else {
 				level++
 				isSRHExist = false
-				Hash := sha256.Sum256(nodeHash1)
-				nodeHash0 = Hash[:]
+				nodeHash0 = sha256.Sum256(nodeHash1)
 				nodeHash1 = nodeHash1[:0]
 				i--
 			}
 		} else {
-			if bytes.Equal(nodeHash0, mgtProof[i].dataHash) {
+			if bytes.Equal(nodeHash0[:], mgtProof[i].dataHash[:]) {
 				isSRHExist = true
 			}
-			nodeHash1 = append(nodeHash1, mgtProof[i].dataHash...)
+			nodeHash1 = append(nodeHash1, mgtProof[i].dataHash[:]...)
 		}
 	}
 	if !isSRHExist {
-		return nil
+		return [32]byte{}
 	} else {
-		Hash := sha256.Sum256(nodeHash1)
-		nodeHash0 = Hash[:]
+		nodeHash0 = sha256.Sum256(nodeHash1)
 	}
 	return nodeHash0
 }
@@ -1048,13 +1046,13 @@ func ComputeMGTRootHash(segRootHash []byte, mgtProof []MGTProof) []byte {
 // PrintMGTProof 打印mgtProof
 func PrintMGTProof(mgtProof []MGTProof) {
 	for i := 0; i < len(mgtProof); i++ {
-		fmt.Printf("[%d,%s]\n", mgtProof[i].level, hex.EncodeToString(mgtProof[i].dataHash))
+		fmt.Printf("[%d,%s]\n", mgtProof[i].level, hex.EncodeToString(mgtProof[i].dataHash[:]))
 	}
 }
 
 type SeMGT struct {
 	Rdx         int             //radix of bucket key, decide the number of sub-nodes
-	MgtRootHash []byte          // hash of this MGT, equals to the hash of the root node hash
+	MgtRootHash [32]byte        // hash of this MGT, equals to the hash of the root node hash
 	CachedLNMap map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
 	CachedINMap map[string]bool //当前被缓存在中间节点的叶子节点，存在bool为true，不存在就直接没有
 }
@@ -1096,7 +1094,7 @@ func DeserializeMGT(data []byte) (*MGT, error) {
 }
 
 type SeMGTNode struct {
-	NodeHash         []byte   // hash of this node, consisting of the hash of its children
+	NodeHash         [32]byte // hash of this node, consisting of the hash of its children
 	DataHashes       [][]byte // hashes of data elements, computed from subNodes, is used for indexing children nodes in leveldb
 	CachedDataHashes [][]byte // hash of cached data elements, computed from cached subNodes
 	IsLeaf           bool     // whether this node is a leaf node

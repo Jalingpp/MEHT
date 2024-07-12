@@ -173,12 +173,14 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 	wG.Add(2)
 	oldValueCh := make(chan string)
 	needDeleteCh := make(chan bool)
-	go func() {
+	go func(isUpdate bool) {
 		defer wG.Done()
 		//将KV插入到主键索引中
 		oldVal, needDelete := se.primaryIndex.Insert(kvPair, primaryDb, nil, isUpdate)
-		oldValueCh <- oldVal
-		needDeleteCh <- needDelete
+		if isUpdate {
+			oldValueCh <- oldVal
+			needDeleteCh <- needDelete
+		}
 		se.updatePrimaryLatch.Lock() // 保证se留存的主索引哈希与实际主索引根哈希一致
 		se.primaryIndex.GetUpdateLatch().Lock()
 		rootHash := se.primaryIndex.GetRootHash()
@@ -187,50 +189,58 @@ func (se *StorageEngine) Insert(kvPair util.KVPair, isUpdate bool, primaryDb *le
 		se.updatePrimaryLatch.Unlock()
 		//_, primaryProof := se.GetPrimaryIndex(db).QueryByKey(kvPair.GetKey(), db)
 		//fmt.Printf("key=%x , value=%x已插入主键索引MPT\n", []byte(kvPair.GetKey()), []byte(kvPair.GetValue()))
-	}()
+	}(isUpdate)
 	//构造倒排KV
 	reversedKV := util.ReverseKVPair(kvPair)
+	var oldVal string
+	var needDelete bool
 	//插入非主键索引
 	if se.secondaryIndexMode == "mpt" { //插入mpt
 		//插入到mpt类型的非主键索引中
 		//_, mptProof := se.InsertIntoMPT(reversedKV, db)
-		go func() { // 实际应该为返回值mptProof构建一个chan并等待输出
+		go func(isUpdate bool) { // 实际应该为返回值mptProof构建一个chan并等待输出
 			defer wG.Done()
 			se.InsertIntoMPT(reversedKV, secondaryDb, se.primaryIndex, false)
-			oldVal := <-oldValueCh
-			needDelete := <-needDeleteCh
+			if isUpdate {
+				oldVal = <-oldValueCh
+				needDelete = <-needDeleteCh
+			}
 			if needDelete {
 				se.InsertIntoMPT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, se.primaryIndex, true)
 			}
-		}()
+		}(isUpdate)
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, mptProof, nil
 	} else if se.secondaryIndexMode == "meht" { //插入meht
 		//var mehtProof *meht.MEHTProof
 		//_, mehtProof  = se.InsertIntoMEHT(reversedKV, db)
-		go func() { //实际应该为返回值mehtProof构建一个chan并等待输出
+		go func(isUpdate bool) { //实际应该为返回值mehtProof构建一个chan并等待输出
 			defer wG.Done()
 			se.InsertIntoMEHT(reversedKV, secondaryDb, false)
-			oldVal := <-oldValueCh
-			needDelete := <-needDeleteCh
+			if isUpdate {
+				oldVal = <-oldValueCh
+				needDelete = <-needDeleteCh
+			}
 			if needDelete {
 				se.InsertIntoMEHT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, true)
 			}
-		}()
+		}(isUpdate)
 		//更新搜索引擎的哈希值
 		//se.UpdateStorageEngineToDB(db)
 		//return primaryProof, nil, mehtProof
 	} else {
-		go func() {
+		go func(isUpdate bool) {
 			defer wG.Done()
 			se.InsertIntoMBT(reversedKV, secondaryDb, false)
-			oldVal := <-oldValueCh
-			needDelete := <-needDeleteCh
+			if isUpdate {
+				oldVal = <-oldValueCh
+				needDelete = <-needDeleteCh
+			}
 			if needDelete {
 				se.InsertIntoMBT(*util.NewKVPair(oldVal, reversedKV.GetValue()), secondaryDb, true)
 			}
-		}()
+		}(isUpdate)
 	}
 	wG.Wait()
 	return nil, nil, nil

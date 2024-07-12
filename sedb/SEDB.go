@@ -208,7 +208,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string) (string, []*util.K
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			sum++
-			fmt.Println("No such key in meht!", "     ", sum)
+			//fmt.Println("No such key in meht!", "     ", sum)
 		} else {
 			primaryKeys := strings.Split(primaryKey, ",")
 			go generatePrimaryKey(primaryKeys, primaryKeyCh)

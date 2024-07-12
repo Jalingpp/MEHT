@@ -9,6 +9,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"sync"
+	"time"
 )
 
 type Bucket struct {
@@ -23,6 +24,7 @@ type Bucket struct {
 	merkleTrees     sync.Map // merkle trees: one for each segment map[string]*mht.MerkleTree
 	latchTimestamp  int64
 	DelegationList  map[string]util.KVPair    // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
+	PendingNum      int                       // 委托插入的数据数量，用于新到来的委托方判断是否可以在被委托者正在进行桶插入操作时向DelegationList追加待插入数据，只有被委托者可以修改该字段
 	toDelMap        map[string]map[string]int // 用于记录哪些数据需要被延迟删除
 	latch           sync.RWMutex              //桶粒度锁
 	segLatch        sync.RWMutex              //段粒度锁
@@ -35,8 +37,8 @@ var dummyBucket = &Bucket{ld: -1, rdx: -1, capacity: -1, segNum: -1}
 // NewBucket 新建一个Bucket
 func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{nil, ld, rdx, capacity, 0, segNum,
-		sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair), make(map[string]map[string]int),
+		sync.Map{}, sync.Map{}, sync.Map{}, time.Now().Unix(),
+		make(map[string]util.KVPair), 0, make(map[string]map[string]int),
 		sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 }
 
@@ -477,8 +479,14 @@ func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{},
 	if index == -1 {
 		return "", segKey, isSegExist, index
 	}
-	value := b.GetSegment(segKey, db, cache)[index].GetValue()
-	return value, segKey, isSegExist, index
+	//value := b.GetSegment(segKey, db, cache)[index].GetValue()
+	//TODO Debug
+	seg := b.GetSegment(segKey, db, cache)
+	if index < len(seg) {
+		return seg[index].GetValue(), segKey, isSegExist, index
+	} else {
+		return "", segKey, isSegExist, index
+	}
 }
 
 // GetProof 给定一个key, 返回它所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segKey及其segRootHash
@@ -646,8 +654,8 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		return nil, err
 	}
 	bucket := &Bucket{seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
-		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair), make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
+		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, time.Now().Unix(),
+		make(map[string]util.KVPair), 0, make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 	for i := 0; i < len(seBucket.SegKeys); i++ {
 		bucket.merkleTrees.Store(seBucket.SegKeys[i], mht.DummyMerkleTree)
 	}

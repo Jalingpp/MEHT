@@ -168,7 +168,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 	//获取当前KV插入的bucket
 	for {
 		if bucketDelegationCode_ == CLIENT && *timestamp == waitTimestamp { //Client等待Delegate完成插入，此处使用时间戳可以避免ht的读写冲突
-			continue
+			//continue
 		}
 		meht.seh.latch.RLock()
 		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket

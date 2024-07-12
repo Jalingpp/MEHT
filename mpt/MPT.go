@@ -572,7 +572,11 @@ func (mpt *MPT) RecursiveQueryFullNode(key string, p int, level int, cNode *Full
 			return "", &MPTProof{false, level, []*ProofElement{proofElement}}
 		}
 	}
+
 	//如果当前FullNode的children中没有对应的key[p]，则构造不存在证明返回
+	if util.ByteToHexIndex(key[p]) == -1 {
+		return "", &MPTProof{false, level, []*ProofElement{proofElement}}
+	}
 	cNode.childLatch[util.ByteToHexIndex(key[p])].RLock()
 	defer cNode.childLatch[util.ByteToHexIndex(key[p])].RUnlock()
 	childNodeP := cNode.GetChildInFullNode(util.ByteToHexIndex(key[p]), db, mpt.cache)

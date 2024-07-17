@@ -3,7 +3,7 @@ if [ -z $1 ]; then
 else
     round=$1
 fi
-siModes=(meht mpt)
+siModes=(meht mpt mbt)
 U1=Synthesis_U1
 U1Num=1000000
 U2=Synthesis_U2

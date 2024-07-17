@@ -204,7 +204,7 @@ func main() {
 
 			//统计各阶段的延迟
 			PhaseLatency.CompPhaseLatency() //add0126 for phase latency
-			
+
 			util.WriteResultToFile("data/qresult"+siMode, argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
 				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+

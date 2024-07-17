@@ -3,7 +3,7 @@ if [ -z $1 ]; then
 else
     round=$1
 fi
-siModes=(mbt)
+siModes=(meht mpt)
 U1=Synthesis_U1
 U1Num=1000000
 U2=Synthesis_U2
@@ -34,22 +34,22 @@ for siMode in ${siModes[*]};do
             sleep 1
             rm -rf data/levelDB
             sleep 1
-            # go run $pure_insertion_file $siMode $U2Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U2
-            # sleep 1
-            # rm -rf data/levelDB
-            # sleep 1
-            # go run $insertion_and_query_file $siMode $U4Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U4
-            # sleep 1
-            # rm -rf data/levelDB
-            # sleep 1
+            go run $pure_insertion_file $siMode $U2Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U2
+            sleep 1
+            rm -rf data/levelDB
+            sleep 1
+            go run $insertion_and_query_file $siMode $U4Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U4
+            sleep 1
+            rm -rf data/levelDB
+            sleep 1
             go run $insertion_and_query_file $siMode $U5Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U5
             sleep 1
             rm -rf data/levelDB
-            # sleep 1
-            # go run $insertion_and_query_file $siMode $U6Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U6
-            # sleep 1
-            # rm -rf data/levelDB
-            # sleep 1
+            sleep 1
+            go run $insertion_and_query_file $siMode $U6Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U6
+            sleep 1
+            rm -rf data/levelDB
+            sleep 1
         done
     done
 done

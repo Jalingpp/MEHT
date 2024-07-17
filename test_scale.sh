@@ -3,7 +3,7 @@ if [ -z $1 ]; then
 else
     round=$1
 fi
-siModes=(meht mbt mpt)
+siModes=(mpt)
 U7=(Synthesis_U7_100W Synthesis_U7_150W Synthesis_U7_200W Synthesis_U7_250W Synthesis_U7_300W)
 U7Num=(1000000 1500000 2000000 2500000 3000000)
 U8Insert=(Synthesis_U8_Insert100W Synthesis_U8_Insert150W Synthesis_U8_Insert200W Synthesis_U8_Insert250W Synthesis_U8_Insert300W)
@@ -29,12 +29,12 @@ for siMode in ${siModes[*]};do
             sleep 1
         done
 
-        # for ((i=0;i<${#U8Insert[@]};++i)); do
-        #     go run $pure_insertion_file $siMode ${U8Num[${i}]} 32 $batch_size $mbtBN $mehtBC $mehtBS ${U8Insert[${i}]}
-        #     sleep 1
-        #     go run $pure_query_file $siMode ${U8Num[${i}]} 32 $mbtBN $mehtBC $mehtBS ${U8Query[${i}]}
-        #     rm -rf data/levelDB
-        #     sleep 1
-        # done
+        for ((i=0;i<${#U8Insert[@]};++i)); do
+            go run $pure_insertion_file $siMode ${U8Num[${i}]} 32 $batch_size $mbtBN $mehtBC $mehtBS ${U8Insert[${i}]}
+            sleep 1
+            go run $pure_query_file $siMode ${U8Num[${i}]} 32 $mbtBN $mehtBC $mehtBS ${U8Query[${i}]}
+            rm -rf data/levelDB
+            sleep 1
+        done
     done
 done

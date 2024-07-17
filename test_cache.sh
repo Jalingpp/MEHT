@@ -23,13 +23,7 @@ pure_insertion_file="test_insertion.go"
 for ((i=0;i<$round;++i)); do
     go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
     sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryBeforeCacheS1$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryBeforeCacheS1$i$siMode
-    sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S1
-    sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryAfterCacheS1$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryAfterCacheS1$i$siMode
     sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S1
     sleep 1
@@ -38,13 +32,7 @@ for ((i=0;i<$round;++i)); do
 
     go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
     sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryBeforeCacheS2$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryBeforeCacheS2$i$siMode
-    sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S2
-    sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryAfterCacheS2$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryAfterCacheS2$i$siMode
     sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S2
     sleep 1
@@ -53,13 +41,7 @@ for ((i=0;i<$round;++i)); do
 
     go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
     sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryBeforeCacheS3$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryBeforeCacheS3$i$siMode
-    sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S3
-    sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryAfterCacheS3$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryAfterCacheS3$i$siMode
     sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S3
     sleep 1
@@ -68,13 +50,7 @@ for ((i=0;i<$round;++i)); do
 
     go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
     sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryBeforeCacheS4$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryBeforeCacheS4$i$siMode
-    sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S4
-    sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryAfterCacheS4$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryAfterCacheS4$i$siMode
     sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S4
     sleep 1
@@ -82,14 +58,8 @@ for ((i=0;i<$round;++i)); do
     sleep 1
 
     go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
-    sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryBeforeCacheS5$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryBeforeCacheS5$i$siMode
     sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S5
-    sleep 1
-    du -sh data/levelDB/SecondaryDB${U1Num}$siMode >> data/U7dbsizeSecondaryAfterCacheS5$i$siMode
-    du -sh data/levelDB/PrimaryDB${U1Num}$siMode >> data/U7dbsizePrimaryAfterCacheS5$i$siMode
     sleep 1
     go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S5
     sleep 1

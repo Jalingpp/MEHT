@@ -165,11 +165,17 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
 				for m := range cNode.toDelMap {
 					if len(util.CommPrefix(m, newLeaf.prefix)) == len(newLeaf.prefix) { //如果newLeaf的前缀是m的前缀，m的插入一定会走到newLeaf，将m的删除记录移动到newLeaf上
+						if _, ok := newLeaf.toDelMap[m]; !ok {
+							newLeaf.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+						}
 						for n := range cNode.toDelMap[m] {
 							newLeaf.toDelMap[m][n] = cNode.toDelMap[m][n]
 						}
 						delete(cNode.toDelMap, m)
 					} else { //否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
+						if _, ok := newExtension.toDelMap[m]; !ok {
+							newExtension.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+						}
 						for n := range cNode.toDelMap[m] {
 							newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
 						}
@@ -190,6 +196,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				//更新当前节点的prefix和suffix，nodeHash不变
 				cNode.prefix = cNode.prefix + cNode.suffix[0:len(comPrefix)+1]
 				cNode.suffix = cNode.suffix[len(comPrefix)+1:]
+				cNode.UpdateShortNodeHash(db, mpt.cache)
 				//新建一个FullNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
@@ -200,6 +207,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 					//如果cNode新前缀是m的前缀，m的插入一定会走到cNode，将m的删除记录移动到cNode上
 					//否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
 					if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) {
+						if _, ok := newExtension.toDelMap[m]; !ok {
+							newExtension.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+						}
 						for n := range cNode.toDelMap[m] {
 							newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
 						}
@@ -213,6 +223,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				//更新当前节点的prefix和suffix，nodeHash不变
 				cNode.prefix = cNode.prefix + cNode.suffix[0:len(comPrefix)+1]
 				cNode.suffix = cNode.suffix[len(comPrefix)+1:]
+				cNode.UpdateShortNodeHash(db, mpt.cache)
 				//创建一个BranchNode
 				var children [16]*ShortNode
 				children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
@@ -222,11 +233,17 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				newExtension := NewShortNode(prefix, false, comPrefix, newBranch, nil, db, mpt.cache)
 				for m := range cNode.toDelMap {
 					if len(util.CommPrefix(m, leafNode.prefix)) == len(leafNode.prefix) { //如果leafNode的前缀是m的前缀，m的插入一定会走到leafNode，将m的删除记录移动到leafNode上
+						if _, ok := leafNode.toDelMap[m]; !ok {
+							leafNode.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+						}
 						for n := range cNode.toDelMap[m] {
 							leafNode.toDelMap[m][n] = cNode.toDelMap[m][n]
 						}
 						delete(cNode.toDelMap, m)
 					} else if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) { //如果cNode前缀不是m前缀，m的插入只会走到newExtension，因此将m的删除记录移动到newExtension上
+						if _, ok := newExtension.toDelMap[m]; !ok {
+							newExtension.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+						}
 						for n := range cNode.toDelMap[m] {
 							newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
 						}
@@ -255,6 +272,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			//当前节点的nodeHash不受影响，因为前后缀的拼接总是一样的
 			cNode.prefix = cNode.prefix + cNode.suffix[0:len(commPrefix)+1]
 			cNode.suffix = cNode.suffix[len(commPrefix)+1:] //当前节点在除去comPrefix后一定还有字节
+			cNode.UpdateShortNodeHash(db, mpt.cache)
 			//新建一个FullNode，包含当前节点和value
 			var children [16]*ShortNode
 			children[util.ByteToHexIndex(cNode.prefix[len(cNode.prefix)-1])] = cNode
@@ -267,6 +285,9 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 				//如果cNode新前缀是m的前缀，m的插入一定会走到cNode，将m的删除记录移动到cNode上
 				//否则不知道当前prefix+suffix与m的关系，但是m的插入一定会走到newExtension，因此将m的删除记录移动到newExtension上
 				if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) {
+					if _, ok := newExtension.toDelMap[m]; !ok {
+						newExtension.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+					}
 					for n := range cNode.toDelMap[m] {
 						newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
 					}
@@ -279,6 +300,7 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			//更新当前节点的prefix和suffix，但是nodeHash不受影响，因为前后缀的拼接总是一样的
 			cNode.prefix = cNode.prefix + cNode.suffix[0:len(commPrefix)+1]
 			cNode.suffix = cNode.suffix[len(commPrefix)+1:]
+			cNode.UpdateShortNodeHash(db, mpt.cache)
 			//新建一个LeafNode
 			newLeaf := NewShortNode(prefix+suffix[0:len(commPrefix)+1], true, suffix[len(commPrefix)+1:], nil, value, db, mpt.cache)
 			//创建一个BranchNode
@@ -292,11 +314,17 @@ func (mpt *MPT) RecursiveInsertShortNode(prefix string, suffix string, value []b
 			newExtension.isDirty = cNode.isDirty
 			for m := range cNode.toDelMap {
 				if len(util.CommPrefix(m, newLeaf.prefix)) == len(newLeaf.prefix) { //如果leafNode的前缀是m的前缀，m的插入一定会走到leafNode，将m的删除记录移动到leafNode上
+					if _, ok := newLeaf.toDelMap[m]; !ok {
+						newLeaf.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+					}
 					for n := range cNode.toDelMap[m] {
 						newLeaf.toDelMap[m][n] = cNode.toDelMap[m][n]
 					}
 					delete(cNode.toDelMap, m)
 				} else if len(util.CommPrefix(m, cNode.prefix)) != len(cNode.prefix) { //如果cNode前缀不是m前缀，m的插入只会走到newExtension，因此将m的删除记录移动到newExtension上
+					if _, ok := newExtension.toDelMap[m]; !ok {
+						newExtension.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+					}
 					for n := range cNode.toDelMap[m] {
 						newExtension.toDelMap[m][n] = cNode.toDelMap[m][n]
 					}
@@ -386,6 +414,9 @@ func (mpt *MPT) RecursiveInsertFullNode(prefix string, suffix string, value []by
 			childNode_ = NewShortNode(prefix+suffix[:1], true, suffix[1:], nil, value, db, mpt.cache)
 			for m := range cNode.toDelMap {
 				if len(util.CommPrefix(m, childNode_.prefix)) == len(childNode_.prefix) { //如果childNode_的前缀是m的前缀，m的插入一定会走到childNode_，将m的删除记录移动到childNode_上
+					if _, ok := childNode_.toDelMap[m]; !ok {
+						childNode_.toDelMap[m] = make(map[string]int, len(cNode.toDelMap[m]))
+					}
 					for n := range cNode.toDelMap[m] {
 						childNode_.toDelMap[m][n] = cNode.toDelMap[m][n]
 					}

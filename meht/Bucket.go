@@ -455,8 +455,8 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 		buckets = append(buckets, newBucket)
 	}
 	//获取原bucket中所有数据对象
-	for _, kvps := range mMap {
-		for _, kvp := range kvps {
+	for _, kvPs := range mMap {
+		for _, kvp := range kvPs {
 			//获取key的倒数第ld位
 			//将数据对象插入到对应的bucket中
 			buckets[util.StringToBucketKeyIdxWithRdx(kvp.GetKey(), b.ld, b.rdx)].Insert(kvp, db, cache)
@@ -464,8 +464,16 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	}
 	//将原bucket中待删除的数据对象插入到新的rdx个bucket中
 	for key, value := range bToDelMap {
-		buckets[util.StringToBucketKeyIdxWithRdx(key, b.ld, b.rdx)].toDelMap[key] = value
+		idx := util.StringToBucketKeyIdxWithRdx(key, b.ld, b.rdx)
+		if _, ok := buckets[idx].toDelMap[key]; !ok {
+			buckets[idx].toDelMap[key] = make(map[string]int, len(buckets[idx].toDelMap[key]))
+		}
+		for k, v := range value {
+			buckets[idx].toDelMap[key][k] = v
+		}
+		delete(bToDelMap, key)
 	}
+	bToDelMap = nil
 	return buckets
 }
 

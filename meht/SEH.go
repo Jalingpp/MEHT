@@ -65,6 +65,24 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	return ret
 }
 
+func (seh *SEH) GetBucketByKeyCon(key string) string {
+	stride := util.ComputeStrideByBase(seh.rdx)
+	if len(key) < seh.gd {
+		key = strings.Repeat("0", seh.gd*stride-len(key)) + key
+	}
+	in := make(chan string)
+	for i := 0; i < len(key)/stride; i++ {
+		go func(i int) {
+			key_ := key[:i*stride]
+			_, ok := seh.ht.Load(key_)
+			if ok {
+				in <- key_
+			}
+		}(i)
+	}
+	return <-in
+}
+
 // GetBucketByKey GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
@@ -72,12 +90,14 @@ func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{})
 		return seh.GetBucket("", db, cache)
 	}
 	var bKey string
-	if len(key) >= seh.gd {
-		bKey = key[len(key)-seh.gd*util.ComputeStrideByBase(seh.rdx):]
+	e := seh.gd * util.ComputeStrideByBase(seh.rdx)
+	if len(key) >= e {
+		bKey = key[len(key)-e:]
 	} else {
-		bKey = strings.Repeat("0", seh.gd*util.ComputeStrideByBase(seh.rdx)-len(key)) + key
+		bKey = strings.Repeat("0", e-len(key)) + key
 	}
 	return seh.GetBucket(bKey, db, cache)
+	//return seh.GetBucket(seh.GetBucketByKeyCon(key), db, cache)
 }
 
 // GetGD returns the global depth of the SEH
@@ -107,7 +127,7 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 }
 
 // GetProof returns the proof of the key-value pair with the given key
-func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, []byte, *mht.MHTProof) {
+func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, [32]byte, *mht.MHTProof) {
 	seh.latch.RLock()
 	bucket := seh.GetBucketByKey(key, db, cache)
 	seh.latch.RUnlock()
@@ -137,7 +157,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 	seh.latch.RUnlock()
 	//即使要删除的值在辅助索引上还没有来得及插入，也不会影响删除操作，因为删除操作只需要找到桶并记录这一次删除操作即可
 	//后续要删除的值也一定会先经过这个桶去插入，不会说延迟删除的桶和即将插入的桶不会有交集，但是桶分裂时要将删除标记传递下去，保证延后的需删除值在插入时一定会在待插入桶找到删除标记
-	if bucket.latch.TryLock() {
+	if bucket != nil && bucket.latch.TryLock() {
 		seh.latch.RLock()
 		bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
 		seh.latch.RUnlock()
@@ -145,6 +165,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			bucket.latch.Unlock()
 			return nil, FAILED, nil, 0
 		}
+		bucket.PendingNum = 0
 		var bucketSs [][]*Bucket
 		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
 		bucket.DelegationLatch.Lock()
@@ -193,10 +214,24 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			}
 		}
 		bucket.latchTimestamp = time.Now().Unix()
-		bucket.DelegationLatch.Unlock()      // 允许其他线程委托自己插入
-		bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
+		delegationListCopy := make([]util.KVPair, len(bucket.DelegationList))
+		idx := 0
+		for _, v := range bucket.DelegationList {
+			delegationListCopy[idx] = v
+			idx++
+		}
+		// 先计算PendingNum再清空DelegationList
+		// 保证其他线程尝试委托数据时计算PendingNum+len(DelegationList)的数目只会多算不会少算
+		// 这样就不会出现实际桶已经满了但是还有线程成功在清空后的DelegationList里委托数据的情况
+		bucket.PendingNum = len(bucket.DelegationList)
+		bucket.DelegationList = nil
+		bucket.DelegationList = make(map[string]util.KVPair)
+		bucket.DelegationLatch.Unlock() // 允许其他线程委托自己插入
+		//bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
 		if bucket.number < bucket.capacity { // 由于插入数目一定不引起桶分裂，顶多插满，因此最后插完的桶就是当前桶
-			for _, kvp := range bucket.DelegationList {
+			//fmt.Printf("%p\t", bucket)
+			//fmt.Println("No Split Occur when bucket.number < bucket.capacity: ", bucket.number, " ", bucket.PendingNum, " ", bucket.capacity)
+			for _, kvp := range delegationListCopy {
 				bucket.Insert(kvp, db, cache)
 			}
 			bucket.UpdateBucketToDB(db, cache) // 更新桶
@@ -206,6 +241,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			if len(bucketSs[0]) == 1 {
 				bucketSs[0][0].UpdateBucketToDB(db, cache) // 更新桶
 				bucketSs = [][]*Bucket{{bucket}}
+				//fmt.Println("No Split Occur")
 			} else {
 				var newLd int
 				ld1 := bucketSs[0][0].GetLD()
@@ -242,38 +278,47 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				}
 			}
 		}
-		bucket.DelegationList = nil
-		bucket.DelegationList = make(map[string]util.KVPair)
+		//bucket.DelegationList = nil
+		//bucket.DelegationList = make(map[string]util.KVPair)
 		bucket.latchTimestamp = 0
-		bucket.DelegationLatch.Unlock()
+		//bucket.DelegationLatch.Unlock()
 		// 此处桶锁不释放，会在MGTGrow的地方释放，因为此处桶锁释放后，其他线程就可以插入了，而此时mgt若需要分裂则还没有更新，因此可能会出现桶插入了但是相应mgtNode不存在的问题
 		return bucketSs, DELEGATE, nil, 0
-	} else {
+	} else if bucket != nil {
 		// 成为委托者
-		if len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
+		//if len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
+		//	return nil, FAILED, nil, 0
+		//}
+		// 当发现上一个被委托者已经执行完插入操作，只剩mgtNode还在更新时，说明已经快要有下一个被委托者了，因此重做，尝试成为下一个被委托者
+		// 以此保证DelegationList一定会有一个线程去将里面的内容写入桶中
+		if bucket.latchTimestamp == 0 {
 			return nil, FAILED, nil, 0
 		}
 		for !bucket.latch.TryLock() { // 重复查看是否存在可以委托的对象
-			if len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity {
-				// 发现一定无法再委托则退出函数并重做，直到这个桶因一个线程的插入而分裂，产生新的空间
+			if len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 { // 多减去的1是留给新来的被委托人的
+				// 发现可能无法再委托则退出函数并重做，直到这个桶因一个线程的插入而分裂，产生新的空间
 				// 说不定重做以后这就是新的被委托者，毕竟桶已满就说明一定有一个获得了桶锁的线程在工作中
 				// 而这个工作线程在不久的将来就会更新完桶并释放锁，说不定你就在上一个if代码块里工作了
 				return nil, FAILED, nil, 0
 			}
-			if bucket.latchTimestamp == 0 { //等待一个委托线程准备好接受委托，准备好的意思就是它已经把自己要插入的数据加入到delegationList
+			// 等待一个委托线程准备好接受委托，准备好的意思就是它已经把自己要插入的数据加入到delegationList
+			// 否则被委托者即是获得了桶锁，但是会和委托者互相抢DelegationLatch，导致委托者无法更新自己的数据到桶中
+			if bucket.latchTimestamp == 0 {
 				continue
 			}
 			if bucket.DelegationLatch.TryLock() {
-				seh.latch.RLock()
-				//需要检查是否因为桶的分裂而导致自己的桶已经不是当前桶了，如果不是则重做
+				//seh.latch.RLock()
+				//// 需要检查是否因为桶的分裂而导致自己的桶已经不是当前桶了，如果不是则重做
+				//// 但是不需要对seh上读锁，因为能到这段代码就说明虽然桶在插入，但是明显不会插满
+				//// 那么桶就不会分裂，不会分裂seh就不会变，因此不需要对seh上读锁
 				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
-				if bucket_ != bucket || len(bucket.DelegationList)+bucket.number >= bucket.capacity || bucket.number == bucket.capacity || bucket.latchTimestamp == 0 {
+				if bucket_ != bucket || len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					bucket.DelegationLatch.Unlock()
-					seh.latch.RUnlock()
+					//seh.latch.RUnlock()
 					return nil, FAILED, nil, 0
 				}
-				seh.latch.RUnlock()
+				////seh.latch.RUnlock()
 				if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
 					newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
 					if isDelete {
@@ -312,7 +357,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 						}
 					}
 				}
-				// 成功委托
+				//// 成功委托
 				bucket.DelegationLatch.Unlock()
 				return nil, CLIENT, &bucket.latchTimestamp, bucket.latchTimestamp
 			}
@@ -321,6 +366,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		bucket.latch.Unlock()
 		return nil, FAILED, nil, 0
 	}
+	return nil, FAILED, nil, 0
 }
 
 // PrintSEH 打印SEH

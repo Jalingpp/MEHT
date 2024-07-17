@@ -9,6 +9,7 @@ import (
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"sync"
+	"time"
 )
 
 type Bucket struct {
@@ -23,6 +24,7 @@ type Bucket struct {
 	merkleTrees     sync.Map // merkle trees: one for each segment map[string]*mht.MerkleTree
 	latchTimestamp  int64
 	DelegationList  map[string]util.KVPair    // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
+	PendingNum      int                       // 委托插入的数据数量，用于新到来的委托方判断是否可以在被委托者正在进行桶插入操作时向DelegationList追加待插入数据，只有被委托者可以修改该字段
 	toDelMap        map[string]map[string]int // 用于记录哪些数据需要被延迟删除
 	latch           sync.RWMutex              //桶粒度锁
 	segLatch        sync.RWMutex              //段粒度锁
@@ -35,8 +37,8 @@ var dummyBucket = &Bucket{ld: -1, rdx: -1, capacity: -1, segNum: -1}
 // NewBucket 新建一个Bucket
 func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{nil, ld, rdx, capacity, 0, segNum,
-		sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair), make(map[string]map[string]int),
+		sync.Map{}, sync.Map{}, sync.Map{}, time.Now().Unix(),
+		make(map[string]util.KVPair), 0, make(map[string]map[string]int),
 		sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 }
 
@@ -485,60 +487,61 @@ func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{},
 	if index == -1 {
 		return "", segKey, isSegExist, index
 	}
-	value := b.GetSegment(segKey, db, cache)[index].GetValue()
-	return value, segKey, isSegExist, index
+	//value := b.GetSegment(segKey, db, cache)[index].GetValue()
+	//TODO Debug
+	seg := b.GetSegment(segKey, db, cache)
+	if index < len(seg) {
+		return seg[index].GetValue(), segKey, isSegExist, index
+	} else {
+		return "", segKey, isSegExist, index
+	}
 }
 
 // GetProof 给定一个key, 返回它所在segment的根哈希,存在的proof；若key不存在，判断segment是否存在：若存在，则返回此seg中所有值及其哈希，否则返回所有segKey及其segRootHash
-func (b *Bucket) GetProof(segKey string, isSegExist bool, index int, db *leveldb.DB, cache *[]interface{}) ([]byte, *mht.MHTProof) {
+func (b *Bucket) GetProof(segKey string, isSegExist bool, index int, db *leveldb.DB, cache *[]interface{}) ([32]byte, *mht.MHTProof) {
 	b.latch.RLock()
 	defer b.latch.RUnlock()
 	segHash := b.GetMerkleTree(segKey, db, cache) // 为bucket加读锁后树最多更新一次
 	if index != -1 {
-		segHashRoot := segHash.GetRootHash()
-		proof := segHash.GetProof(index)
-		return segHashRoot, proof
+		return segHash.GetRootHash(), segHash.GetProof(index)
 	} else if isSegExist {
 		//segment存在,但key不存在,返回此seg中所有值及其哈希
 		kvPairs := b.GetSegment(segKey, db, cache)
-		values := make([]string, 0)
+		values := make([]string, len(kvPairs))
 		for i := 0; i < len(kvPairs); i++ {
-			values = append(values, kvPairs[i].GetValue())
+			values[i] = kvPairs[i].GetValue()
 		}
-		segHashRoot := segHash.GetRootHash()
-		return segHashRoot, mht.NewMHTProof(false, nil, true, values, nil, nil)
+		return segHash.GetRootHash(), mht.NewMHTProof(false, nil, true, values, nil, nil)
 	} else {
 		//segment不存在,返回所有segKey及其segRootHash
 		segKeys := make([]string, 0)
-		segRootHashes := make([][]byte, 0)
+		segRootHashes := make([][32]byte, 0)
 		b.merkleTrees.Range(func(key, value interface{}) bool {
 			segKeys = append(segKeys, key.(string))
 			segRootHashes = append(segRootHashes, b.GetMerkleTree(key.(string), db, cache).GetRootHash())
 			return true
 		})
-		return nil, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)
+		return [32]byte{}, mht.NewMHTProof(false, nil, false, nil, segKeys, segRootHashes)
 	}
 }
 
 // ComputeSegHashRoot 给定value和segProof，返回由它们计算得到的segHashRoot
-func ComputeSegHashRoot(value string, proofPairs []mht.ProofPair) []byte {
+func ComputeSegHashRoot(value string, proofPairs []mht.ProofPair) [32]byte {
 	fmt.Printf("value: %s\n", value)
 	fmt.Printf("value byte:%x\n", []byte(value))
 	//对value求hash
-	valueHash := sha256.Sum256([]byte(value))
-	data := valueHash[:]
+	data := sha256.Sum256([]byte(value))
 	//逐层计算segHashRoot
 	for i := 0; i < len(proofPairs); i++ {
 		parentHash := make([]byte, 0)
 		if proofPairs[i].Index == 0 {
-			parentHash = append(proofPairs[i].Hash, data...)
+			parentHash = append(proofPairs[i].Hash[:], data[:]...)
 		} else {
 			fmt.Printf("data: %x\n", data)
 			fmt.Printf("proofHash:%x\n", proofPairs[i].Hash)
-			parentHash = append(data, proofPairs[i].Hash...)
+			parentHash = append(data[:], proofPairs[i].Hash[:]...)
 		}
-		hash := sha256.Sum256(parentHash)
-		data = hash[:]
+		data = sha256.Sum256(parentHash)
 	}
 	return data
 }
@@ -659,8 +662,8 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 		return nil, err
 	}
 	bucket := &Bucket{seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
-		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, 0,
-		make(map[string]util.KVPair), make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
+		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, time.Now().Unix(),
+		make(map[string]util.KVPair), 0, make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 	for i := 0; i < len(seBucket.SegKeys); i++ {
 		bucket.merkleTrees.Store(seBucket.SegKeys[i], mht.DummyMerkleTree)
 	}

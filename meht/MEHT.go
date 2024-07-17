@@ -23,7 +23,7 @@ type MEHT struct {
 
 	seh     *SEH //the key of seh in leveldb is always name+"seh"
 	mgt     *MGT
-	mgtHash []byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
+	mgtHash [32]byte // hash of the mgt, equals to the hash of the mgt root node hash, is used for index mgt in leveldb
 	//mgtNodeCache         *lru.Cache[string, *MGTNode]
 	//bucketCache          *lru.Cache[string, *Bucket]
 	//segmentCache         *lru.Cache[string, *[]util.KVPair]
@@ -52,29 +52,29 @@ func NewMEHT(rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC in
 		})
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
-		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), nil,
+		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), [32]byte{},
 			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	} else {
-		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), nil,
+		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), [32]byte{},
 			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	}
 }
 
-func (meht *MEHT) GetMgtHash() []byte {
+func (meht *MEHT) GetMgtHash() [32]byte {
 	return meht.mgtHash
 }
 
 // UpdateMEHTToDB 更新MEHT到db
-func (meht *MEHT) UpdateMEHTToDB(newRootHash []byte, db *leveldb.DB) {
-	newHash := sha256.Sum256(newRootHash)
+func (meht *MEHT) UpdateMEHTToDB(newRootHash [32]byte, db *leveldb.DB) {
+	newHash := sha256.Sum256(newRootHash[:])
 	meht.latch.Lock()
-	oldHash := sha256.Sum256(meht.mgtHash)
-	meht.mgtHash = make([]byte, len(newHash))
-	copy(meht.mgtHash, newHash[:])
+	oldHash := sha256.Sum256(meht.mgtHash[:])
+	meht.mgtHash = [32]byte{}
+	copy(meht.mgtHash[:], newHash[:])
 	if err := db.Delete(oldHash[:], nil); err != nil {
 		panic(err)
 	}
-	newHash = sha256.Sum256(meht.mgtHash)
+	newHash = sha256.Sum256(meht.mgtHash[:])
 	meMEHT := SerializeMEHT(meht)
 	meht.latch.Unlock()
 	if err := db.Put(newHash[:], meMEHT, nil); err != nil {
@@ -111,7 +111,7 @@ func (meht *MEHT) GetMGT(db *leveldb.DB) *MGT {
 			meht.mgtUpdateLatch.Unlock()
 			return meht.mgt
 		}
-		if mgtString, err := db.Get(meht.mgtHash, nil); err == nil {
+		if mgtString, err := db.Get(meht.mgtHash[:], nil); err == nil {
 			mgt, _ := DeserializeMGT(mgtString)
 			meht.mgt = mgt
 		}
@@ -169,7 +169,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 	//获取当前KV插入的bucket
 	for {
 		if bucketDelegationCode_ == CLIENT && *timestamp == waitTimestamp { //Client等待Delegate完成插入，此处使用时间戳可以避免ht的读写冲突
-			continue
+			//continue
 		}
 		meht.seh.latch.RLock()
 		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
@@ -204,9 +204,9 @@ func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
 }
 
 type MEHTProof struct {
-	segRootHash []byte
+	segRootHash [32]byte
 	mhtProof    *mht.MHTProof
-	mgtRootHash []byte
+	mgtRootHash [32]byte
 	mgtProof    []MGTProof
 }
 
@@ -278,7 +278,7 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	//验证segProof
 	//计算segRootHash
 	//如果key不存在，则判断segment是否存在，存在则根据segment中所有的值构建segment的默克尔树根
-	var segRootHash []byte
+	var segRootHash [32]byte
 	if !mehtProof.mhtProof.GetIsExist() {
 		if mehtProof.mhtProof.GetIsSegExist() {
 			//key不存在，segment存在
@@ -289,7 +289,7 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 			}
 			mht_ := mht.NewMerkleTree(data)
 			segRootHash = mht_.GetRootHash()
-			if !bytes.Equal(segRootHash, mehtProof.segRootHash) {
+			if !bytes.Equal(segRootHash[:], mehtProof.segRootHash[:]) {
 				//fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mht.GetRootHash()))
 				return false
 			}
@@ -307,13 +307,13 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 							return false
 						}
 					}
-					if bytes.Equal(segRootHashes[i], mehtProof.mgtProof[j].dataHash) {
+					if bytes.Equal(segRootHashes[i][:], mehtProof.mgtProof[j].dataHash[:]) {
 						isIn = true
 					}
 				}
 			}
 			if len(segRootHashes) == 0 {
-				segRootHash = nil
+				segRootHash = [32]byte{}
 			} else {
 				segRootHash = segRootHashes[0]
 			}
@@ -321,14 +321,14 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 	} else {
 		//如果key存在，则根据key对应的value构建segment的默克尔树根
 		segRootHash = ComputeSegHashRoot(value, mehtProof.mhtProof.GetProofPairs())
-		if segRootHash == nil || !bytes.Equal(segRootHash, mehtProof.segRootHash) {
+		if segRootHash == [32]byte{} || !bytes.Equal(segRootHash[:], mehtProof.segRootHash[:]) {
 			//fmt.Printf("segRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(segRootHash))
 			return false
 		}
 	}
 	//计算mgtRootHash
 	mgtRootHash := ComputeMGTRootHash(segRootHash, mehtProof.mgtProof)
-	if mgtRootHash == nil || !bytes.Equal(mgtRootHash, mehtProof.mgtRootHash) {
+	if mgtRootHash == [32]byte{} || !bytes.Equal(mgtRootHash[:], mehtProof.mgtRootHash[:]) {
 		//fmt.Printf("mgtRootHash=%s计算错误,验证不通过\n", hex.EncodeToString(mgtRootHash))
 		return false
 	}
@@ -338,19 +338,19 @@ func VerifyQueryResult(value string, mehtProof *MEHTProof) bool {
 // PrintMEHTProof 打印MEHTProof
 func (mehtProof *MEHTProof) PrintMEHTProof() {
 	fmt.Printf("打印MEHTProof-------------------------------------------------------------------------------------------\n")
-	fmt.Printf("segRootHash=%s\n", hex.EncodeToString(mehtProof.segRootHash))
+	fmt.Printf("segRootHash=%s\n", hex.EncodeToString(mehtProof.segRootHash[:]))
 	fmt.Printf("mhtProof:\n")
 	PrintMHTProof(mehtProof.mhtProof)
-	fmt.Printf("mgtRootHash=%s\n", hex.EncodeToString(mehtProof.mgtRootHash))
+	fmt.Printf("mgtRootHash=%s\n", hex.EncodeToString(mehtProof.mgtRootHash[:]))
 	fmt.Printf("mgtProof:\n")
 	PrintMGTProof(mehtProof.mgtProof)
 }
 
 type SeMEHT struct {
-	Rdx     int    // radix of one bit, initial  given，key编码的进制数（基数）
-	Bc      int    // bucket capacity, initial given，每个bucket的容量
-	Bs      int    // bucket segment number, initial given，key中区分segment的位数
-	MgtHash []byte // hash of the mgt
+	Rdx     int      // radix of one bit, initial  given，key编码的进制数（基数）
+	Bc      int      // bucket capacity, initial given，每个bucket的容量
+	Bs      int      // bucket segment number, initial given，key中区分segment的位数
+	MgtHash [32]byte // hash of the mgt
 }
 
 // SerializeMEHT 序列化MEHT

@@ -9,12 +9,12 @@ type ProofElement struct {
 	level          int // level of proof
 	proofType      int // 0:Leaf node, 1:branch node
 	name           []byte
-	value          []byte   // value of leaf node or branch node
-	nextNodeHash   []byte   // hash of next node
-	childrenHashes [][]byte // children hashes of branch node
+	value          [32]byte   // value of leaf node or branch node
+	nextNodeHash   []byte     // hash of next node
+	childrenHashes [][32]byte // children hashes of branch node
 }
 
-func NewProofElement(level int, proofType int, name []byte, value []byte, nextNodeHash []byte, childrenHash [][]byte) *ProofElement {
+func NewProofElement(level int, proofType int, name []byte, value [32]byte, nextNodeHash []byte, childrenHash [][32]byte) *ProofElement {
 	return &ProofElement{level, proofType, name, value, nextNodeHash, childrenHash}
 }
 
@@ -33,7 +33,7 @@ func (proofElement *ProofElement) PrintProofElement() {
 	} else {
 		fmt.Println("level=", proofElement.level, ", proofType=branch node, value=", proofElement.value, ".")
 		for i, hash := range proofElement.childrenHashes {
-			if hash != nil {
+			if hash != [32]byte{} {
 				fmt.Println("[", i, "]", hash)
 			}
 		}

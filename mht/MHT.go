@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 // MerkleNode 表示默克尔树的节点
@@ -13,7 +12,7 @@ type MerkleNode struct {
 	Left   *MerkleNode
 	Right  *MerkleNode
 	Parent *MerkleNode
-	Data   []byte
+	Data   [32]byte
 }
 
 // MerkleTree 表示默克尔树
@@ -27,20 +26,18 @@ var DummyMerkleTree = &MerkleTree{nil, nil, nil}
 
 // NewMerkleNode 创建一个新的默克尔树节点
 func NewMerkleNode(left, right *MerkleNode, data []byte) *MerkleNode {
-	node := new(MerkleNode)
+	node := &MerkleNode{nil, nil, nil, [32]byte{}}
 	if left == nil && right == nil {
-		hash := sha256.Sum256(data)
-		node.Data = hash[:]
+		node.Data = sha256.Sum256(data)
 	} else {
 		prevHashes := make([]byte, 0)
 		if left != nil {
-			prevHashes = append(prevHashes, left.Data...)
+			prevHashes = append(prevHashes, left.Data[:]...)
 		}
 		if right != nil {
-			prevHashes = append(prevHashes, right.Data...)
+			prevHashes = append(prevHashes, right.Data[:]...)
 		}
-		hash := sha256.Sum256(prevHashes)
-		node.Data = hash[:]
+		node.Data = sha256.Sum256(prevHashes)
 	}
 	node.Left = left
 	node.Right = right
@@ -95,16 +92,15 @@ func (tree *MerkleTree) GetRoot() *MerkleNode {
 }
 
 // GetRootHash 获取默克尔树的根节点的哈希值
-func (tree *MerkleTree) GetRootHash() []byte {
+func (tree *MerkleTree) GetRootHash() [32]byte {
 	return tree.Root.Data
 }
 
 // UpdateRoot 修改data中第i个数据后更新默克尔树的根节点,返回新的根节点哈希
-func (tree *MerkleTree) UpdateRoot(i int, data []byte) []byte {
+func (tree *MerkleTree) UpdateRoot(i int, data []byte) [32]byte {
 	tree.DataList[i] = data
 	//修改叶子节点
-	hash := sha256.Sum256(data)
-	tree.LeafNodes[i].Data = hash[:]
+	tree.LeafNodes[i].Data = sha256.Sum256(data)
 	//递归修改父节点
 	updateParentData(tree.LeafNodes[i].Parent)
 	return tree.Root.Data
@@ -117,13 +113,12 @@ func updateParentData(node *MerkleNode) {
 	}
 	prevHashes := make([]byte, 0)
 	if node.Left != nil {
-		prevHashes = append(prevHashes, node.Left.Data...)
+		prevHashes = append(prevHashes, node.Left.Data[:]...)
 	}
 	if node.Right != nil {
-		prevHashes = append(prevHashes, node.Right.Data...)
+		prevHashes = append(prevHashes, node.Right.Data[:]...)
 	}
-	hash := sha256.Sum256(prevHashes)
-	node.Data = hash[:]
+	node.Data = sha256.Sum256(prevHashes)
 	updateParentData(node.Parent)
 }
 
@@ -139,7 +134,7 @@ func (node *MerkleNode) PrintNode() {
 	}
 	node.Left.PrintNode()
 	node.Right.PrintNode()
-	fmt.Printf("%s\n", hex.EncodeToString(node.Data))
+	fmt.Printf("%s\n", hex.EncodeToString(node.Data[:]))
 }
 
 // GetProof 返回某个叶子节点的默克尔证明
@@ -158,7 +153,7 @@ func (tree *MerkleTree) GetProof(i int) *MHTProof {
 }
 
 // InsertData 插入一个data,更新默克尔树,返回新的根节点哈希
-func (tree *MerkleTree) InsertData(data []byte) []byte {
+func (tree *MerkleTree) InsertData(data []byte) [32]byte {
 	if tree.DataList == nil {
 		tree.DataList = make([][]byte, 0)
 	}
@@ -170,21 +165,24 @@ func (tree *MerkleTree) InsertData(data []byte) []byte {
 	return tree.Root.Data
 }
 
+//	type SeMHT struct {
+//		DataList string // data list of the merkle tree, is used for reconstructing the merkle tree
+//	}
 type SeMHT struct {
-	DataList string // data list of the merkle tree, is used for reconstructing the merkle tree
+	DataList [][]byte
 }
 
 // SerializeMHT 序列化默克尔树
 func SerializeMHT(mht *MerkleTree) []byte {
-	dataListString := ""
-	for i := 0; i < len(mht.DataList); i++ {
-		data := hex.EncodeToString(mht.DataList[i])
-		dataListString += data
-		if i < len(mht.DataList)-1 {
-			dataListString += ","
-		}
-	}
-	seMHT := &SeMHT{dataListString}
+	//dataListString := ""
+	//for i := 0; i < len(mht.DataList); i++ {
+	//	data := hex.EncodeToString(mht.DataList[i])
+	//	dataListString += data
+	//	if i < len(mht.DataList)-1 {
+	//		dataListString += ","
+	//	}
+	//}
+	seMHT := &SeMHT{mht.DataList}
 	if jsonMHT, err := json.Marshal(seMHT); err != nil {
 		fmt.Printf("SerializeMHT error: %v\n", err)
 		return nil
@@ -200,12 +198,12 @@ func DeserializeMHT(data []byte) (*MerkleTree, error) {
 		fmt.Printf("DeserializeMHT error: %v\n", err)
 		return nil, err
 	}
-	dataList := make([][]byte, 0)
-	dataListStrings := strings.Split(seMHT.DataList, ",")
-	for i := 0; i < len(dataListStrings); i++ {
-		data, _ := hex.DecodeString(dataListStrings[i])
-		dataList = append(dataList, data)
-	}
-	mht := NewMerkleTree(dataList)
+	//dataList := make([][]byte, 0)
+	//dataListStrings := strings.Split(seMHT.DataList, ",")
+	//for i := 0; i < len(dataListStrings); i++ {
+	//	data, _ := hex.DecodeString(dataListStrings[i])
+	//	dataList = append(dataList, data)
+	//}
+	mht := NewMerkleTree(seMHT.DataList)
 	return mht, nil
 }

@@ -13,3 +13,15 @@ Step 2. Run test.sh to test insert and query.
 `./test.sh`
 
 Step 3. Find results in data.
+
+## Experiments Script
+
+`run.sh`: complete all experiments at once.
+`test_thread.sh`: experiments over various threads.
+`test_scale.sh`: experiments over various data scales.
+`test_cache.sh`: experiments before-after hotness adjustment.
+`test_real.sh`: experiments on NFTTrans dataset.
+`test_batchSize.sh`: experiments over various batchsize.
+`test_mehtBC.sh`: experiments over various BC of meht.
+`test_mehtBS.sh`: experiments over various BS of meht.
+`test_mbtBN.sh`: experiments over various BN of mbt.

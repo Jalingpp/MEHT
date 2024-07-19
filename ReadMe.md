@@ -8,3 +8,8 @@ Step 1. Download the source code.
 
 `git clone https://github.com/Jalingpp/MEST.git`
 
+Step 2. Run test.sh to test insert and query.
+
+`./test.sh`
+
+Step 3. Find results in data.

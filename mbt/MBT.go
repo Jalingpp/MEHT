@@ -336,12 +336,11 @@ func (mbt *MBT) MBTBatchFix(db *leveldb.DB) {
 		}
 		wG.Add(1)
 		child_ := child
-		idx := i
-		go func() {
+		go func(idx int) {
 			mbtBatchFixFoo(child_, db, mbt.cache)
 			mbt.Root.dataHashes[idx] = child_.nodeHash
 			wG.Done()
-		}()
+		}(i)
 	}
 	wG.Wait()
 	mbt.Root.UpdateMBTNodeHash(db, mbt.cache)

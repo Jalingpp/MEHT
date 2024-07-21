@@ -174,7 +174,7 @@ var sum = 0
 // QueryKVPairsByHexKeyword 根据十六进制的非主键HexKeyword查询完整的kvPair
 func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.PhaseLatency) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
-		//fmt.Println("SEDB is empty!")
+		fmt.Println("SEDB is empty!")
 		return "", nil, nil
 	}
 	//根据HexKeyword在非主键索引中查询
@@ -218,7 +218,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.Phas
 		primaryKey = pKey
 		//根据primaryKey在主键索引中查询，同时构建MEHT的查询证明
 		ch := make(chan *meht.MEHTProof)
-		go func(ch chan *meht.MEHTProof) {
+		go func(ch chan *meht.MEHTProof, pkey string, qBucket *meht.Bucket, segKey string, isSegExist bool, index int) {
 			st = time.Now() // add0126 for phase latency
 			seMEHTProof := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).GetQueryProof(qBucket, segKey, isSegExist, index, sedb.secondaryDb)
 			ch <- seMEHTProof
@@ -226,7 +226,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.Phas
 			if phaselo != nil {
 				phaselo.RecordLatencyObject("getproof", du)
 			}
-		}(ch)
+		}(ch, pKey, qBucket, segKey, isSegExist, index)
 		//根据primaryKey在主键索引中查询
 		if primaryKey == "" {
 			sum++

@@ -177,14 +177,14 @@ func (mgtNode *MGTNode) GetBucket(rdx int, name string, db *leveldb.DB, cache *[
 	if mgtNode.bucket == nil {
 		var ok bool
 		var bucket *Bucket
-		key_ := name + "bucket" + util.IntArrayToString(mgtNode.bucketKey, rdx)
+		key_ := "bucket" + name
 		if cache != nil {
 			targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
 			bucket, ok = targetCache.Get(key_)
 		}
 		if !ok {
 			if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
-				bucket, _ = DeserializeBucket(bucketString)
+				bucket, _ = DeserializeBucket(bucketString, db, cache)
 			}
 		}
 		mgtNode.bucket = bucket
@@ -440,13 +440,16 @@ func GetOldBucketKey(bucket *Bucket) []int {
 }
 
 // MGTBatchFix 对根节点的所有孩子节点做并发，调用递归函数更新脏节点
-func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
+func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}, seh *SEH) {
 	if mgt.Root == nil || !mgt.Root.isDirty {
 		return
 	}
 	wG := sync.WaitGroup{}
 	// 仅对第一层孩子节点做并发处理，减少协程数量
 	// 先通过递归到最深层，再从最深层开始往上更新脏节点
+	if mgt.Root.isLeaf {
+		delegationListFix(mgt.Root, db, cache, seh)
+	}
 	for i, child := range mgt.Root.subNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
@@ -454,7 +457,7 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		wG.Add(1)
 		child_ := child
 		go func(idx int) {
-			MGTBatchFixFoo(child_, db, cache)
+			MGTBatchFixFoo(child_, db, cache, seh)
 			mgt.Root.dataHashes[idx] = child_.nodeHash[:]
 			wG.Done()
 		}(i)
@@ -466,7 +469,7 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 		wG.Add(1)
 		child_ := child
 		go func(idx int) {
-			MGTBatchFixFoo(child_, db, cache)
+			MGTBatchFixFoo(child_, db, cache, seh)
 			mgt.Root.cachedDataHashes[idx] = child_.nodeHash[:]
 			wG.Done()
 		}(i)
@@ -478,36 +481,87 @@ func (mgt *MGT) MGTBatchFix(db *leveldb.DB, cache *[]interface{}) {
 }
 
 // MGTBatchFixFoo 递归更新脏节点
-func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}) {
+func MGTBatchFixFoo(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}, seh *SEH) {
 	if mgtNode == nil || !mgtNode.isDirty {
 		return
+	}
+	if mgtNode.isLeaf {
+		delegationListFix(mgtNode, db, cache, seh)
 	}
 	for idx, child := range mgtNode.subNodes {
 		if child == nil || !child.isDirty || child.parent != mgtNode { // child 不存在的节点一定不会是脏节点
 			continue
 		}
-		MGTBatchFixFoo(child, db, cache)
+		MGTBatchFixFoo(child, db, cache, seh)
 		mgtNode.dataHashes[idx] = child.nodeHash[:]
 	}
 	for idx, child := range mgtNode.cachedNodes {
 		if child == nil || !child.isDirty { // child 不存在的节点一定不会是脏节点
 			continue
 		}
-		MGTBatchFixFoo(child, db, cache)
+		MGTBatchFixFoo(child, db, cache, seh)
 		mgtNode.cachedDataHashes[idx] = child.nodeHash[:]
 	}
 	mgtNode.UpdateMGTNodeToDB(db, cache)
 	mgtNode.isDirty = false
 }
 
+func delegationListFix(mgtNode *MGTNode, db *leveldb.DB, cache *[]interface{}, seh *SEH) {
+	// 能进到这个mgtNode就说明这个Node是叶子节点，且经历过插入操作
+	// 对应bucket一定已经加载到内存了，无需使用GetBucket方法从磁盘读取
+	// 此函数是为了保证将bucket里DelegationList可能残余的数据追加到bucket中
+	// 由于delegate的实现逻辑保证了追加的数据量一定不会导致桶分裂，因此简单的追加即可
+	// 由于是叶子节点，因此也不会有多个线程写这个桶的问题
+	bucket := mgtNode.bucket
+	for key_, v := range bucket.DelegationList { // fix委托列表内未插入的部分
+		for val_, v1 := range v {
+			if v1 {
+				value, _, _, _ := bucket.GetValueByKey(key_, db, cache, true) //被委托方连带旧值一并更新
+				newValKvp := util.KVPair{Key: key_, Value: value}
+				if isChange := (&newValKvp).AddValue(val_); isChange {
+					bucket.Insert(newValKvp, db, cache)
+				}
+			}
+		}
+	}
+	for key_, v := range bucket.toDelMap { // fix删除列表未删除的部分，与委托列表一定是没有交集的
+		for val_, v1 := range v {
+			if v1 > 0 { // 删多次等价删一次
+				value, _, _, _ := bucket.GetValueByKey(key_, db, cache, true)
+				newValKvp := util.KVPair{Key: key_, Value: value}
+				if isChange := (&newValKvp).DelValue(val_); isChange {
+					bucket.Insert(newValKvp, db, cache)
+				}
+			}
+		}
+	}
+	bucket.DelegationList = nil
+	bucket.DelegationList = make(map[string]map[string]bool)
+	bucket.toDelMap = nil
+	bucket.toDelMap = make(map[string]map[string]int)
+	bucket.UpdateBucketToDB(db, cache)
+	////更新叶子节点的dataHashes
+	mgtNode.dataHashes = make([][]byte, 0)
+	segKeyInorder := make([]string, 0)
+	bucket.GetMerkleTrees().Range(func(key, value interface{}) bool {
+		segKeyInorder = append(segKeyInorder, key.(string))
+		return true
+	})
+	sort.Strings(segKeyInorder)
+	for _, key := range segKeyInorder {
+		rootHash := bucket.GetMerkleTree(key, db, cache).GetRootHash()
+		mgtNode.dataHashes = append(mgtNode.dataHashes, rootHash[:])
+	}
+}
+
 // MGTUpdate MGT生长,给定新的buckets,返回更新后的MGT
-func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]interface{}) {
+func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]interface{}, seh *SEH) {
 	if mgt.Root == nil {
 		return
 	}
 	// 如果newBucketSs是nil，说明是批量提交，对所有脏节点进行哈希重新计算，mgtRootHash也会被更新
 	if newBucketSs == nil {
-		mgt.MGTBatchFix(db, cache)
+		mgt.MGTBatchFix(db, cache, seh)
 		return
 	}
 	var nodePath []*MGTNode
@@ -529,7 +583,10 @@ func (mgt *MGT) MGTUpdate(newBucketSs [][]*Bucket, db *leveldb.DB, cache *[]inte
 			nodePath[0].dataHashes = append(nodePath[0].dataHashes, rootHash[:])
 		}
 		//更新叶子节点的nodeHash,并将叶子节点存入leveldb
-		nodePath[0].UpdateMGTNodeToDB(db, cache)
+		//nodePath[0].UpdateMGTNodeToDB(db, cache)
+		//由于引入delegationFix操作，必须让叶子节点在batchFix过程中被访问到
+		//因此这里不更新叶子节点的nodeHash，而是在batchFix中更新
+		nodePath[0].isDirty = true
 		//更新所有父节点的nodeHashes,并将父节点存入leveldb
 		for i := 1; i < len(nodePath); i++ {
 			if i == 1 {
@@ -593,7 +650,11 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 		newNode := NewMGTNode(nil, true, newBuckets[i], db, newBuckets[0].rdx, cache, commonLNKeyLength)
 		subNodes = append(subNodes, newNode)
 		// 新节点还是会去重新计算哈希的，这样就可以并发去重新计算节点，而不是等到batch调整的时候可能串行着去重新计算
-		newNode.UpdateMGTNodeToDB(db, cache)
+		//newNode.UpdateMGTNodeToDB(db, cache)
+		//为保证叶子节点能被batchFix走到，需要将其标记为dirty
+		//因为即使在此处发现delegationList为空，即无人委托，可能在下一秒就有人委托了
+		//因此必须要在后续batch的过程中严格检查这个节点对应的bucket的delegationList中是否还有待插入桶中的数据
+		newNode.isDirty = true
 	}
 
 	//更新hotnessList，更新叶子节点的访问频次，这一行是串行去做的
@@ -601,7 +662,9 @@ func (mgt *MGT) MGTGrow(oldBucketKey []int, nodePath []*MGTNode, newBuckets []*B
 
 	//创建新的父节点
 	newFatherNode := NewMGTNode(subNodes, false, nil, db, newBuckets[0].rdx, cache)
-	newFatherNode.UpdateMGTNodeToDB(db, cache)
+	//同样，父节点也必须标记为脏交给batchFix去处理，因此这里就不急着计算nodeHash并更新到磁盘了
+	//newFatherNode.UpdateMGTNodeToDB(db, cache)
+	newFatherNode.isDirty = true
 
 	//如果当前分裂的节点是缓存节点,则需要将其分裂出的子节点放入缓存叶子节点列表中,该节点放入缓存中间节点列表中
 	if len(oldBucketKey) >= len(nodePath) {

@@ -139,6 +139,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, false)
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketSs[0][0], db, meht.rdx, meht.cache)
+		meht.mgt.Root.isDirty = true
 		//更新mgt的根节点哈希并更新到db
 		meht.mgtHash = meht.mgt.UpdateMGTToDB(db)
 		//统计访问频次
@@ -164,11 +165,15 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 	// 要不返回需要上锁的那个桶，然后延迟释放桶锁，直到mgt更新完毕，这样子就可以从mgt粒度锁缩小至桶粒度
 	if bucketDelegationCode_ == DELEGATE {
 		//只有被委托线程需要更新mgt
-		meht.mgt.MGTUpdate(bucketSs, db, meht.cache)
+		meht.mgt.MGTUpdate(bucketSs, db, meht.cache, nil)
 	}
 	//获取当前KV插入的bucket
 	for {
 		if bucketDelegationCode_ == CLIENT && *timestamp == waitTimestamp { //Client等待Delegate完成插入，此处使用时间戳可以避免ht的读写冲突
+			// ZYF 如果是插入查询等混合负载的话，这里需要把continue取消注释，这样委托方才能盲等别人把数据插进去
+			// 但是真的有人会刚好到这个桶，发现有东西还没插入，帮着插吗？
+			// 线程数是有限的，如果取得比较少，可能有几个线程一直在等待别人插入，导致可能8个线程有1个在别的地方插入，剩下7个都在等
+			// 那实际开8个线程可能真正在工作的1个了，所以我建议还是不取消注释，容忍batch以后再去查询，多一点查询延时
 			//continue
 		}
 		meht.seh.latch.RLock()
@@ -181,7 +186,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 // MGTBatchCommit 批量提交mgt
 func (meht *MEHT) MGTBatchCommit(db *leveldb.DB) {
 	// meht存在则mgt一定存在，因此无需判断mgt是否为nil
-	meht.mgt.MGTUpdate(nil, db, meht.cache)
+	meht.mgt.MGTUpdate(nil, db, meht.cache, meht.seh)
 	meht.mgt.UpdateMGTToDB(db)
 	meht.UpdateMEHTToDB(meht.mgt.mgtRootHash, db)
 }

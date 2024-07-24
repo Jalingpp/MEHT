@@ -70,6 +70,7 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 		}
 	}
 	seh.ht.Store(bucketKey, ret)
+	seh.bloomFilter.Add([]byte(bucketKey))
 	return ret
 }
 
@@ -93,26 +94,87 @@ func (seh *SEH) GetBucketByKeyCon(key string) string {
 
 // GetBucketByKey GetBucket returns the bucket with the given key
 func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
-	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
+	////任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
+	//if seh.gd == 0 {
+	//	return seh.GetBucket("", db, cache)
+	//}
+	//var bKey string
+	//e := seh.gd * util.ComputeStrideByBase(seh.rdx)
+	//if len(key) >= e {
+	//	bKey = key[len(key)-e:]
+	//} else {
+	//	bKey = strings.Repeat("0", e-len(key)) + key
+	//}
+	//return seh.GetBucket(bKey, db, cache)
+	//return seh.GetBucket(seh.GetBucketByKeyCon(key), db, cache)
+	return seh.GetBucketByKeyWithBF(key, db, cache)
+}
+
+func (seh *SEH) GetBucketByKeyWithBF(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
 	if seh.gd == 0 {
 		return seh.GetBucket("", db, cache)
+	} else if len(key) == 0 {
+		panic("Error occur: key is empty!")
 	}
-	var bKey string
-	e := seh.gd * util.ComputeStrideByBase(seh.rdx)
-	if len(key) >= e {
-		bKey = key[len(key)-e:]
+	l := 0
+	var r int
+	stride := util.ComputeStrideByBase(seh.rdx)
+	globalLength := seh.gd * stride
+	keyLength := len(key)
+	if keyLength <= globalLength {
+		r = keyLength - 1
 	} else {
-		bKey = strings.Repeat("0", e-len(key)) + key
+		r = globalLength - 1
 	}
-	return seh.GetBucket(bKey, db, cache)
-	//return seh.GetBucket(seh.GetBucketByKeyCon(key), db, cache)
+	i := seh.getBucketByKeyWithBFFoo(key, l, r, stride)
+	for ; r >= 0; i = seh.getBucketByKeyWithBFFoo(key, l, r, stride) {
+		bucketKey := key[keyLength-i-1:]
+		ret_, ok := seh.ht.Load(bucketKey)
+		if !ok {
+			r = i - 1
+			continue
+		}
+		ret := ret_.(*Bucket)
+		if ret != dummyBucket {
+			return ret
+		}
+		key_ := "bucket" + bucketKey
+		if cache != nil {
+			targetCache, _ := (*cache)[1].(*lru.Cache[string, *Bucket])
+			ret, ok = targetCache.Get(key_)
+		}
+		if !ok {
+			if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
+				bucket, _ := DeserializeBucket(bucketString, db, cache)
+				ret = bucket
+			}
+		}
+		seh.ht.Store(bucketKey, ret)
+		seh.bloomFilter.Add([]byte(bucketKey))
+	}
+	panic("Error occur: no bucket found!")
 }
 
-func (seh *SEH) GetBucketByKeyWithBF(key string, db *leveldb.DB, cache *[]interface{}) {
-
-}
-
-func (seh *SEH) getBucketByKeyWithBFFoo(key string, l int, r int) int {
+func (seh *SEH) getBucketByKeyWithBFFoo(key string, l int, r int, stride int) int {
+	if l >= r-1 {
+		if l >= r {
+			return l
+		} else if seh.bloomFilter.Test([]byte(key[len(key)-r-1:])) {
+			return r
+		} else {
+			return l
+		}
+	}
+	mid := (r-l)/2 + l
+	mid = mid - mid%stride
+	//if mid == 0 && r == 1 {
+	//	fmt.Println("XXX")
+	//}
+	if seh.bloomFilter.Test([]byte(key[len(key)-mid-1:])) {
+		return seh.getBucketByKeyWithBFFoo(key, mid, r, stride)
+	} else {
+		return seh.getBucketByKeyWithBFFoo(key, l, mid-stride, stride)
+	}
 	//if l >= r {
 	//	return l
 	//} else if seh.bloomFilterList[r].Test([]byte(key)) {
@@ -130,7 +192,6 @@ func (seh *SEH) getBucketByKeyWithBFFoo(key string, l int, r int) int {
 	//} else {
 	//
 	//}
-	return -1
 }
 
 // GetGD returns the global depth of the SEH
@@ -274,10 +335,13 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				var newLd int
 				ld1 := bucketSs[0][0].GetLD()
 				ld2 := bucketSs[0][1].GetLD()
+				var curDepth int
 				if ld1 < ld2 {
 					newLd = ld1 + len(bucketSs) - 1
+					curDepth = ld1
 				} else {
 					newLd = ld2 + len(bucketSs) - 1
+					curDepth = ld2
 				}
 				seh.latch.Lock()
 				seh.bucketsNumber += len(bucketSs) * (bucket.rdx - 1) //除第一层外每一层都是rdx-1个桶，这是因为第一层以外的桶都是上一层的某一个桶分裂出来的，因此要减去1
@@ -286,23 +350,32 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				}
 				seh.latch.Unlock() //不同桶对ht的修改不会产生交集，因此尝试将seh锁释放提前，让sync.map本身特性保证ht修改的并发安全
 				//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
+				stride := util.ComputeStrideByBase(bucketSs[0][0].rdx)
 				for i, buckets := range bucketSs {
 					var bKey string
 					for j := range buckets {
-						if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
-							continue
-						}
 						bKey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+						if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
+							seh.bloomFilter.Add([]byte(bKey[len(bKey)-curDepth:]))
+							continue
+						} else if i == 0 && len(bKey) != curDepth {
+							seh.bloomFilter.Add([]byte(bKey[len(bKey)-curDepth:]))
+						}
 						// 在更新ht之前需要先把桶都给锁上，因为在此之后mgt还需要grow
 						// 如果不锁的话，mgt在grow完成前可能桶就已经通过ht被找到，然后进行桶更新，就会出问题
 						if buckets[j] != bucket { //将新分裂出来的桶给锁上，bucket本身已经被锁上了，因此不需要重复上锁
 							buckets[j].latch.Lock()
 						}
 						seh.ht.Store(bKey, buckets[j])
+						seh.bloomFilter.Add([]byte(bKey))
 						//buckets[j].UpdateBucketToDB(db, cache) // 这里就不更新桶了，等batchFix去完成
 					}
-					toDelKey := bKey[util.ComputeStrideByBase(buckets[0].rdx):]
+					toDelKey := bKey[stride:]
+					if i == 0 {
+						toDelKey = toDelKey[len(bKey)-curDepth:]
+					}
 					seh.ht.Delete(toDelKey)
+					curDepth += stride
 				}
 			}
 			bucket.DelegationLatch.Unlock() // 允许其他线程委托插入
@@ -315,9 +388,9 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		// 成为委托者
 		// 当发现上一个被委托者已经执行完插入操作，只剩mgtNode还在更新时，说明已经快要有下一个被委托者了，因此重做，尝试成为下一个被委托者
 		// 以此保证DelegationList一定会有一个线程去将里面的内容写入桶中
-		if bucket.latchTimestamp == 0 {
-			return nil, FAILED, nil, 0
-		}
+		//if bucket.latchTimestamp == 0 {
+		//	return nil, FAILED, nil, 0
+		//}
 		for !bucket.latch.TryLock() { // 重复查看是否存在可以委托的对象
 			if len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 { // 多减去的1是留给新来的被委托人的
 				// 发现可能无法再委托则退出函数并重做，直到这个桶因一个线程的插入而分裂，产生新的空间
@@ -327,9 +400,9 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			}
 			// 等待一个委托线程准备好接受委托，准备好的意思就是它已经把自己要插入的数据加入到delegationList
 			// 否则被委托者即是获得了桶锁，但是会和委托者互相抢DelegationLatch，导致委托者无法更新自己的数据到桶中
-			if bucket.latchTimestamp == 0 {
-				continue
-			}
+			//if bucket.latchTimestamp == 0 {
+			//	continue
+			//}
 			if bucket.DelegationLatch.TryLock() {
 				//// 需要检查是否因为桶的分裂而导致自己的桶已经不是当前桶了，如果不是则重做
 				//// 但是不需要对seh上读锁，因为能到这段代码就说明虽然桶在插入，但是明显不会插满
@@ -470,6 +543,7 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 			continue
 		} else {
 			seh.ht.Store(key, dummyBucket)
+			seh.bloomFilter.Add([]byte(key))
 		}
 	}
 	return seh, nil

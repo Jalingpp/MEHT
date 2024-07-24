@@ -384,9 +384,6 @@ func (se *StorageEngine) MEHTCacheAdjust(db *leveldb.DB, a float64, b float64) {
 // InsertIntoMEHT 插入非主键索引
 func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (string, *meht.MEHTProof) {
 	//如果是第一次插入
-	if kvPair.GetKey() == "64613030303030303030303030303030303030303030303030303030303030303030303030316634" {
-		fmt.Println("XXX")
-	}
 	if se.GetSecondaryIndexMeht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)

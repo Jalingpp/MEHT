@@ -66,7 +66,7 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 	}
 	if !ok {
 		if bucketString, error_ := db.Get([]byte(key_), nil); error_ == nil {
-			bucket, _ := DeserializeBucket(bucketString)
+			bucket, _ := DeserializeBucket(bucketString, db, cache)
 			ret = bucket
 		}
 	}
@@ -179,7 +179,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		bucket.Insert(kvPair, db, cache)
 		seh.ht.Store("", bucket)
 		//更新bucket到db
-		bucket.UpdateBucketToDB(db, cache)
+		//bucket.UpdateBucketToDB(db, cache)
 		seh.bucketsNumber++
 		buckets := make([]*Bucket, 0)
 		buckets = append(buckets, bucket)
@@ -199,83 +199,78 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 			bucket.latch.Unlock()
 			return nil, FAILED, nil, 0
 		}
-		bucket.PendingNum = 0
 		var bucketSs [][]*Bucket
 		// 成为被委托者，被委托者保证最多一次性将bucket更新满但不分裂，或者虽然引发桶分裂但不接受额外委托并只插入自己的
 		bucket.DelegationLatch.Lock()
-		if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
-			newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
-			if isDelete {
-				if isChange := newValKvp.DelValue(kvPair.GetValue()); !isChange { // 删除失败，延迟删除
-					if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
-						bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+		key_ := kvPair.GetKey()
+		val_ := kvPair.GetValue()
+		if existMap, ok := bucket.DelegationList[key_]; ok {
+			if ook, ok := existMap[val_]; ok && ook {
+				if isDelete { //delegationList有key有value，则在列表中把将要删除的数据给清空，就像是删除了一样
+					existMap[val_] = false
+				} //有key有value且不是删除，那就是重复插入，不做任何操作
+			} else { //有key无value
+				if isDelete { // 有key无value是删除
+					//由于并发委托场景下每个时刻桶内到底有没有待删除的值是不确定的
+					//因此只能先记录下来，然后等着batchFix的时候等桶内值不会变动以后再做删除
+					if _, ok := bucket.toDelMap[key_]; !ok {
+						bucket.toDelMap[key_] = make(map[string]int)
 					}
-					bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
-				} else { // 删除成功，更新桶
-					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
-				}
-			} else {
-				if bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
-					bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]--
-				} else {
-					if isChange := newValKvp.AddValue(kvPair.GetValue()); isChange { // 否则，正常的追加插入
-						bucket.DelegationList[kvPair.GetKey()] = *newValKvp
+					bucket.toDelMap[key_][val_]++
+				} else { // 有key无value是插入，
+					if bucket.toDelMap[key_][val_] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
+						bucket.toDelMap[key_][val_]--
+					} else {
+						bucket.DelegationList[key_][val_] = true
 					}
 				}
 			}
 		} else {
-			if isDelete {
-				value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
-				newValKvp := util.NewKVPair(kvPair.GetKey(), value)
-				if isChange := newValKvp.DelValue(kvPair.GetValue()); !isChange { // 删除失败，延迟删除
-					if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
-						bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
-					}
-					bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
-				} else { // 删除成功，更新桶
-					bucket.DelegationList[kvPair.GetKey()] = *newValKvp
+			if isDelete { // 无key是删除，延迟删除
+				if _, ok := bucket.toDelMap[key_]; !ok {
+					bucket.toDelMap[key_] = make(map[string]int)
 				}
+				bucket.toDelMap[key_][val_]++
 			} else {
-				if bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
-					bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]--
+				if bucket.toDelMap[key_][val_] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
+					bucket.toDelMap[key_][val_]--
 				} else {
-					value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
-					newValKvp := util.NewKVPair(kvPair.GetKey(), value)
-					if isChange := newValKvp.AddValue(kvPair.GetValue()); isChange {
-						bucket.DelegationList[kvPair.GetKey()] = *newValKvp
-					}
+					bucket.DelegationList[key_] = make(map[string]bool)
+					bucket.DelegationList[key_][val_] = true
 				}
 			}
 		}
 		bucket.latchTimestamp = time.Now().Unix()
-		delegationListCopy := make([]util.KVPair, len(bucket.DelegationList))
-		idx := 0
-		for _, v := range bucket.DelegationList {
-			delegationListCopy[idx] = v
-			idx++
+		delegationListCopy := make([]util.KVPair, 0)
+		for k, v := range bucket.DelegationList {
+			for k1, v1 := range v {
+				if v1 {
+					value, _, _, _ := bucket.GetValueByKey(k, db, cache, true) //被委托方连带旧值一并更新
+					newValKvp := util.KVPair{Key: k, Value: value}
+					if isChange := (&newValKvp).AddValue(k1); isChange {
+						delegationListCopy = append(delegationListCopy, newValKvp)
+						bucket.PendingNum++
+					}
+				}
+			}
 		}
 		// 先计算PendingNum再清空DelegationList
 		// 保证其他线程尝试委托数据时计算PendingNum+len(DelegationList)的数目只会多算不会少算
 		// 这样就不会出现实际桶已经满了但是还有线程成功在清空后的DelegationList里委托数据的情况
-		bucket.PendingNum = len(bucket.DelegationList)
 		bucket.DelegationList = nil
-		bucket.DelegationList = make(map[string]util.KVPair)
-		bucket.DelegationLatch.Unlock() // 允许其他线程委托自己插入
-		//bucket.DelegationLatch.Lock()        // 获得委托锁，正式拒绝所有其他线程的委托
+		bucket.DelegationList = make(map[string]map[string]bool)
 		if bucket.number < bucket.capacity { // 由于插入数目一定不引起桶分裂，顶多插满，因此最后插完的桶就是当前桶
-			//fmt.Printf("%p\t", bucket)
-			//fmt.Println("No Split Occur when bucket.number < bucket.capacity: ", bucket.number, " ", bucket.PendingNum, " ", bucket.capacity)
+			bucket.DelegationLatch.Unlock() // 允许其他线程委托自己插入
 			for _, kvp := range delegationListCopy {
 				bucket.Insert(kvp, db, cache)
 			}
-			bucket.UpdateBucketToDB(db, cache) // 更新桶
+			//bucket.UpdateBucketToDB(db, cache) // 这里就不更新桶了，等batchFix去完成
 			bucketSs = [][]*Bucket{{bucket}}
 		} else { // 否则一定只插入了一个，如果不是更新则引发桶的分裂
 			bucketSs = bucket.Insert(kvPair, db, cache)
 			if len(bucketSs[0]) == 1 {
-				bucketSs[0][0].UpdateBucketToDB(db, cache) // 更新桶
+				//bucketSs[0][0].UpdateBucketToDB(db, cache) // 更新桶
 				bucketSs = [][]*Bucket{{bucket}}
-				//fmt.Println("No Split Occur")
 			} else {
 				var newLd int
 				ld1 := bucketSs[0][0].GetLD()
@@ -305,24 +300,20 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 							buckets[j].latch.Lock()
 						}
 						seh.ht.Store(bKey, buckets[j])
-						buckets[j].UpdateBucketToDB(db, cache)
+						//buckets[j].UpdateBucketToDB(db, cache) // 这里就不更新桶了，等batchFix去完成
 					}
 					toDelKey := bKey[util.ComputeStrideByBase(buckets[0].rdx):]
 					seh.ht.Delete(toDelKey)
 				}
 			}
+			bucket.DelegationLatch.Unlock() // 允许其他线程委托插入
 		}
-		//bucket.DelegationList = nil
-		//bucket.DelegationList = make(map[string]util.KVPair)
 		bucket.latchTimestamp = 0
-		//bucket.DelegationLatch.Unlock()
+		bucket.PendingNum = 0
 		// 此处桶锁不释放，会在MGTGrow的地方释放，因为此处桶锁释放后，其他线程就可以插入了，而此时mgt若需要分裂则还没有更新，因此可能会出现桶插入了但是相应mgtNode不存在的问题
 		return bucketSs, DELEGATE, nil, 0
 	} else if bucket != nil {
 		// 成为委托者
-		//if len(bucket.DelegationList) == 0 { // 保证被委托者能第一时间拿到DelegationLatch并更新自己要插入的数据到DelegationList中
-		//	return nil, FAILED, nil, 0
-		//}
 		// 当发现上一个被委托者已经执行完插入操作，只剩mgtNode还在更新时，说明已经快要有下一个被委托者了，因此重做，尝试成为下一个被委托者
 		// 以此保证DelegationList一定会有一个线程去将里面的内容写入桶中
 		if bucket.latchTimestamp == 0 {
@@ -341,53 +332,49 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				continue
 			}
 			if bucket.DelegationLatch.TryLock() {
-				//seh.latch.RLock()
 				//// 需要检查是否因为桶的分裂而导致自己的桶已经不是当前桶了，如果不是则重做
 				//// 但是不需要对seh上读锁，因为能到这段代码就说明虽然桶在插入，但是明显不会插满
 				//// 那么桶就不会分裂，不会分裂seh就不会变，因此不需要对seh上读锁
-				bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
-				if bucket_ != bucket || len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 || bucket.latchTimestamp == 0 {
+				key_ := kvPair.GetKey()
+				if seh.GetBucketByKey(key_, db, cache) != bucket || len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					bucket.DelegationLatch.Unlock()
-					//seh.latch.RUnlock()
 					return nil, FAILED, nil, 0
 				}
-				////seh.latch.RUnlock()
-				if oldValKvp, ok := bucket.DelegationList[kvPair.GetKey()]; ok {
-					newValKvp := util.NewKVPair(oldValKvp.GetKey(), oldValKvp.GetValue())
-					if isDelete {
-						if isChange := newValKvp.DelValue(kvPair.GetValue()); !isChange { // 删除失败，延迟删除
-							if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
-								bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+				val_ := kvPair.GetValue()
+				if existMap, ok := bucket.DelegationList[key_]; ok {
+					if ook, ok := existMap[val_]; ok && ook {
+						if isDelete { //delegationList有key有value，则在列表中把将要删除的数据给清空，就像是删除了一样
+							existMap[val_] = false
+						} //有key有value且不是删除，那就是重复插入，不做任何操作
+					} else { //有key无value
+						if isDelete { // 有key无value是删除
+							//由于并发委托场景下每个时刻桶内到底有没有待删除的值是不确定的
+							//因此只能先记录下来，然后等着batchFix的时候等桶内值不会变动以后再做删除
+							if _, ok := bucket.toDelMap[key_]; !ok {
+								bucket.toDelMap[key_] = make(map[string]int)
 							}
-							bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
-						} else { // 删除成功，更新桶
-							bucket.DelegationList[kvPair.GetKey()] = *newValKvp
-						}
-					} else {
-						if bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
-							bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]--
-						} else {
-							if isChange := newValKvp.AddValue(kvPair.GetValue()); isChange {
-								bucket.DelegationList[kvPair.GetKey()] = *newValKvp
+							bucket.toDelMap[key_][val_]++
+						} else { // 有key无value是插入，
+							if bucket.toDelMap[key_][val_] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
+								bucket.toDelMap[key_][val_]--
+							} else {
+								bucket.DelegationList[key_][val_] = true
 							}
 						}
 					}
 				} else {
-					if isDelete { // 删除失败，延迟删除
-						if _, ok := bucket.toDelMap[kvPair.GetKey()]; !ok {
-							bucket.toDelMap[kvPair.GetKey()] = make(map[string]int)
+					if isDelete { // 无key是删除，延迟删除
+						if _, ok := bucket.toDelMap[key_]; !ok {
+							bucket.toDelMap[key_] = make(map[string]int)
 						}
-						bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]++
+						bucket.toDelMap[key_][val_]++
 					} else {
-						if bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
-							bucket.toDelMap[kvPair.GetKey()][kvPair.GetValue()]--
+						if bucket.toDelMap[key_][val_] > 0 { // 如果要插入的值在延迟删除列表中，则延迟删除列表中的计数减一，并跳过插入
+							bucket.toDelMap[key_][val_]--
 						} else {
-							value, _, _, _ := bucket.GetValueByKey(kvPair.GetKey(), db, cache, true) //连带旧值一并更新
-							newValKvp := util.NewKVPair(kvPair.GetKey(), value)
-							if isChange := newValKvp.AddValue(kvPair.GetValue()); isChange {
-								bucket.DelegationList[kvPair.GetKey()] = *newValKvp
-							}
+							bucket.DelegationList[key_] = make(map[string]bool)
+							bucket.DelegationList[key_][val_] = true
 						}
 					}
 				}

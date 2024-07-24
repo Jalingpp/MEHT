@@ -23,13 +23,13 @@ type Bucket struct {
 	segIdxMaps      sync.Map // segment index maps: map from key to index in segment map[string]map[string]int
 	merkleTrees     sync.Map // merkle trees: one for each segment map[string]*mht.MerkleTree
 	latchTimestamp  int64
-	DelegationList  map[string]util.KVPair    // 委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并,map的key就是KVPair的key
-	PendingNum      int                       // 委托插入的数据数量，用于新到来的委托方判断是否可以在被委托者正在进行桶插入操作时向DelegationList追加待插入数据，只有被委托者可以修改该字段
-	toDelMap        map[string]map[string]int // 用于记录哪些数据需要被延迟删除
-	latch           sync.RWMutex              //桶粒度锁
-	segLatch        sync.RWMutex              //段粒度锁
-	mtLatch         sync.RWMutex              //默克尔树锁
-	DelegationLatch sync.Mutex                // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
+	DelegationList  map[string]map[string]bool //委托插入的数据，用于后续一并插入，使用map结构是因为委托插入的数据可能键相同，需要通过key去找到并合并 map[key][value]isExist
+	PendingNum      int                        // 委托插入的数据数量，用于新到来的委托方判断是否可以在被委托者正在进行桶插入操作时向DelegationList追加待插入数据，只有被委托者可以修改该字段
+	toDelMap        map[string]map[string]int  // 用于记录哪些数据需要被延迟删除
+	latch           sync.RWMutex               //桶粒度锁
+	segLatch        sync.RWMutex               //段粒度锁
+	mtLatch         sync.RWMutex               //默克尔树锁
+	DelegationLatch sync.Mutex                 // 委托线程锁，用于将待插入数据更新到委托插入数据集，当被委托线程获取到MGT树根写锁时，也会试图获取这个锁，保证不再接收新的委托
 }
 
 var dummyBucket = &Bucket{ld: -1, rdx: -1, capacity: -1, segNum: -1}
@@ -38,7 +38,7 @@ var dummyBucket = &Bucket{ld: -1, rdx: -1, capacity: -1, segNum: -1}
 func NewBucket(ld int, rdx int, capacity int, segNum int) *Bucket {
 	return &Bucket{nil, ld, rdx, capacity, 0, segNum,
 		sync.Map{}, sync.Map{}, sync.Map{}, time.Now().Unix(),
-		make(map[string]util.KVPair), 0, make(map[string]map[string]int),
+		make(map[string]map[string]bool), 0, make(map[string]map[string]int),
 		sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
 }
 
@@ -67,7 +67,7 @@ func (b *Bucket) SetSegment(segKey string, db *leveldb.DB, cache *[]interface{},
 	if _, ok := b.segments.Load(segKey); !ok {
 		b.segLatch.Lock()
 		if oldSeg, ok := b.segments.Load(segKey); ok {
-			b.segLatch.Unlock()
+			defer b.segLatch.Unlock()
 			newSeg := oldSeg.([]util.KVPair)
 			newSeg[idx].SetValue(value)
 			b.segments.Store(segKey, newSeg)
@@ -443,6 +443,8 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 	b.segments = sync.Map{}
 	b.segIdxMaps = sync.Map{}
 	b.merkleTrees = sync.Map{}
+	bDelegationList := b.DelegationList
+	b.DelegationList = make(map[string]map[string]bool)
 	bToDelMap := b.toDelMap
 	b.toDelMap = make(map[string]map[string]int)
 	buckets = append(buckets, b)
@@ -451,21 +453,41 @@ func (b *Bucket) SplitBucket(db *leveldb.DB, cache *[]interface{}) []*Bucket {
 		newBucket := NewBucket(b.ld, b.rdx, b.capacity, b.segNum)
 		newBucket.SetBucketKey(append([]int{i + 1}, originBKey...))
 		//将新bucket插入到db中
-		newBucket.UpdateBucketToDB(db, cache)
+		//newBucket.UpdateBucketToDB(db, cache)
 		buckets = append(buckets, newBucket)
 	}
 	//获取原bucket中所有数据对象
-	for _, kvps := range mMap {
-		for _, kvp := range kvps {
+	for _, kvPs := range mMap {
+		for _, kvp := range kvPs {
 			//获取key的倒数第ld位
 			//将数据对象插入到对应的bucket中
 			buckets[util.StringToBucketKeyIdxWithRdx(kvp.GetKey(), b.ld, b.rdx)].Insert(kvp, db, cache)
 		}
 	}
+	for k, v := range bDelegationList {
+		for k1, v1 := range v {
+			if v1 {
+				idx := util.StringToBucketKeyIdxWithRdx(k, b.ld, b.rdx)
+				if _, ok := buckets[idx].DelegationList[k]; !ok {
+					buckets[idx].DelegationList[k] = make(map[string]bool)
+				}
+				buckets[idx].DelegationList[k][k1] = true
+			}
+		}
+	}
 	//将原bucket中待删除的数据对象插入到新的rdx个bucket中
 	for key, value := range bToDelMap {
-		buckets[util.StringToBucketKeyIdxWithRdx(key, b.ld, b.rdx)].toDelMap[key] = value
+		idx := util.StringToBucketKeyIdxWithRdx(key, b.ld, b.rdx)
+		if _, ok := buckets[idx].toDelMap[key]; !ok {
+			buckets[idx].toDelMap[key] = make(map[string]int, len(buckets[idx].toDelMap[key]))
+		}
+		for k, v := range value {
+			buckets[idx].toDelMap[key][k] = v
+		}
+		//delete(bToDelMap, key)
 	}
+	bDelegationList = nil
+	bToDelMap = nil
 	return buckets
 }
 
@@ -479,8 +501,6 @@ func (b *Bucket) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{},
 	if index == -1 {
 		return "", segKey, isSegExist, index
 	}
-	//value := b.GetSegment(segKey, db, cache)[index].GetValue()
-	//TODO Debug
 	seg := b.GetSegment(segKey, db, cache)
 	if index < len(seg) {
 		return seg[index].GetValue(), segKey, isSegExist, index
@@ -612,8 +632,8 @@ func DeserializeSegment(data []byte) ([]util.KVPair, *sync.Map, error) {
 	kvPairs := make([]util.KVPair, 0)
 	segIdxMap := sync.Map{}
 	for idx, seKvP := range seSegment.KVPairs {
-		key, val := seKvP.GetKey(), seKvP.GetValue()
-		kvPairs = append(kvPairs, *util.NewKVPair(key, val))
+		key := seKvP.GetKey()
+		kvPairs = append(kvPairs, util.KVPair{Key: key, Value: seKvP.GetValue()})
 		segIdxMap.Store(key, idx)
 	}
 	return kvPairs, &segIdxMap, nil
@@ -646,7 +666,7 @@ func SerializeBucket(b *Bucket) []byte {
 }
 
 // DeserializeBucket 反序列化Bucket
-func DeserializeBucket(data []byte) (*Bucket, error) {
+func DeserializeBucket(data []byte, db *leveldb.DB, cache *[]interface{}) (*Bucket, error) {
 	var seBucket SeBucket
 	err := json.Unmarshal(data, &seBucket)
 	if err != nil {
@@ -655,9 +675,10 @@ func DeserializeBucket(data []byte) (*Bucket, error) {
 	}
 	bucket := &Bucket{seBucket.BucketKey, seBucket.Ld, seBucket.Rdx, seBucket.Capacity, seBucket.Number,
 		seBucket.SegNum, sync.Map{}, sync.Map{}, sync.Map{}, time.Now().Unix(),
-		make(map[string]util.KVPair), 0, make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
-	for i := 0; i < len(seBucket.SegKeys); i++ {
-		bucket.merkleTrees.Store(seBucket.SegKeys[i], mht.DummyMerkleTree)
+		make(map[string]map[string]bool), 0, make(map[string]map[string]int), sync.RWMutex{}, sync.RWMutex{}, sync.RWMutex{}, sync.Mutex{}}
+	for _, segKey := range seBucket.SegKeys { // ZYF segments从磁盘读本质上是希望保留seBucket.SegKeys，后续再看看有没有更好的方法
+		bucket.merkleTrees.Store(segKey, mht.DummyMerkleTree)
+		bucket.segments.Store(segKey, bucket.GetSegment(segKey, db, cache))
 	}
 	return bucket, nil
 }

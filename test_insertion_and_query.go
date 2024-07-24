@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"testing"
 	"time"
 
 	"MEHT/sedb"
@@ -25,10 +24,8 @@ type QueryTransaction struct {
 	stratTime time.Time
 }
 
-func TestIQ(t *testing.T) {
-	args := make([]string, 0)
-	args = append(args, "", "meht", "1000000", "32", "1000", "9000", "500", "1", "nft-trans-100W")
-
+func main() {
+	args := os.Args
 	var batchSize, _ = strconv.Atoi(args[4]) //change
 	//var batchTimeout float64 = 100 //change
 	var curStartNum = IntegerWithLock{0, sync.Mutex{}}
@@ -90,11 +87,11 @@ func TestIQ(t *testing.T) {
 		wg.Done()
 	}
 
-	queryWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voCh chan uint, durationCh chan time.Duration) {
+	queryWorker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voCh chan uint, durationCh chan time.Duration, phaselo *util.PhaseLatency) {
 		for qTxn := range queryTxnCh {
 			//fmt.Println("query " + qTxn.queryKey)
 			st := qTxn.stratTime
-			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qTxn.queryKey))
+			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(qTxn.queryKey), phaselo)
 			//fmt.Println("query result " + qTxn.queryKey)
 			du := time.Since(st)
 			durationCh <- du
@@ -137,12 +134,11 @@ func TestIQ(t *testing.T) {
 		//}
 	}
 
-	createQueryWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voChList *[]chan uint, durationChList *[]chan time.Duration, queryChanFlag chan bool) {
+	createQueryWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryTxnCh chan QueryTransaction, voChList *[]chan uint, durationChList *[]chan time.Duration, queryChanFlag chan bool, phaselo *util.PhaseLatency) {
 		var wg sync.WaitGroup
-
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go queryWorker(&wg, seDB, queryTxnCh, (*voChList)[i], (*durationChList)[i])
+			go queryWorker(&wg, seDB, queryTxnCh, (*voChList)[i], (*durationChList)[i], phaselo)
 		}
 		wg.Wait()
 		//for _, voCh := range *voChList {
@@ -309,14 +305,14 @@ func TestIQ(t *testing.T) {
 	go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 
 	//allocate code
-	txs := util.ReadLinesFromFile("../../p10/nft_crawl/Synthetic/" + args[8])
+	txs := util.ReadLinesFromFile("../Synthetic/" + args[8])
 	countNum := 0
 
 	queryMap := make(map[int]QueryTransaction)          //add
 	go resetQueryStartTime(queryMap, completedInsertCh) //add
 
 	start := time.Now()
-	for i := 0; i < len(txs)/2; i += batchSize {
+	for i := 0; i < len(txs); i += batchSize {
 		//每次建立一遍
 		insertKVPairCh := make(chan string, batchSize)
 		queryTxnCh := make(chan QueryTransaction, batchSize)
@@ -355,7 +351,7 @@ func TestIQ(t *testing.T) {
 		close(queryTxnCh)
 		queryMap = make(map[int]QueryTransaction) //add
 		//TODO:在这里创建线程池并通过close通道让线程池返回
-		go createQueryWorkerPool(numOfWorker, seDB, queryTxnCh, &voChList, &latencyDurationChList, queryChanFlag)
+		go createQueryWorkerPool(numOfWorker, seDB, queryTxnCh, &voChList, &latencyDurationChList, queryChanFlag, nil)
 
 		<-queryChanFlag //阻塞等待接收查询完成通知
 		//fmt.Println("query over")
@@ -378,7 +374,7 @@ func TestIQ(t *testing.T) {
 	}
 	duration = time.Since(start)
 
-	//seDB.WriteSEDBInfoToFile(filePath)
+	seDB.WriteSEDBInfoToFile(filePath)
 	duration2 := time.Since(start)
 	fmt.Println(duration)
 	fmt.Println(duration2)

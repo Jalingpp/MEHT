@@ -5,7 +5,6 @@ import (
 	"MEHT/util"
 	"encoding/json"
 	"fmt"
-	"github.com/bits-and-blooms/bitset"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
 	"strings"
@@ -113,25 +112,25 @@ func (seh *SEH) GetBucketByKeyWithBF(key string, db *leveldb.DB, cache *[]interf
 
 }
 
-func (seh *SEH) getBucketByKeyWithBFFoo(key string, l int, r int, set *bitset.BitSet) int {
-	if l >= r {
-		return l
-	} else if seh.bloomFilterList[r].Test([]byte(key)) {
-		return r
-	}
-	mid := (r-l)/2 + l
-	for _, idx := range seh.bloomFilterLookUp[mid] {
-		if set.Test(uint(idx)) {
-
-		}
-
-	}
-	if seh.bloomFilterList[mid].Test([]byte(key)) {
-		return seh.getBucketByKeyWithBFFoo(key, mid, r)
-	} else {
-
-	}
-
+func (seh *SEH) getBucketByKeyWithBFFoo(key string, l int, r int) int {
+	//if l >= r {
+	//	return l
+	//} else if seh.bloomFilterList[r].Test([]byte(key)) {
+	//	return r
+	//}
+	//mid := (r-l)/2 + l
+	//for _, idx := range seh.bloomFilterLookUp[mid] {
+	//	if set.Test(uint(idx)) {
+	//
+	//	}
+	//
+	//}
+	//if seh.bloomFilterList[mid].Test([]byte(key)) {
+	//	return seh.getBucketByKeyWithBFFoo(key, mid, r)
+	//} else {
+	//
+	//}
+	return -1
 }
 
 // GetGD returns the global depth of the SEH
@@ -407,15 +406,16 @@ func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 }
 
 type SeSEH struct {
-	Gd                    int      // global depth, initial zero
-	Rdx                   int      // rdx, initial  given
-	BucketCapacity        int      // capacity of the bucket, initial given
-	BucketSegNum          int      // number of segment bits in the bucket, initial given
-	HashTableKeys         []string // hash table of buckets
-	BucketsNumber         int      // number of buckets, initial zero
-	BloomFilterList       [][]byte
-	BloomFilterWindowSize uint
-	BloomFilterLookup     map[int][]int
+	Gd             int      // global depth, initial zero
+	Rdx            int      // rdx, initial  given
+	BucketCapacity int      // capacity of the bucket, initial given
+	BucketSegNum   int      // number of segment bits in the bucket, initial given
+	HashTableKeys  []string // hash table of buckets
+	BucketsNumber  int      // number of buckets, initial zero
+	//BloomFilterList       [][]byte
+	//BloomFilterWindowSize uint
+	//BloomFilterLookup     map[int][]int
+	BloomFilter []byte
 }
 
 func SerializeSEH(seh *SEH) []byte {
@@ -424,13 +424,16 @@ func SerializeSEH(seh *SEH) []byte {
 		hashTableKeys = append(hashTableKeys, key.(string))
 		return true
 	})
-	bfl := make([][]byte, 0)
-	for _, bf := range seh.bloomFilterList {
-		data, _ := bf.GobEncode()
-		bfl = append(bfl, data)
-	}
+	//bfl := make([][]byte, 0)
+	//for _, bf := range seh.bloomFilterList {
+	//	data, _ := bf.GobEncode()
+	//	bfl = append(bfl, data)
+	//}
+	data, _ := seh.bloomFilter.GobEncode()
 	seSEH := &SeSEH{seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
-		hashTableKeys, seh.bucketsNumber, bfl, seh.bloomFilterWindowSize, seh.bloomFilterLookUp}
+		hashTableKeys, seh.bucketsNumber, data}
+	//seSEH := &SeSEH{seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
+	//	hashTableKeys, seh.bucketsNumber, bfl, seh.bloomFilterWindowSize, seh.bloomFilterLookUp}
 	if jsonSEH, err := json.Marshal(seSEH); err != nil {
 		fmt.Printf("SerializeSEH error: %v\n", err)
 		return nil
@@ -445,17 +448,23 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		fmt.Printf("DeserializeSEH error: %v\n", err)
 		return nil, err
 	}
-	bfl := make([]util.BF, 0)
-	for _, data_ := range seSEH.BloomFilterList {
-		bf := util.NewBF()
-		if err := bf.GobDecode(data_); err != nil {
-			panic(err)
-		}
-		bfl = append(bfl, bf)
+	bf := util.NewBF()
+	if err := bf.GobDecode(seSEH.BloomFilter); err != nil {
+		panic(err)
 	}
+	//bfl := make([]util.BF, 0)
+	//for _, data_ := range seSEH.BloomFilterList {
+	//	bf := util.NewBF()
+	//	if err := bf.GobDecode(data_); err != nil {
+	//		panic(err)
+	//	}
+	//	bfl = append(bfl, bf)
+	//}
+	//seh := &SEH{seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
+	//	sync.Map{}, seSEH.BucketsNumber, bfl, seSEH.BloomFilterWindowSize,
+	//	seSEH.BloomFilterLookup, sync.RWMutex{}}
 	seh := &SEH{seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
-		sync.Map{}, seSEH.BucketsNumber, bfl, seSEH.BloomFilterWindowSize,
-		seSEH.BloomFilterLookup, sync.RWMutex{}}
+		sync.Map{}, seSEH.BucketsNumber, bf, sync.RWMutex{}}
 	for _, key := range seSEH.HashTableKeys {
 		if key == "" && seSEH.Gd > 0 {
 			continue

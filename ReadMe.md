@@ -33,3 +33,5 @@ Step 3. Find results in data.
 `test_mehtBS.sh`: experiments over various BS of meht.
 
 `test_mbtBN.sh`: experiments over various BN of mbt.
+
+`test_bsfg.sh`: experiments over BSFG parameters.

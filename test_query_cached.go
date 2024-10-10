@@ -1,8 +1,6 @@
 package main
 
 import (
-	"MEHT/sedb"
-	"MEHT/util"
 	"fmt"
 	"os"
 	"sort"
@@ -10,6 +8,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Jalingpp/MEST/sedb"
+	"github.com/Jalingpp/MEST/util"
 )
 
 func main() {

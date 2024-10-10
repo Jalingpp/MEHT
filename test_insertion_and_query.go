@@ -1,7 +1,6 @@
 package main
 
 import (
-	"MEHT/util"
 	"fmt"
 	"log"
 	"os"
@@ -11,7 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"MEHT/sedb"
+	"github.com/Jalingpp/MEST/util"
+
+	"github.com/Jalingpp/MEST/sedb"
 )
 
 type IntegerWithLock struct {

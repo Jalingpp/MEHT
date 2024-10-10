@@ -21,37 +21,43 @@ mbtBN=9000
 mehtBC=500
 insertion_and_query_file="test_insertion_and_query.go"
 
+isBF=false
+mehtWs=4
+mehtSt=2
+mehtBFsize=400000
+mehtBFhnum=3
+
 for siMode in ${siModes[*]}; do
     for ((i=0;i<$round;++i)); do
-        go run $insertion_and_query_file $siMode $RealNum1 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real1
+        go run $insertion_and_query_file $siMode $RealNum1 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real1 $mehtWs $mehtSt $mehtBFsize $mehtBFhnum $isBF
         sleep 1
         du -sh data/levelDB/PrimaryDB$RealNum1$siMode >> data/Real1dbsizePrimary$siMode
         du -sh data/levelDB/SecondaryDB$RealNum1$siMode >> data/Real1dbsizeSecondary$siMode
         rm -rf data/levelDB
         sleep 1
 
-        go run $insertion_and_query_file $siMode $RealNum2 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real2
+        go run $insertion_and_query_file $siMode $RealNum2 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real2 $mehtWs $mehtSt $mehtBFsize $mehtBFhnum $isBF
         sleep 1
         du -sh data/levelDB/PrimaryDB$RealNum2$siMode >> data/Real2dbsizePrimary$siMode
         du -sh data/levelDB/SecondaryDB$RealNum2$siMode >> data/Real2dbsizeSecondary$siMode
         rm -rf data/levelDB
         sleep 1
 
-        go run $insertion_and_query_file $siMode $RealNum3 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real3
+        go run $insertion_and_query_file $siMode $RealNum3 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real3 $mehtWs $mehtSt $mehtBFsize $mehtBFhnum $isBF
         sleep 1
         du -sh data/levelDB/PrimaryDB$RealNum3$siMode >> data/Real3dbsizePrimary$siMode
         du -sh data/levelDB/SecondaryDB$RealNum3$siMode >> data/Real3dbsizeSecondary$siMode
         rm -rf data/levelDB
         sleep 1
 
-        go run $insertion_and_query_file $siMode $RealNum4 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real4
+        go run $insertion_and_query_file $siMode $RealNum4 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real4 $mehtWs $mehtSt $mehtBFsize $mehtBFhnum $isBF
         sleep 1
         du -sh data/levelDB/PrimaryDB$RealNum4$siMode >> data/Real4dbsizePrimary$siMode
         du -sh data/levelDB/SecondaryDB$RealNum4$siMode >> data/Real4dbsizeSecondary$siMode
         rm -rf data/levelDB
         sleep 1
 
-        go run $insertion_and_query_file $siMode $RealNum5 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real5
+        go run $insertion_and_query_file $siMode $RealNum5 $thread $batch_size $mbtBN $mehtBC $mehtBS $Real5 $mehtWs $mehtSt $mehtBFsize $mehtBFhnum $isBF
         sleep 1
         du -sh data/levelDB/PrimaryDB$RealNum5$siMode >> data/Real5dbsizePrimary$siMode
         du -sh data/levelDB/SecondaryDB$RealNum5$siMode >> data/Real5dbsizeSecondary$siMode

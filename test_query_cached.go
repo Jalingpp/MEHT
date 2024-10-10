@@ -28,10 +28,10 @@ func main() {
 		}
 		close(queryCh)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string, voCh chan uint, durationCh chan time.Duration, PhaseLatency *util.PhaseLatency) {
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string, voCh chan uint, durationCh chan time.Duration, PhaseLatency *util.PhaseLatency, isBF bool) {
 		for query := range queryCh {
 			st := time.Now()
-			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(query), PhaseLatency)
+			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(query), PhaseLatency, isBF)
 			du := time.Since(st)
 			durationCh <- du
 			vo := proof.GetSizeOf()
@@ -73,11 +73,11 @@ func main() {
 		wG.Wait()
 		done <- true
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryCh chan string, voChList *[]chan uint, durationChList *[]chan time.Duration, PhaseLatency *util.PhaseLatency) {
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryCh chan string, voChList *[]chan uint, durationChList *[]chan time.Duration, PhaseLatency *util.PhaseLatency, isBF bool) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go worker(&wg, seDB, queryCh, (*voChList)[i], (*durationChList)[i], PhaseLatency)
+			go worker(&wg, seDB, queryCh, (*voChList)[i], (*durationChList)[i], PhaseLatency, isBF)
 		}
 		wg.Wait()
 		for _, voCh := range *voChList {
@@ -90,13 +90,14 @@ func main() {
 
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, mbtBN int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
-		merkleTreeCC int, numOfWorker int) string {
+		merkleTreeCC int, numOfWorker int, IsBF bool, mehtWs int, mehtSt int, mehtBFsize int, mehtBFhnum int) string {
 		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
 			",\tbs: " + strconv.Itoa(bs) + ",\tmbtBN: " + strconv.Itoa(mbtBN) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
-			strconv.Itoa(numOfWorker) + "."
+			strconv.Itoa(numOfWorker) + ",\tmehtIsBF: " + strconv.FormatBool(IsBF) + ",\tmehtWindowSize: " + strconv.Itoa(mehtWs) +
+			",\tmehtStride: " + strconv.Itoa(mehtSt) + ",\tmehtBFSize: " + strconv.Itoa(mehtBFsize) + ",\tmehtBFHNum: " + strconv.Itoa(mehtBFhnum) + "."
 	}
 	var queryNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
@@ -137,8 +138,13 @@ func main() {
 			mehtRdx := 16                      //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			mehtBc, _ := strconv.Atoi(args[5]) //change
 			mehtBs, _ := strconv.Atoi(args[6])
+			mehtWs, _ := strconv.Atoi(args[8])
+			mehtSt, _ := strconv.Atoi(args[9])
+			mehtBFsize, _ := strconv.Atoi(args[10])
+			mehtBFhnum, _ := strconv.Atoi(args[11])
+			mehtIsbf := util.StringToBool(args[12])
 			mehtArgs := make([]interface{}, 0)
-			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs)) //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs), sedb.MEHTWs(mehtWs), sedb.MEHTSt(mehtSt), sedb.MEHTBFsize(mehtBFsize), sedb.MEHTBFHnum(mehtBFhnum), sedb.MEHTIsBF(mehtIsbf)) //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
@@ -156,12 +162,12 @@ func main() {
 					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
 				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
-					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
+					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, mehtIsbf, mehtWs, mehtSt, mehtBFsize, mehtBFhnum)
 			} else {
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
 				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, 0, 0,
 					0, 0, 0, 0,
-					numOfWorker)
+					numOfWorker, false, 0, 0, 0, 0)
 			}
 			var duration time.Duration = 0
 			var latencyDuration time.Duration = 0
@@ -183,7 +189,7 @@ func main() {
 			go countVo(&voList, &voChList, doneCh)
 			go allocateQuery("../Synthetic/"+args[7], queryCh)
 			start := time.Now()
-			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, PhaseLatency)
+			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, PhaseLatency, mehtIsbf)
 			duration = time.Since(start)
 			<-doneCh
 			<-doneCh

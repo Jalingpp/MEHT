@@ -1,8 +1,6 @@
 package meht
 
 import (
-	"MEHT/mht"
-	"MEHT/util"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -11,6 +9,9 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+
+	"github.com/Jalingpp/MEST/mht"
+	"github.com/Jalingpp/MEST/util"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -36,7 +37,7 @@ type MEHT struct {
 }
 
 // NewMEHT returns a new MEHT
-func NewMEHT(rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int, cacheEnable bool) *MEHT {
+func NewMEHT(rdx int, bc int, bs int, ws int, stride int, bfsize int, bfhnum int, db *leveldb.DB, mgtNodeCC int, bucketCC int, segmentCC int, merkleTreeCC int, cacheEnable bool) *MEHT {
 	if cacheEnable {
 		lMgtNode, _ := lru.NewWithEvict[string, *MGTNode](mgtNodeCC, func(k string, v *MGTNode) {
 			callBackFoo[string, *MGTNode](k, v, db)
@@ -52,10 +53,10 @@ func NewMEHT(rdx int, bc int, bs int, db *leveldb.DB, mgtNodeCC int, bucketCC in
 		})
 		c := make([]interface{}, 0)
 		c = append(c, lMgtNode, lBucket, lSegment, lMerkleTree)
-		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), [32]byte{},
+		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs, ws, stride, bfsize, bfhnum), NewMGT(rdx), [32]byte{},
 			&c, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	} else {
-		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs), NewMGT(rdx), [32]byte{},
+		return &MEHT{rdx, bc, bs, NewSEH(rdx, bc, bs, ws, stride, bfsize, bfhnum), NewMGT(rdx), [32]byte{},
 			nil, cacheEnable, sync.RWMutex{}, sync.Mutex{}, sync.Mutex{}}
 	}
 }
@@ -128,7 +129,7 @@ func (meht *MEHT) GetCache() *[]interface{} {
 }
 
 // Insert inserts the key-value pair into the MEHT,返回插入的bucket指针,插入的value,segRootHash,segProof,mgtRootHash,mgtProof
-func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bucket, string, *MEHTProof) {
+func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool, isBF bool) (*Bucket, string, *MEHTProof) {
 	//判断是否为第一次插入
 	for meht.GetSEH(db).bucketsNumber == 0 && meht.seh.latch.TryLock() {
 		if meht.seh.bucketsNumber != 0 || isDelete {
@@ -136,7 +137,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 			break
 		}
 		//插入KV到SEH,第一个插入的操作一定不能是删除操作,因为此时root还没有bucket
-		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, false)
+		bucketSs, _, _, _ := meht.seh.Insert(kvPair, db, meht.cache, false, isBF)
 		//新建mgt的根节点
 		meht.mgt.Root = NewMGTNode(nil, true, bucketSs[0][0], db, meht.rdx, meht.cache)
 		meht.mgt.Root.isDirty = true
@@ -160,7 +161,7 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 	//因为无论是桶时间戳的改变还是换了一个新桶，这都意味着上一次插入已经完成了
 	var waitTimestamp int64
 	for bucketDelegationCode_ == FAILED {
-		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache, isDelete)
+		bucketSs, bucketDelegationCode_, timestamp, waitTimestamp = meht.seh.Insert(kvPair, db, meht.cache, isDelete, isBF)
 	}
 	// 要不返回需要上锁的那个桶，然后延迟释放桶锁，直到mgt更新完毕，这样子就可以从mgt粒度锁缩小至桶粒度
 	if bucketDelegationCode_ == DELEGATE {
@@ -174,10 +175,10 @@ func (meht *MEHT) Insert(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (*Bu
 			// 但是真的有人会刚好到这个桶，发现有东西还没插入，帮着插吗？
 			// 线程数是有限的，如果取得比较少，可能有几个线程一直在等待别人插入，导致可能8个线程有1个在别的地方插入，剩下7个都在等
 			// 那实际开8个线程可能真正在工作的1个了，所以我建议还是不取消注释，容忍batch以后再去查询，多一点查询延时
-			//continue
+			// continue
 		}
 		meht.seh.latch.RLock()
-		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache) // 此处重新查询了插入值所在bucket
+		kvBucket := meht.seh.GetBucketByKey(kvPair.GetKey(), db, meht.cache, isBF) // 此处重新查询了插入值所在bucket
 		meht.seh.latch.RUnlock()
 		return kvBucket, kvPair.GetValue(), nil
 	}
@@ -201,10 +202,10 @@ func (meht *MEHT) MGTCacheAdjust(db *leveldb.DB, a float64, b float64) {
 }
 
 // PrintMEHT 打印整个MEHT
-func (meht *MEHT) PrintMEHT(db *leveldb.DB) {
+func (meht *MEHT) PrintMEHT(db *leveldb.DB, isBF bool) {
 	fmt.Printf("打印MEHT-------------------------------------------------------------------------------------------\n")
 	fmt.Printf("MEHT: rdx=%d, bucketCapacity=%d, bucketSegNum=%d\n", meht.rdx, meht.bc, meht.bs)
-	meht.GetSEH(db).PrintSEH(db, meht.cache)
+	meht.GetSEH(db).PrintSEH(db, meht.cache, isBF)
 	meht.GetMGT(db).PrintMGT(db, meht.cache)
 }
 
@@ -227,14 +228,14 @@ func (mehtProof *MEHTProof) GetSizeOf() uint {
 }
 
 // QueryValueByKey 给定一个key，返回它的value及其用于查找证明的信息，包括segKey，seg是否存在，在seg中的index，不存在，则返回nil,nil
-func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB) (string, *Bucket, string, bool, int) {
+func (meht *MEHT) QueryValueByKey(key string, db *leveldb.DB, isBF bool) (string, *Bucket, string, bool, int) {
 	//根据key找到bucket
 	//此处在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，因此死锁
 	meht.latch.RLock()
 	defer meht.latch.RUnlock()
 	seh := meht.GetSEH(db)
 	seh.latch.RLock()
-	if bucket := seh.GetBucketByKey(key, db, meht.cache); bucket != nil {
+	if bucket := seh.GetBucketByKey(key, db, meht.cache, isBF); bucket != nil {
 		//根据key找到value
 		seh.latch.RUnlock() //防止在锁了seh以后试图获取bucket读锁，但是刚好有插入获取了这个bucket的写锁然后分裂了，试图获取seh的写锁并更新，导致死锁
 		value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, meht.cache, false)

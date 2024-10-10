@@ -1,8 +1,9 @@
 package mpt
 
 import (
-	"MEHT/util"
 	"fmt"
+
+	"github.com/Jalingpp/MEST/util"
 )
 
 type ProofElement struct {

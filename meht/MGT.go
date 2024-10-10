@@ -1,8 +1,6 @@
 package meht
 
 import (
-	"MEHT/mht"
-	"MEHT/util"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +10,9 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/Jalingpp/MEST/mht"
+	"github.com/Jalingpp/MEST/util"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/syndtr/goleveldb/leveldb"

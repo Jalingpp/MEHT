@@ -1,10 +1,11 @@
 package sedb
 
 import (
-	"MEHT/mbt"
-	"MEHT/meht"
-	"MEHT/mpt"
 	"fmt"
+
+	"github.com/Jalingpp/MEST/mbt"
+	"github.com/Jalingpp/MEST/meht"
+	"github.com/Jalingpp/MEST/mpt"
 )
 
 type SEDBProof struct {

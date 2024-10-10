@@ -271,3 +271,12 @@ func SortStringIntMapByInt(originMap *map[string]int) []*KV {
 	})
 	return mapSlice
 }
+
+func StringToBool(s string) bool {
+	switch strings.ToLower(s) {
+	case "true", "1", "t", "yes", "y":
+		return true
+	default:
+		return false
+	}
+}

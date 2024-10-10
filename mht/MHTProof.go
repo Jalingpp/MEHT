@@ -1,6 +1,6 @@
 package mht
 
-import "MEHT/util"
+import "github.com/Jalingpp/MEST/util"
 
 type ProofPair struct {
 	Index int      //0表示左子节点,1表示右子节点

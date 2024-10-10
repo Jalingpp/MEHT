@@ -1,15 +1,18 @@
 package meht
 
 import (
-	"MEHT/mht"
-	"MEHT/util"
 	"encoding/json"
 	"fmt"
-	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/syndtr/goleveldb/leveldb"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Jalingpp/MEST/mht"
+	"github.com/Jalingpp/MEST/util"
+
+	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/willf/bloom"
 )
 
 type SEH struct {
@@ -20,11 +23,13 @@ type SEH struct {
 	ht             sync.Map // hash table of buckets
 	bucketsNumber  int      // number of buckets, initial zero
 	latch          sync.RWMutex
+	BSFG           *BSFG
+	BSFGMutex      sync.RWMutex
 }
 
 // NewSEH returns a new SEH
-func NewSEH(rdx int, bc int, bs int) *SEH {
-	return &SEH{0, rdx, bc, bs, sync.Map{}, 0, sync.RWMutex{}}
+func NewSEH(rdx int, bc int, bs int, ws int, stride int, bfsize int, bfhnum int) *SEH {
+	return &SEH{0, rdx, bc, bs, sync.Map{}, 0, sync.RWMutex{}, NewBSFG(ws, stride, bfsize, bfhnum, rdx), sync.RWMutex{}}
 }
 
 // UpdateSEHToDB 更新SEH到db
@@ -36,14 +41,36 @@ func (seh *SEH) UpdateSEHToDB(db *leveldb.DB) {
 }
 
 // GetBucket 获取bucket，如果内存中没有，从db中读取
-func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}, isBF bool) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	ret_, ok := seh.ht.Load(bucketKey)
 	if !ok {
-		if len(bucketKey) > 0 {
-			return seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache)
+		if isBF {
+			//使用过滤器二分确定bucketKey
+			left, right := len(bucketKey)-1, 1
+			var mid int
+			num := 0
+			for left > right {
+				num++
+				mid = right + (left-right)/2
+				midBK := bucketKey[util.ComputeStrideByBase(seh.rdx)*(len(bucketKey)-mid):]
+				if seh.BSFG.IsExist(midBK) {
+					right = mid + 1
+				} else {
+					left = mid - 1
+				}
+			}
+
+			bk := bucketKey[util.ComputeStrideByBase(seh.rdx)*(len(bucketKey)-right):]
+			// fmt.Println("left:", left, "right:", right, "bk:", bk)
+			return seh.GetBucket(bk, db, cache, false)
 		} else {
-			return nil
+			//遍历bucketkey
+			if len(bucketKey) > 0 {
+				return seh.GetBucket(bucketKey[util.ComputeStrideByBase(seh.rdx):], db, cache, false)
+			} else {
+				return nil
+			}
 		}
 	}
 	ret := ret_.(*Bucket)
@@ -62,6 +89,11 @@ func (seh *SEH) GetBucket(bucketKey string, db *leveldb.DB, cache *[]interface{}
 		}
 	}
 	seh.ht.Store(bucketKey, ret)
+	if isBF {
+		seh.BSFGMutex.Lock()
+		seh.BSFG.InsertElement(bucketKey)
+		seh.BSFGMutex.Unlock()
+	}
 	return ret
 }
 
@@ -84,19 +116,34 @@ func (seh *SEH) GetBucketByKeyCon(key string) string {
 }
 
 // GetBucketByKey GetBucket returns the bucket with the given key
-func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}) *Bucket {
+func (seh *SEH) GetBucketByKey(key string, db *leveldb.DB, cache *[]interface{}, isBF bool) *Bucket {
 	//任何跳转到此处的函数都已对seh.ht添加了读锁，因此此处不必加锁
 	if seh.gd == 0 {
-		return seh.GetBucket("", db, cache)
+		return seh.GetBucket("", db, cache, false)
 	}
-	var bKey string
+
 	e := seh.gd * util.ComputeStrideByBase(seh.rdx)
+	bKey := ""
+	// for i := 1; i <= e; i++ {
+	// 	if len(key) >= i {
+	// 		bKey = bKey + string(key[len(key)-i])
+	// 	} else {
+	// 		bKey = bKey + "0"
+	// 	}
+	// }
 	if len(key) >= e {
 		bKey = key[len(key)-e:]
 	} else {
 		bKey = strings.Repeat("0", e-len(key)) + key
 	}
-	return seh.GetBucket(bKey, db, cache)
+	// seh.BSFGMutex.RLock()
+	// fmt.Println("key=", key, "bkey=", bKey, "emap:", seh.BSFG.ElementMap)
+	// seh.BSFGMutex.RUnlock()
+	bucket := seh.GetBucket(bKey, db, cache, isBF)
+	// if bucket == nil && isBF {
+	// 	bucket = seh.GetBucket(bKey, db, cache, false)
+	// }
+	return bucket
 	//return seh.GetBucket(seh.GetBucketByKeyCon(key), db, cache)
 }
 
@@ -116,9 +163,9 @@ func (seh *SEH) GetBucketsNumber() int {
 }
 
 // GetValueByKey returns the value of the key-value pair with the given key
-func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) string {
+func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}, isBF bool) string {
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(key, db, cache)
+	bucket := seh.GetBucketByKey(key, db, cache, isBF)
 	seh.latch.RUnlock()
 	if bucket == nil {
 		return ""
@@ -127,9 +174,9 @@ func (seh *SEH) GetValueByKey(key string, db *leveldb.DB, cache *[]interface{}) 
 }
 
 // GetProof returns the proof of the key-value pair with the given key
-func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (string, [32]byte, *mht.MHTProof) {
+func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}, isBF bool) (string, [32]byte, *mht.MHTProof) {
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(key, db, cache)
+	bucket := seh.GetBucketByKey(key, db, cache, isBF)
 	seh.latch.RUnlock()
 	value, segKey, isSegExist, index := bucket.GetValueByKey(key, db, cache, false)
 	segRootHash, mhtProof := bucket.GetProof(segKey, isSegExist, index, db, cache)
@@ -137,13 +184,18 @@ func (seh *SEH) GetProof(key string, db *leveldb.DB, cache *[]interface{}) (stri
 }
 
 // Insert inserts the key-value pair into the SEH,返回插入的bucket指针,插入的value,segRootHash,proof
-func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}, isDelete bool) ([][]*Bucket, BucketDelegationCode, *int64, int64) {
+func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{}, isDelete bool, isBF bool) ([][]*Bucket, BucketDelegationCode, *int64, int64) {
 	//判断是否为第一次插入
 	if seh.bucketsNumber == 0 { //第一次插入一定不是删除操作，因此不用判断isDelete
 		//创建新的bucket
 		bucket := NewBucket(0, seh.rdx, seh.bucketCapacity, seh.bucketSegNum)
 		bucket.Insert(kvPair, db, cache)
 		seh.ht.Store("", bucket)
+		if isBF {
+			seh.BSFGMutex.Lock()
+			seh.BSFG.InsertElement("")
+			seh.BSFGMutex.Unlock()
+		}
 		//更新bucket到db
 		//bucket.UpdateBucketToDB(db, cache)
 		seh.bucketsNumber++
@@ -153,13 +205,13 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 	}
 	//不是第一次插入,根据key和GD找到待插入的bucket
 	seh.latch.RLock()
-	bucket := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
+	bucket := seh.GetBucketByKey(kvPair.GetKey(), db, cache, isBF)
 	seh.latch.RUnlock()
 	//即使要删除的值在辅助索引上还没有来得及插入，也不会影响删除操作，因为删除操作只需要找到桶并记录这一次删除操作即可
 	//后续要删除的值也一定会先经过这个桶去插入，不会说延迟删除的桶和即将插入的桶不会有交集，但是桶分裂时要将删除标记传递下去，保证延后的需删除值在插入时一定会在待插入桶找到删除标记
 	if bucket != nil && bucket.latch.TryLock() {
 		seh.latch.RLock()
-		bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache)
+		bucket_ := seh.GetBucketByKey(kvPair.GetKey(), db, cache, isBF)
 		seh.latch.RUnlock()
 		if bucket_ != bucket {
 			bucket.latch.Unlock()
@@ -252,14 +304,20 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 					seh.gd = newLd
 				}
 				seh.latch.Unlock() //不同桶对ht的修改不会产生交集，因此尝试将seh锁释放提前，让sync.map本身特性保证ht修改的并发安全
-				//无论是否扩展,均需遍历buckets,更新ht,更新buckets到db
 				for i, buckets := range bucketSs {
 					var bKey string
 					for j := range buckets {
+						bKey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
+						if isBF {
+							seh.BSFGMutex.Lock()
+							for k := 0; k < len(bKey); k++ {
+								seh.BSFG.InsertElement(bKey[k:])
+							}
+							seh.BSFGMutex.Unlock()
+						}
 						if i != 0 && j == 0 { // 第一层往后每一层的第一个桶都是上一层分裂的那个桶，而上一层甚至更上层已经加过了，因此跳过
 							continue
 						}
-						bKey = util.IntArrayToString(buckets[j].GetBucketKey(), buckets[j].rdx)
 						// 在更新ht之前需要先把桶都给锁上，因为在此之后mgt还需要grow
 						// 如果不锁的话，mgt在grow完成前可能桶就已经通过ht被找到，然后进行桶更新，就会出问题
 						if buckets[j] != bucket { //将新分裂出来的桶给锁上，bucket本身已经被锁上了，因此不需要重复上锁
@@ -302,7 +360,7 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 				//// 但是不需要对seh上读锁，因为能到这段代码就说明虽然桶在插入，但是明显不会插满
 				//// 那么桶就不会分裂，不会分裂seh就不会变，因此不需要对seh上读锁
 				key_ := kvPair.GetKey()
-				if seh.GetBucketByKey(key_, db, cache) != bucket || len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 || bucket.latchTimestamp == 0 {
+				if seh.GetBucketByKey(key_, db, cache, isBF) != bucket || len(bucket.DelegationList)+bucket.PendingNum+bucket.number >= bucket.capacity-1 || bucket.latchTimestamp == 0 {
 					// 重新检查是否可以插入，发现没位置了就只能等新一轮调整让桶分裂了
 					bucket.DelegationLatch.Unlock()
 					return nil, FAILED, nil, 0
@@ -353,11 +411,12 @@ func (seh *SEH) Insert(kvPair util.KVPair, db *leveldb.DB, cache *[]interface{},
 		bucket.latch.Unlock()
 		return nil, FAILED, nil, 0
 	}
+	// fmt.Println("111111")
 	return nil, FAILED, nil, 0
 }
 
 // PrintSEH 打印SEH
-func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
+func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}, isBF bool) {
 	fmt.Printf("打印SEH-------------------------------------------------------------------------------------------\n")
 	if seh == nil {
 		return
@@ -366,7 +425,7 @@ func (seh *SEH) PrintSEH(db *leveldb.DB, cache *[]interface{}) {
 	seh.latch.RLock()
 	seh.ht.Range(func(key, value interface{}) bool {
 		fmt.Printf("bucketKey=%s\n", key.(string))
-		seh.GetBucket(key.(string), db, cache).PrintBucket(db, cache)
+		seh.GetBucket(key.(string), db, cache, isBF).PrintBucket(db, cache)
 		return true
 	})
 	seh.latch.RUnlock()
@@ -379,6 +438,10 @@ type SeSEH struct {
 	BucketSegNum   int      // number of segment bits in the bucket, initial given
 	HashTableKeys  []string // hash table of buckets
 	BucketsNumber  int      // number of buckets, initial zero
+	BSFGWS         int
+	BSFGST         int
+	BSFGBFS        int
+	BSFGBGHN       int
 }
 
 func SerializeSEH(seh *SEH) []byte {
@@ -388,7 +451,7 @@ func SerializeSEH(seh *SEH) []byte {
 		return true
 	})
 	seSEH := &SeSEH{seh.gd, seh.rdx, seh.bucketCapacity, seh.bucketSegNum,
-		hashTableKeys, seh.bucketsNumber}
+		hashTableKeys, seh.bucketsNumber, seh.BSFG.WindowSize, seh.BSFG.Stride, seh.BSFG.BFSize, seh.BSFG.BFHashNum}
 	if jsonSEH, err := json.Marshal(seSEH); err != nil {
 		fmt.Printf("SerializeSEH error: %v\n", err)
 		return nil
@@ -404,12 +467,16 @@ func DeserializeSEH(data []byte) (*SEH, error) {
 		return nil, err
 	}
 	seh := &SEH{seSEH.Gd, seSEH.Rdx, seSEH.BucketCapacity, seSEH.BucketSegNum,
-		sync.Map{}, seSEH.BucketsNumber, sync.RWMutex{}}
+		sync.Map{}, seSEH.BucketsNumber, sync.RWMutex{}, &BSFG{seSEH.BSFGWS, seSEH.BSFGST, seSEH.BSFGBFS, seSEH.BSFGBGHN, seSEH.Rdx, make([]*bloom.BloomFilter, 0), make(map[int]int), map[string][]int{}}, sync.RWMutex{}}
+	// sync.Map{}, seSEH.BucketsNumber, sync.RWMutex{}, &BSFG{seSEH.BSFGWS, seSEH.BSFGST, seSEH.BSFGBFS, seSEH.BSFGBGHN, seSEH.Rdx, BFList, make(map[string][]int)}, sync.RWMutex{}}
 	for _, key := range seSEH.HashTableKeys {
 		if key == "" && seSEH.Gd > 0 {
 			continue
 		} else {
 			seh.ht.Store(key, dummyBucket)
+			seh.BSFGMutex.Lock()
+			seh.BSFG.InsertElement(key)
+			seh.BSFGMutex.Unlock()
 		}
 	}
 	return seh, nil

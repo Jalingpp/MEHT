@@ -1,10 +1,6 @@
 package sedb
 
 import (
-	"MEHT/mbt"
-	"MEHT/meht"
-	"MEHT/mpt"
-	"MEHT/util"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -12,6 +8,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Jalingpp/MEST/mbt"
+	"github.com/Jalingpp/MEST/meht"
+	"github.com/Jalingpp/MEST/mpt"
+	"github.com/Jalingpp/MEST/util"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -35,6 +36,11 @@ type MerkleTreeCacheCapacity int                                 //MEHT cache ca
 type MEHTRdx int                                                 //meht的参数，meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 type MEHTBc int                                                  //meht的参数，meht中bucket的容量，即每个bucket中最多存储的KVPair数
 type MEHTBs int                                                  //meht的参数，meht中segment划分的位数，即每个bucket中最多分割的segments数
+type MEHTWs int                                                  //meht的参数，meht中bsfg的窗口大小，即每个布隆过滤器中容纳的bucketkey长度范围
+type MEHTSt int                                                  //meht的参数，meht中bsfg的窗口步长，即相邻两个布隆过滤器中容纳的bucketkey长度范围差值
+type MEHTBFsize int                                              //meht的参数，meht中bsfg的bf位数，即单个布隆过滤器的比特位数
+type MEHTBFHnum int                                              //meht的参数，meht中bsfg的bf哈希函数个数，即单个布隆过滤器的哈希函数个数
+type MEHTIsBF bool                                               //meht的参数，meht是否采用布隆过滤器组
 var DefaultMgtNodeCacheCapacity = MgtNodeCacheCapacity(2 * 128)  //MEHT default cache capacity for mgtNode
 var DefaultBucketCacheCapacity = BucketCacheCapacity(128)        //MEHT default cache capacity for bucket
 var DefaultSegmentCacheCapacity = SegmentCacheCapacity(2 * 128)  //MEHT default cache capacity for segment
@@ -42,6 +48,11 @@ var DefaultMerkleTreeCapacity = MerkleTreeCacheCapacity(2 * 128) //MEHT default 
 var DefaultMEHTRdx = MEHTRdx(16)                                 //MEHT default Rdx
 var DefaultMEHTBc = MEHTBc(1280)                                 //MEHT default Bc
 var DefaultMEHTBs = MEHTBs(1)                                    //MEHT default Bs
+var DefaultMEHTWs = MEHTWs(4)
+var DefaultMEHTSt = MEHTSt(4)
+var DefaultMEHTBFsize = MEHTBFsize(400000)
+var DefaultMEHTBFHnum = MEHTBFHnum(3)
+var DefaultMEHTIsBF = MEHTIsBF(false)
 
 type SEDB struct {
 	se              *StorageEngine //搜索引擎的指针
@@ -172,7 +183,7 @@ func workerForPrimarySearch(wg *sync.WaitGroup, sedb *SEDB, primaryKeyCh chan st
 var sum = 0
 
 // QueryKVPairsByHexKeyword 根据十六进制的非主键HexKeyword查询完整的kvPair
-func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.PhaseLatency) (string, []*util.KVPair, *SEDBProof) {
+func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.PhaseLatency, isBF bool) (string, []*util.KVPair, *SEDBProof) {
 	if sedb.GetStorageEngine() == nil {
 		fmt.Println("SEDB is empty!")
 		return "", nil, nil
@@ -210,7 +221,7 @@ func (sedb *SEDB) QueryKVPairsByHexKeyword(HexKeyword string, phaselo *util.Phas
 		return primaryKey, queryResult, NewSEDBProof(primaryProof, secondaryMPTProof, secondaryMBTProof, secondaryMEHTProof)
 	} else if sedb.siMode == "meht" {
 		st := time.Now() //add0126 for phase latency
-		pKey, qBucket, segKey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(HexKeyword, sedb.secondaryDb)
+		pKey, qBucket, segKey, isSegExist, index := sedb.GetStorageEngine().GetSecondaryIndexMeht(sedb.secondaryDb).QueryValueByKey(HexKeyword, sedb.secondaryDb, isBF)
 		du := time.Since(st) // add0126 for phase latency
 		if phaselo != nil {
 			phaselo.RecordLatencyObject("getkey", du) // add0126 for phase latency
@@ -398,4 +409,8 @@ func (sedb *SEDB) PrintSEDB() {
 	fmt.Printf("seHash:%s\n", hex.EncodeToString(sedb.seHash[:]))
 	fmt.Println("dbPath:", sedb.primaryDbPath)
 	sedb.GetStorageEngine().PrintStorageEngine(sedb.primaryDb)
+}
+
+func (sedb *SEDB) GetSecondaryDB() *leveldb.DB {
+	return sedb.secondaryDb
 }

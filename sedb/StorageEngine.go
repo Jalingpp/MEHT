@@ -1,15 +1,16 @@
 package sedb
 
 import (
-	"MEHT/mbt"
-	"MEHT/meht"
-	"MEHT/mpt"
-	"MEHT/util"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"sync"
+
+	"github.com/Jalingpp/MEST/mbt"
+	"github.com/Jalingpp/MEST/meht"
+	"github.com/Jalingpp/MEST/mpt"
+	"github.com/Jalingpp/MEST/util"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -384,11 +385,13 @@ func (se *StorageEngine) MEHTCacheAdjust(db *leveldb.DB, a float64, b float64) {
 // InsertIntoMEHT 插入非主键索引
 func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB, isDelete bool) (string, *meht.MEHTProof) {
 	//如果是第一次插入
+	_, _, _, _, _, _, _, isBF := GetMEHTArgs(&se.mehtArgs)
 	if se.GetSecondaryIndexMeht(db) == nil && se.secondaryLatch.TryLock() { // 总有一个线程会获得锁并创建meht
 		//创建一个新的非主键索引
 		_, _, _, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC := GetCapacity(&se.cacheCapacity)
-		mehtRdx, mehtBc, mehtBs := GetMEHTArgs(&se.mehtArgs)
-		se.secondaryIndexMeht = meht.NewMEHT(mehtRdx, mehtBc, mehtBs, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
+		mehtRdx, mehtBc, mehtBs, mehtWs, mehtSt, mehtBFsize, mehtBFhnum, _ := GetMEHTArgs(&se.mehtArgs)
+		se.secondaryIndexMeht = meht.NewMEHT(mehtRdx, mehtBc, mehtBs, mehtWs, mehtSt, mehtBFsize, mehtBFhnum, db, mgtNodeCC, bucketCC, segmentCC, merkleTreeCC, se.cacheEnable)
+		// isBF = mehtIsbf
 		se.secondaryLatch.Unlock()
 	}
 	for se.GetSecondaryIndexMeht(db) == nil { // 其余线程等待meht创建成功
@@ -396,7 +399,8 @@ func (se *StorageEngine) InsertIntoMEHT(kvPair util.KVPair, db *leveldb.DB, isDe
 	// 这里逻辑也需要转变，因为并发插入的时候可能很多键都相同但被阻塞了一直没写进去，那更新就会有非常多初始值的重复
 	// 因此这里不先进行与初始值的合并，而是在后续委托插入的时候进行重复键的值合并，然后一并插入到桶里的时候利用map结构再对插入值与初始值进行合并去重
 	//_, newValues, newProof := se.secondaryIndex_meht.Insert(insertedKV, db)
-	_, newValues, newProof := se.secondaryIndexMeht.Insert(kvPair, db, isDelete)
+	// fmt.Println(isBF)
+	_, newValues, newProof := se.secondaryIndexMeht.Insert(kvPair, db, isDelete, isBF)
 	//本来是需要更新meht到db，但是现在是批量插入，mgtHash是脏的，所以更新没有意义
 	//se.secondaryIndexMeht.UpdateMEHTToDB(db)
 	return newValues, newProof
@@ -420,10 +424,15 @@ func GetMBTArgs(mbtArgs *[]interface{}) (mbtBucketNum int, mbtAggregation int) {
 }
 
 // GetMEHTArgs 解析MEHTArgs
-func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int) {
+func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int, mehtWs int, mehtSt int, mehtBFsize int, mehtBFhnum int, mehtIsbf bool) {
 	mehtRdx = int(DefaultMEHTRdx)
 	mehtBc = int(DefaultMEHTBc)
 	mehtBs = int(DefaultMEHTBs)
+	mehtWs = int(DefaultMEHTWs)
+	mehtSt = int(DefaultMEHTSt)
+	mehtBFsize = int(DefaultMEHTBFsize)
+	mehtBFhnum = int(DefaultMEHTBFHnum)
+	mehtIsbf = bool(DefaultMEHTIsBF)
 	for _, arg := range *mehtArgs {
 		switch arg.(type) {
 		case MEHTRdx:
@@ -432,6 +441,16 @@ func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int) 
 			mehtBc = int(arg.(MEHTBc))
 		case MEHTBs:
 			mehtBs = int(arg.(MEHTBs))
+		case MEHTWs:
+			mehtWs = int(arg.(MEHTWs))
+		case MEHTSt:
+			mehtSt = int(arg.(MEHTSt))
+		case MEHTBFsize:
+			mehtBFsize = int(arg.(MEHTBFsize))
+		case MEHTBFHnum:
+			mehtBFhnum = int(arg.(MEHTBFHnum))
+		case MEHTIsBF:
+			mehtIsbf = bool(arg.(MEHTIsBF))
 		default:
 			panic("Unknown type " + reflect.TypeOf(arg).String() + " in function GetMEHTArgs.")
 		}
@@ -493,7 +512,7 @@ func (se *StorageEngine) PrintStorageEngine(db *leveldb.DB) {
 		se.GetSecondaryIndexMpt(db).PrintMPT(db)
 	} else if se.secondaryIndexMode == "meht" {
 		fmt.Printf("secondaryIndexRootHash(meht):%s\n", se.secondaryIndexHashMeht)
-		se.GetSecondaryIndexMeht(db).PrintMEHT(db)
+		se.GetSecondaryIndexMeht(db).PrintMEHT(db, false)
 	} else if se.secondaryIndexMode == "mbt" {
 		fmt.Printf("secondaryIndexRootHash(mbt):%s\n", se.secondaryIndexHashMbt)
 		se.GetSecondaryIndexMbt(db).PrintMBT(db)

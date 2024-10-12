@@ -16,8 +16,8 @@ fi
 #  miner.start()
 #3.等待十秒左右后给账户1转启动资金：
 #  loadScript("loadRawTxs.js")
-#4.发送100W交易到交易池：
-#  loadScript("loadTxs1000000.js")
+#4.发送1000交易到交易池(实际实验发送100W)：
+#  loadScript("loadTxs1000.js")
 #5.等待/root/ethnodes/datafile文件中有数据（很久很久...）后在新终端处执行本脚本：
 #  ./test_geth.sh
 

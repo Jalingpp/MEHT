@@ -5,7 +5,8 @@ else
 fi
 
 #geth实验步骤：
-#1.启动geth：
+#1.安装并启动geth：
+#  cp ./geth /usr/local/bin/
 #  cd ethnodes
 #  geth --datadir ./ init ./genesis.json
 #  geth --networkid 200 --datadir "./" --nodiscover --rpcapi personal console

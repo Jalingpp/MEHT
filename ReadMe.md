@@ -16,7 +16,9 @@ Step 3. Find results in data.
 
 ## Experiments Script
 
-`run.sh`: complete all experiments at once.
+All the parameters with different values are listed in the bash files.
+
+`run.sh`: complete all experiments at once. 
 
 `test_thread.sh`: experiments over various threads.
 
@@ -35,3 +37,5 @@ Step 3. Find results in data.
 `test_mbtBN.sh`: experiments over various BN of mbt.
 
 `test_bsfg.sh`: experiments over BSFG parameters.
+
+An end-to-end experiment can be found in `https://github.com/Jalingpp/Geth4MEST/tree/main`.

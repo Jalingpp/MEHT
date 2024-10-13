@@ -246,7 +246,8 @@ func main() {
 			close(flagChan)
 		}
 		txnumber = len(txs)
-		time.Sleep(10 * time.Second)
+		time.Sleep(40 * time.Second)
+		fmt.Println("sleep 40s")
 	}
 	for _, duCh := range latencyDurationChList {
 		close(duCh)
@@ -264,13 +265,13 @@ func main() {
 
 	seDB.WriteSEDBInfoToFile(filePath)
 	duration2 := time.Since(start)
-	fmt.Println(duration)
+	fmt.Println("duration:", duration)
 	fmt.Println(duration2)
 	util.WriteResultToFile("data/result"+siMode, argsString+"\tInsert "+strconv.Itoa(num)+" records in "+
 		duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps "+
 		strconv.FormatFloat(duration.Seconds()/float64(num), 'f', -1, 64)+
 		", average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt "+", falsePositiveRate is "+strconv.FormatFloat(falsePositiveRate, 'f', -1, 64)+".\n")
-	fmt.Println("Insert ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
+	fmt.Println("Insert ", txnumber, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(), " tps, "+
 		"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt "+", falsePositiveRate is "+strconv.FormatFloat(falsePositiveRate, 'f', -1, 64))
 	seDB = nil
 }

@@ -54,4 +54,4 @@ All the parameters with different values are listed in the bash files. You can c
 
 - `test_bsfg.sh`: experiments over BSFG parameters.
 
-An end-to-end experiment can be found in `https://github.com/Jalingpp/Geth4MEST/tree/main`.
+An end-to-end experiment can be found in `https://github.com/Jalingpp/Geth4MEST`.

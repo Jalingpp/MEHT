@@ -36,27 +36,15 @@ We conduct experiments by the bash scripts. All the parameters with different va
 
 | Script Name | Description | Parameters |
 | ------ | ------ | ------ |
-| run.sh | complete all experiments at once | |
+| run.sh | complete all experiments at once | - |
 | test_thread.sh | experiments over various threads | thread_option=(1 2 4 8 16 32) |
-
-`run.sh`: complete all experiments at once. 
-
-- `test_thread.sh`: experiments over various threads.
-
-- `test_scale.sh`: experiments over various data scales.
-
-- `test_cache.sh`: experiments before-after hotness adjustment.
-
-- `test_real.sh`: experiments on NFTTrans dataset.
-
-- `test_batchSize.sh`: experiments over various batchsize.
-
-- `test_mehtBC.sh`: experiments over various BC of meht.
-
-- `test_mehtBS.sh`: experiments over various BS of meht.
-
-- `test_mbtBN.sh`: experiments over various BN of mbt.
-
-- `test_bsfg.sh`: experiments over BSFG parameters.
+| test_scale.sh | experiments over various data scales| U7Num=(1000000 1500000 2000000 2500000 3000000) |
+| test_cache.sh | experiments before-after hotness adjustment| skewratio=(S1 S2 S3 S4 S5) |
+| test_real.sh | experiments on NFTTrans dataset | Num=(1000000 1500000 2000000 2500000 3000000) |
+| test_batchSize.sh | experiments over various batchsize | batch_size=(1 100 1000 10000 100000) |
+| test_mehtBC.sh | experiments over various BC of meht | mehtBC=(250 500 750 1000 1250) |
+| test_mehtBS.sh | experiments over various BS of meht | mehtBS=(0 1 2 3 4) |
+| test_mbtBN.sh | experiments over various BN of mbt | BN=1000;BN<=50000;BN+=1000 |
+| test_bsfg.sh | experiments over BSFG parameters | mehtWs=(2 3 4 5 6)<br>mehtSts=(1 2 3 4) |
 
 An end-to-end experiment can be found in `https://github.com/Jalingpp/Geth4MEST`.

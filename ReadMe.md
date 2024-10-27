@@ -30,13 +30,13 @@ Step 3. Find results in data.
 
 `test_xxx.go`: entry files used to test system performance.
 
-## Experiments Script
+## Evaluation
 
-We conduct experiments by the bash scripts. All the parameters with different values are listed in the bash files. You can change paramenters to test the methods.
+We conduct experimental evaluations by the bash scripts. All the parameters with different values are listed in the bash files. You can change paramenters to test the methods.
 
 | Script Name | Description | Parameters |
 | ------ | ------ | ------ |
-| run.sh | complete all experiments at once | - |
+| run.sh | complete all experiments at once | |
 | test_thread.sh | experiments over various threads | thread_option=(1 2 4 8 16 32) |
 | test_scale.sh | experiments over various data scales| U7Num=(1000000 1500000 2000000 2500000 3000000) |
 | test_cache.sh | experiments before-after hotness adjustment| skewratio=(S1 S2 S3 S4 S5) |

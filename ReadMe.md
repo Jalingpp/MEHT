@@ -32,7 +32,12 @@ Step 3. Find results in data.
 
 ## Experiments Script
 
-All the parameters with different values are listed in the bash files. You can change paramenters to test the methods.
+We conduct experiments by the bash scripts. All the parameters with different values are listed in the bash files. You can change paramenters to test the methods.
+
+| Script Name | Description | Parameters |
+| ------ | ------ | ------ |
+| run.sh | complete all experiments at once | |
+| test_thread.sh | experiments over various threads | thread_option=(1 2 4 8 16 32) |
 
 `run.sh`: complete all experiments at once. 
 

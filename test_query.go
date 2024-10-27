@@ -29,10 +29,10 @@ func main() {
 		}
 		close(queryCh)
 	}
-	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string, voCh chan uint, durationCh chan time.Duration, PhaseLatency *util.PhaseLatency, isBF bool) {
+	worker := func(wg *sync.WaitGroup, seDB *sedb.SEDB, queryCh chan string, voCh chan uint, durationCh chan time.Duration, PhaseLatency *util.PhaseLatency) {
 		for query := range queryCh {
 			st := time.Now()
-			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(query), PhaseLatency, isBF)
+			_, _, proof := seDB.QueryKVPairsByHexKeyword(util.StringToHex(query), PhaseLatency, false)
 			du := time.Since(st)
 			durationCh <- du
 			vo := proof.GetSizeOf()
@@ -74,11 +74,11 @@ func main() {
 		wG.Wait()
 		done <- true
 	}
-	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryCh chan string, voChList *[]chan uint, durationChList *[]chan time.Duration, PhaseLatency *util.PhaseLatency, isBF bool) {
+	createWorkerPool := func(numOfWorker int, seDB *sedb.SEDB, queryCh chan string, voChList *[]chan uint, durationChList *[]chan time.Duration, PhaseLatency *util.PhaseLatency) {
 		var wg sync.WaitGroup
 		for i := 0; i < numOfWorker; i++ {
 			wg.Add(1)
-			go worker(&wg, seDB, queryCh, (*voChList)[i], (*durationChList)[i], PhaseLatency, isBF)
+			go worker(&wg, seDB, queryCh, (*voChList)[i], (*durationChList)[i], PhaseLatency)
 		}
 		wg.Wait()
 		for _, voCh := range *voChList {
@@ -91,14 +91,13 @@ func main() {
 
 	serializeArgs := func(siMode string, rdx int, bc int, bs int, mbtBN int, cacheEnable bool,
 		shortNodeCC int, fullNodeCC int, mgtNodeCC int, bucketCC int, segmentCC int,
-		merkleTreeCC int, numOfWorker int, IsBF bool, mehtWs int, mehtSt int, mehtBFsize int, mehtBFhnum int) string {
+		merkleTreeCC int, numOfWorker int) string {
 		return "siMode: " + siMode + ",\trdx: " + strconv.Itoa(rdx) + ",\tbc: " + strconv.Itoa(bc) +
 			",\tbs: " + strconv.Itoa(bs) + ",\tmbtBN: " + strconv.Itoa(mbtBN) + ",\tcacheEnable: " + strconv.FormatBool(cacheEnable) + ",\tshortNodeCacheCapacity: " +
 			strconv.Itoa(shortNodeCC) + ",\tfullNodeCacheCapacity: " + strconv.Itoa(fullNodeCC) + ",\tmgtNodeCacheCapacity" +
 			strconv.Itoa(mgtNodeCC) + ",\tbucketCacheCapacity: " + strconv.Itoa(bucketCC) + ",\tsegmentCacheCapacity: " +
 			strconv.Itoa(segmentCC) + ",\tmerkleTreeCacheCapacity: " + strconv.Itoa(merkleTreeCC) + ",\tnumOfThread: " +
-			strconv.Itoa(numOfWorker) + ",\tmehtIsBF: " + strconv.FormatBool(IsBF) + ",\tmehtWindowSize: " + strconv.Itoa(mehtWs) +
-			",\tmehtStride: " + strconv.Itoa(mehtSt) + ",\tmehtBFSize: " + strconv.Itoa(mehtBFsize) + ",\tmehtBFHNum: " + strconv.Itoa(mehtBFhnum) + "."
+			strconv.Itoa(numOfWorker) + "."
 	}
 	var queryNum = make([]int, 0)
 	var siModeOptions = make([]string, 0)
@@ -139,13 +138,8 @@ func main() {
 			mehtRdx := 16                      //meht中mgt的分叉数，与key的基数相关，通常设为16，即十六进制数
 			mehtBc, _ := strconv.Atoi(args[5]) //change
 			mehtBs, _ := strconv.Atoi(args[6])
-			mehtWs, _ := strconv.Atoi(args[8])
-			mehtSt, _ := strconv.Atoi(args[9])
-			mehtBFsize, _ := strconv.Atoi(args[10])
-			mehtBFhnum, _ := strconv.Atoi(args[11])
-			mehtIsbf := util.StringToBool(args[12])
 			mehtArgs := make([]interface{}, 0)
-			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs), sedb.MEHTWs(mehtWs), sedb.MEHTSt(mehtSt), sedb.MEHTBFsize(mehtBFsize), sedb.MEHTBFHnum(mehtBFhnum), sedb.MEHTIsBF(mehtIsbf)) //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
+			mehtArgs = append(mehtArgs, sedb.MEHTRdx(16), sedb.MEHTBc(mehtBc), sedb.MEHTBs(mehtBs)) //meht中bucket中标识segment的位数，1位则可以标识0和1两个segment
 			seHash, primaryDbPath, secondaryDbPath := sedb.ReadSEDBInfoFromFile(filePath)
 			var seDB *sedb.SEDB
 			//cacheEnable := false
@@ -163,12 +157,12 @@ func main() {
 					sedb.MgtNodeCacheCapacity(mgtNodeCacheCapacity), sedb.BucketCacheCapacity(bucketCacheCapacity),
 					sedb.SegmentCacheCapacity(segmentCacheCapacity), sedb.MerkleTreeCacheCapacity(merkleTreeCacheCapacity))
 				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, shortNodeCacheCapacity, fullNodeCacheCapacity, mgtNodeCacheCapacity, bucketCacheCapacity,
-					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker, mehtIsbf, mehtWs, mehtSt, mehtBFsize, mehtBFhnum)
+					segmentCacheCapacity, merkleTreeCacheCapacity, numOfWorker)
 			} else {
 				seDB = sedb.NewSEDB(seHash, primaryDbPath, secondaryDbPath, siMode, mbtArgs, mehtArgs, cacheEnable)
 				argsString = serializeArgs(siMode, mehtRdx, mehtBc, mehtBs, mbtBucketNum, cacheEnable, 0, 0,
 					0, 0, 0, 0,
-					numOfWorker, false, 0, 0, 0, 0)
+					numOfWorker)
 			}
 			var duration time.Duration = 0
 			var latencyDuration time.Duration = 0
@@ -178,6 +172,8 @@ func main() {
 			voChList := make([]chan uint, numOfWorker)
 			latencyDurationChList := make([]chan time.Duration, numOfWorker)
 
+			PhaseLatency := util.NewPhaseLatency() //创建统计各阶段延迟的对象  add0128 for phase latency
+
 			for i := 0; i < numOfWorker; i++ {
 				latencyDurationChList[i] = make(chan time.Duration)
 				voChList[i] = make(chan uint)
@@ -186,10 +182,9 @@ func main() {
 			voList := make([]uint, numOfWorker)
 			go countLatency(&latencyDurationList, &latencyDurationChList, doneCh)
 			go countVo(&voList, &voChList, doneCh)
-			// go allocateQuery("../Synthetic/"+args[7], queryCh)
-			go allocateQuery("data/"+args[7], queryCh)
+			go allocateQuery("../Synthetic/"+args[7], queryCh)
 			start := time.Now()
-			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, nil, mehtIsbf)
+			createWorkerPool(numOfWorker, seDB, queryCh, &voChList, &latencyDurationChList, PhaseLatency)
 			duration = time.Since(start)
 			<-doneCh
 			<-doneCh
@@ -199,13 +194,33 @@ func main() {
 			}
 			//seDB.WriteSEDBInfoToFile(filePath)
 
+			// a := 0.9
+			// b := 0.1
+			// st := time.Now()                                    //add0128 for phase latency
+			// seDB.CacheAdjust(a, b)                              //add0128 for phase latency
+			// du := time.Since(st)                                //add0128 for phase latency
+			// PhaseLatency.RecordLatencyObject("cacheadjust", du) //add0128 for phase latency
+			// seDB.BatchCommit()                                  //add0128 for phase latency
+			seDB.WriteSEDBInfoToFile(filePath)
+
+			//统计各阶段的延迟
+			PhaseLatency.CompPhaseLatency() //add0126 for phase latency
+
 			util.WriteResultToFile("data/qresult"+siMode, argsString+"\tQuery "+strconv.Itoa(num)+" records in "+
 				duration.String()+", throughput = "+strconv.FormatFloat(float64(num)/duration.Seconds(), 'f', -1, 64)+" tps, "+
 				"average latency is "+strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64)+" mspt"+
 				"; and vo of all proof is "+strconv.FormatUint(uint64(voSize), 10)+" B, average vo = "+
-				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt.\n")
+				strconv.FormatFloat(float64(voSize)/1024/float64(num), 'f', -1, 64)+" KBpt,"+
+				"getkey average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetKeyLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetKeyLOs)), 'f', -1, 64)+" mspt,"+
+				"getvalue average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetValueLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetValueLOs)), 'f', -1, 64)+" mspt,"+
+				"getproof average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetProofLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetProofLOs)), 'f', -1, 64)+" mspt,"+
+				"cacheadjust average Latency is "+strconv.FormatFloat(float64(PhaseLatency.CacheAdjustLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.CacheAdjustLOs)), 'f', -1, 64)+" mspt.\n")
 			fmt.Println("Query ", num, " records in ", duration, ", throughput = ", float64(num)/duration.Seconds(),
-				" tps, average latency is ", strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64), " mspt.")
+				" tps, average latency is ", strconv.FormatFloat(float64(latencyDuration.Milliseconds())/float64(num), 'f', -1, 64), " mspt,"+
+					"getkey average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetKeyLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetKeyLOs)), 'f', -1, 64)+" mspt,"+
+					"getvalue average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetValueLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetValueLOs)), 'f', -1, 64)+" mspt,"+
+					"getproof average Latency is "+strconv.FormatFloat(float64(PhaseLatency.GetProofLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.GetProofLOs)), 'f', -1, 64)+" mspt,"+
+					"cacheadjust average Latency is "+strconv.FormatFloat(float64(PhaseLatency.CacheAdjustLOs[0].Duration.Milliseconds())/float64(len(PhaseLatency.CacheAdjustLOs)), 'f', -1, 64)+" mspt.")
 			seDB = nil
 		}
 	}

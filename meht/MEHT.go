@@ -197,7 +197,7 @@ func (meht *MEHT) MGTCacheAdjust(db *leveldb.DB, a float64, b float64) {
 	if !meht.mgt.IsNeedCacheAdjust(meht.GetSEH(db).bucketsNumber, a, b) {
 		return
 	}
-	println("cacheAdjust")
+	// println("cacheAdjust")
 	meht.mgt.CacheAdjust(db, meht.cache)
 }
 

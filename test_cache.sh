@@ -17,51 +17,41 @@ mehtBC=500
 mehtBS=1
 mbtBN=9000
 
-query_cached_file="test_query_cached.go"
-pure_insertion_file="test_insertion.go"
+query_cached_file="test_query_w_cache.go"
+query_wo_cache_file="test_query_wo_cache.go"
 
 for ((i=0;i<$round;++i)); do
-    go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
+    go run $query_wo_cache_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S1 $U1
     sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S1
-    sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S1
+    go run $query_cached_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S1 $U1
     sleep 1
     rm -rf data/levelDB
     sleep 1
 
-    go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
+    go run $query_wo_cache_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S2 $U1
     sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S2
-    sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S2
+    go run $query_cached_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S2 $U1
     sleep 1
     rm -rf data/levelDB
     sleep 1
 
-    go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
+    go run $query_wo_cache_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S3 $U1
     sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S3
-    sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S3
+    go run $query_cached_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S3 $U1
     sleep 1
     rm -rf data/levelDB
     sleep 1
 
-    go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
+    go run $query_wo_cache_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S4 $U1
     sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S4
-    sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S4
+    go run $query_cached_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S4 $U1
     sleep 1
     rm -rf data/levelDB
     sleep 1
 
-    go run $pure_insertion_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $U1
+    go run $query_wo_cache_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S5 $U1
     sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S5
-    sleep 1
-    go run $query_cached_file $siMode $U1Num $thread $mbtBN $mehtBC $mehtBS $S5
+    go run $query_cached_file $siMode $U1Num $thread $batch_size $mbtBN $mehtBC $mehtBS $S5 $U1
     sleep 1
     rm -rf data/levelDB
     sleep 1

@@ -452,6 +452,7 @@ func GetMEHTArgs(mehtArgs *[]interface{}) (mehtRdx int, mehtBc int, mehtBs int, 
 		case MEHTIsBF:
 			mehtIsbf = bool(arg.(MEHTIsBF))
 		default:
+			fmt.Println("arg", arg)
 			panic("Unknown type " + reflect.TypeOf(arg).String() + " in function GetMEHTArgs.")
 		}
 	}
@@ -556,6 +557,7 @@ func DeserializeStorageEngine(seString []byte, cacheEnable bool, cacheCapacity [
 		fmt.Printf("DeserializeStorageEngine error: %v\n", err)
 		return nil, err
 	}
+	fmt.Println("DeserializeStorageEngine:", seSe.MEHTArgs)
 	se := &StorageEngine{seSe.SeHash, nil, seSe.PrimaryIndexRootHash, seSe.SecondaryIndexMode,
 		nil, seSe.SecondaryIndexHashMpt, nil,
 		seSe.SecondaryIndexHashMbt, nil,

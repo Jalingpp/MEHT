@@ -790,10 +790,10 @@ func (mgt *MGT) IsNeedCacheAdjust(bucketNum int, a float64, b float64) bool {
 	}
 	//计算访问长度阈值
 	threshold := (a*math.Log(b*float64(bucketNum))/math.Log(float64(mgt.rdx)) + (1-a)*math.Log((1-b)*float64(bucketNum))/math.Log(float64(mgt.rdx))) * float64(accessNum)
-	println("accessNum=", accessNum)
-	println("bucketNum=", bucketNum)
-	println("threshold=", int(threshold))
-	println("accessLength=", mgt.accessLength)
+	// println("accessNum=", accessNum)
+	// println("bucketNum=", bucketNum)
+	// println("threshold=", int(threshold))
+	// println("accessLength=", mgt.accessLength)
 	return float64(mgt.accessLength) > threshold
 }
 

@@ -1,7 +1,5 @@
 # MEST: An Efficient Authenticated Secondary Index for the State Data in Blockchain Systems
 
-Jinping Jia, Yichen Gao, Yifei Zhen, Zhao Zhang*, Qian Kun, Cheqing Jin. MEST: An Efficient Authenticated Secondary Index in Blockchain Systems. (ICDE 2024, Regular Research Paper, Accepted)
-
 This is a demo of a new storage engine for verifiable non-primary key queries in blockchain systems. The primary index is Merkle Patricia Tree (MPT). The secondary indexes include MPT, Merkle Bucket Tree (MBT), and Merkle Extendible Hash Table (MEST, proposal).
 
 ## Download and Test Run
@@ -50,3 +48,7 @@ We conduct experimental evaluations by the bash scripts. All the parameters with
 | test_bsfg.sh | experiments over BSFG parameters | mehtWs=(2 3 4 5 6)<br>mehtSts=(1 2 3 4) |
 
 An end-to-end experiment can be found in `https://github.com/Jalingpp/Geth4MEST`.
+
+## Publication
+
+Jinping Jia, Yichen Gao, Yifei Zhen, Zhao Zhang*, Qian Kun, Cheqing Jin. MEST: An Efficient Authenticated Secondary Index in Blockchain Systems. (ICDE 2024, Regular Research Paper, Accepted)
